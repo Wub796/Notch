@@ -35,6 +35,10 @@ final class NotchSettings {
     /// Announce new tracks in the collapsed notch (boring.notch's sneak peek).
     var sneakPeekEnabled = true { didSet { save(sneakPeekEnabled, "sneakPeekEnabled") } }
 
+    /// Show the current synced lyric line under the closed notch while
+    /// playing.
+    var lyricActivityEnabled = true { didSet { save(lyricActivityEnabled, "lyricActivityEnabled") } }
+
     /// Blinking idle face in the wing when nothing else is happening.
     var showIdleFace = true { didSet { save(showIdleFace, "showIdleFace") } }
 
@@ -85,6 +89,9 @@ final class NotchSettings {
         }
         if defaults.object(forKey: "sneakPeekEnabled") != nil {
             sneakPeekEnabled = defaults.bool(forKey: "sneakPeekEnabled")
+        }
+        if defaults.object(forKey: "lyricActivityEnabled") != nil {
+            lyricActivityEnabled = defaults.bool(forKey: "lyricActivityEnabled")
         }
         if defaults.object(forKey: "showIdleFace") != nil {
             showIdleFace = defaults.bool(forKey: "showIdleFace")

@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
-            guard let self, self.state.mode == .expanded else { return }
+            guard let self, self.state.mode == .expanded, !self.state.isPinned else { return }
             self.state.collapse()
         }
     }

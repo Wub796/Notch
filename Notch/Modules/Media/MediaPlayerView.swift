@@ -189,7 +189,7 @@ struct ScrubberBar: View {
 
     @State private var dragFraction: Double?
     @State private var hovering = false
-    @State private var showRemaining = false
+    @State private var showRemaining = true
 
     private var playbackFraction: Double {
         guard duration > 0 else { return 0 }
@@ -205,7 +205,13 @@ struct ScrubberBar: View {
     }
 
     var body: some View {
-        VStack(spacing: 4) {
+        // Reference layout: elapsed | bar | −remaining on a single row.
+        HStack(spacing: 8) {
+            Text(MediaPlayerView.timeString(dragFraction.map { $0 * duration } ?? elapsed))
+                .font(.system(size: 9.5, weight: .medium).monospacedDigit())
+                .foregroundStyle(NotchTheme.inkMuted)
+                .frame(width: 34, alignment: .trailing)
+
             GeometryReader { proxy in
                 let width = proxy.size.width
                 ZStack(alignment: .leading) {
@@ -251,20 +257,17 @@ struct ScrubberBar: View {
             .animation(.notchSpring, value: isInteracting)
             .onHover { hovering = $0 }
 
-            HStack {
-                Text(MediaPlayerView.timeString(dragFraction.map { $0 * duration } ?? elapsed))
-                Spacer()
-                // Click to flip between total and remaining time.
-                Text(showRemaining
-                    ? "−" + MediaPlayerView.timeString(max(duration - elapsed, 0))
-                    : MediaPlayerView.timeString(duration))
-                    .contentShape(Rectangle())
-                    .onTapGesture { showRemaining.toggle() }
-                    .accessibilityLabel(showRemaining ? "Time remaining" : "Track duration")
-                    .accessibilityHint("Click to toggle between total and remaining time")
-            }
-            .font(.system(size: 9.5, weight: .medium).monospacedDigit())
-            .foregroundStyle(NotchTheme.inkMuted)
+            // Click to flip between remaining and total time.
+            Text(showRemaining
+                ? "−" + MediaPlayerView.timeString(max(duration - elapsed, 0))
+                : MediaPlayerView.timeString(duration))
+                .font(.system(size: 9.5, weight: .medium).monospacedDigit())
+                .foregroundStyle(NotchTheme.inkMuted)
+                .frame(width: 38, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { showRemaining.toggle() }
+                .accessibilityLabel(showRemaining ? "Time remaining" : "Track duration")
+                .accessibilityHint("Click to toggle between remaining and total time")
         }
         .opacity(duration > 0 ? 1 : 0.4)
         .accessibilityElement(children: .ignore)

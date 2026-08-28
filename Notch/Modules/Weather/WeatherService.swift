@@ -2,21 +2,26 @@ import CoreLocation
 import Foundation
 import Observation
 
-/// Current conditions for the header chip, from the keyless Open-Meteo API
-/// with reduced-accuracy location. Fetched only when the notch expands and
-/// cached for 30 minutes.
+/// Current conditions from the keyless Open-Meteo API with reduced-accuracy
+/// location, plus a reverse-geocoded place name. Fetched only when the notch
+/// expands and cached for 30 minutes.
 @Observable
 final class WeatherService: NSObject, CLLocationManagerDelegate {
     struct Snapshot: Equatable {
         let temperatureCelsius: Double
         let weatherCode: Int
         let isDay: Bool
+        let windKmh: Double
+        let humidityPercent: Int
+        let precipitationChancePercent: Int
         let fetchedAt: Date
     }
 
     private(set) var snapshot: Snapshot?
+    private(set) var placeName: String?
 
     private let locationManager = CLLocationManager()
+    private let geocoder = CLGeocoder()
     private var isFetching = false
     private static let cacheLifetime: TimeInterval = 30 * 60
 
@@ -59,10 +64,22 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         fetch(for: location)
+        reverseGeocode(location)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         // Weather is a garnish: fail silently, retry on the next expand.
+    }
+
+    private func reverseGeocode(_ location: CLLocation) {
+        geocoder.reverseGeocodeLocation(location) { [weak self] placemarks, _ in
+            guard let name = placemarks?.first?.locality
+                ?? placemarks?.first?.administrativeArea
+            else { return }
+            DispatchQueue.main.async {
+                self?.placeName = name
+            }
+        }
     }
 
     private func fetch(for location: CLLocation) {
@@ -73,8 +90,11 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         components.queryItems = [
             .init(name: "latitude", value: String(format: "%.2f", location.coordinate.latitude)),
             .init(name: "longitude", value: String(format: "%.2f", location.coordinate.longitude)),
-            .init(name: "current", value: "temperature_2m,weather_code,is_day"),
+            .init(name: "current", value: "temperature_2m,weather_code,is_day,wind_speed_10m,relative_humidity_2m"),
+            .init(name: "daily", value: "precipitation_probability_max"),
+            .init(name: "forecast_days", value: "1"),
             .init(name: "temperature_unit", value: "celsius"),
+            .init(name: "wind_speed_unit", value: "kmh"),
         ]
 
         struct Response: Decodable {
@@ -82,15 +102,28 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
                 let temperature2m: Double
                 let weatherCode: Int
                 let isDay: Int
+                let windSpeed10m: Double?
+                let relativeHumidity2m: Int?
 
                 enum CodingKeys: String, CodingKey {
                     case temperature2m = "temperature_2m"
                     case weatherCode = "weather_code"
                     case isDay = "is_day"
+                    case windSpeed10m = "wind_speed_10m"
+                    case relativeHumidity2m = "relative_humidity_2m"
+                }
+            }
+
+            struct Daily: Decodable {
+                let precipitationProbabilityMax: [Int?]?
+
+                enum CodingKeys: String, CodingKey {
+                    case precipitationProbabilityMax = "precipitation_probability_max"
                 }
             }
 
             let current: Current
+            let daily: Daily?
         }
 
         Task { [weak self] in
@@ -102,6 +135,10 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
                     temperatureCelsius: response.current.temperature2m,
                     weatherCode: response.current.weatherCode,
                     isDay: response.current.isDay == 1,
+                    windKmh: response.current.windSpeed10m ?? 0,
+                    humidityPercent: response.current.relativeHumidity2m ?? 0,
+                    precipitationChancePercent: response.daily?
+                        .precipitationProbabilityMax?.first.flatMap { $0 } ?? 0,
                     fetchedAt: Date()
                 )
             }
@@ -131,11 +168,37 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    /// Short condition wording for a WMO weather code.
+    static func condition(for code: Int) -> String {
+        switch code {
+        case 0: "Clear"
+        case 1: "Mostly Clear"
+        case 2: "Partly Cloudy"
+        case 3: "Overcast"
+        case 45, 48: "Fog"
+        case 51 ... 57: "Drizzle"
+        case 61 ... 67: "Rain"
+        case 71 ... 77: "Snow"
+        case 80 ... 82: "Showers"
+        case 85, 86: "Snow Showers"
+        case 95 ... 99: "Thunderstorm"
+        default: "Cloudy"
+        }
+    }
+
     /// Locale-aware "21°" (converts to Fahrenheit where the locale uses it).
     static func temperatureString(celsius: Double) -> String {
         let formatter = MeasurementFormatter()
         formatter.unitOptions = .temperatureWithoutUnit
         formatter.numberFormatter.maximumFractionDigits = 0
         return formatter.string(from: Measurement(value: celsius, unit: UnitTemperature.celsius))
+    }
+
+    /// Locale-aware wind speed ("13 km/h" / "8 mph").
+    static func windString(kmh: Double) -> String {
+        let formatter = MeasurementFormatter()
+        formatter.unitStyle = .short
+        formatter.numberFormatter.maximumFractionDigits = 0
+        return formatter.string(from: Measurement(value: kmh, unit: UnitSpeed.kilometersPerHour))
     }
 }

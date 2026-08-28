@@ -30,6 +30,16 @@ struct NotchHeaderView: View {
                 }
 
                 headerButton(
+                    systemImage: state.isPinned ? "pin.fill" : "pin",
+                    isHighlighted: state.isPinned,
+                    help: state.isPinned
+                        ? "Unpin — the notch will close normally"
+                        : "Pin the notch open"
+                ) {
+                    state.togglePin()
+                }
+
+                headerButton(
                     systemImage: state.keepAwake.isActive ? "cup.and.saucer.fill" : "cup.and.saucer",
                     isHighlighted: state.keepAwake.isActive,
                     help: state.keepAwake.isActive

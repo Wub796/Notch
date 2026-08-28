@@ -13,6 +13,14 @@ struct CollapsedNotchView: View {
             switch state.collapsedActivity {
             case .music:
                 musicWings
+            case let .lyrics(line):
+                LyricActivityView(
+                    notchWidth: state.notchSize.width,
+                    notchHeight: state.notchSize.height,
+                    line: line,
+                    artwork: state.media.artwork,
+                    accent: state.media.accent
+                )
             case let .trackChange(title, artist):
                 TrackChangeActivityView(
                     notchWidth: state.notchSize.width,

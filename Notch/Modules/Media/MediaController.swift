@@ -39,9 +39,14 @@ final class MediaController {
     /// collapsed-notch sneak peek.
     var onTrackChange: ((Track) -> Void)?
 
+    /// Current synced lyric line surfaced in the collapsed notch while
+    /// playing (Sapphire-style lyric live activity).
+    private(set) var collapsedLyricLine: String?
+
     private let bridge = MediaRemoteBridge.shared
     private var progressTimer: Timer?
     private var fallbackTimer: Timer?
+    private var lyricActivityTimer: Timer?
     private var isActive = false
 
     var hasTrack: Bool {
@@ -82,6 +87,7 @@ final class MediaController {
         progressTimer = nil
         fallbackTimer?.invalidate()
         fallbackTimer = nil
+        defer { updateLyricActivityTimer() }
         guard active else { return }
 
         if bridge.isAvailable {
@@ -97,6 +103,44 @@ final class MediaController {
             self?.tickProgress()
         }
         tickProgress()
+    }
+
+    /// The collapsed lyric activity needs its own tick — it runs only while
+    /// a track is actually playing with the setting enabled and the notch
+    /// closed, so the idle notch still costs nothing.
+    func updateLyricActivityTimer() {
+        let wanted = NotchSettings.shared.lyricActivityEnabled
+            && isPlaying
+            && hasTrack
+            && !isActive
+
+        if wanted {
+            guard lyricActivityTimer == nil else { return }
+            lyricActivityTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                self?.tickCollapsedLyric()
+            }
+            tickCollapsedLyric()
+        } else {
+            lyricActivityTimer?.invalidate()
+            lyricActivityTimer = nil
+            if collapsedLyricLine != nil {
+                collapsedLyricLine = nil
+            }
+        }
+    }
+
+    private func tickCollapsedLyric() {
+        guard lyrics.isSynced, !lyrics.lines.isEmpty else {
+            if collapsedLyricLine != nil {
+                collapsedLyricLine = nil
+            }
+            return
+        }
+        lyrics.updateCurrentLine(for: currentElapsed)
+        let line = lyrics.currentIndex.map { lyrics.lines[$0].text }
+        if line != collapsedLyricLine {
+            collapsedLyricLine = line
+        }
     }
 
     private func tickProgress() {
@@ -163,6 +207,7 @@ final class MediaController {
                     self.elapsedAnchor = self.currentElapsed
                     self.anchorDate = Date()
                     self.isPlaying = playing
+                    self.updateLyricActivityTimer()
                 }
             }
         }
@@ -186,7 +231,11 @@ final class MediaController {
         anchorDate = info[MediaRemoteBridge.InfoKey.timestamp] as? Date ?? Date()
 
         if let rate = info[MediaRemoteBridge.InfoKey.playbackRate] as? Double {
-            isPlaying = rate > 0
+            let playing = rate > 0
+            if playing != isPlaying {
+                isPlaying = playing
+                updateLyricActivityTimer()
+            }
         }
 
         if let data = info[MediaRemoteBridge.InfoKey.artworkData] as? Data {
@@ -285,6 +334,7 @@ final class MediaController {
         isPlaying = parts[5] == "playing"
 
         updateTrackIfChanged(newTrack)
+        updateLyricActivityTimer()
     }
 
     private func runMusicCommand(_ command: String) {

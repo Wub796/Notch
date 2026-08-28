@@ -118,6 +118,9 @@ struct ExpandedNotchView: View {
     @ViewBuilder
     private var content: some View {
         switch state.tab {
+        case .home:
+            HomeDashboardView(state: state, namespace: namespace)
+                .transition(Self.tabTransition)
         case .media:
             MediaPlayerView(media: state.media, namespace: namespace)
                 .transition(Self.tabTransition)

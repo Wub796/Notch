@@ -6,6 +6,7 @@ import Observation
 /// event, which outranks an imminent meeting, which outranks now-playing.
 enum LiveActivity: Equatable {
     case music
+    case lyrics(line: String)
     case trackChange(title: String, artist: String)
     case meetingSoon(title: String, start: Date)
     case battery(percent: Int, charging: Bool, low: Bool)

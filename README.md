@@ -10,6 +10,14 @@ live lyrics, a file shelf, your next 24 hours of events, and hardware telemetry.
 
 ## Features
 
+- **Home dashboard** (default tab, modeled on the reference demo) — now
+  playing with inline transport, weather with wind/rain/humidity and your
+  city, and today's date + next event, side by side; each widget jumps to
+  its full tab.
+- **Lyric live activity** — while music plays, the *closed* notch grows a slim
+  bar showing the current synced lyric line in the artwork accent.
+- **Pin** — a header pin holds the panel open, ignoring hover-out and outside
+  clicks until unpinned or closed.
 - **Media hub** — system-wide now-playing (any player) with artwork, a seekable
   scrubber, transport controls, and LRCLIB-synchronized lyrics that auto-scroll;
   tap a lyric line to jump there. The whole tab is tinted by an accent color
@@ -198,6 +206,16 @@ All periodic work is gated on expansion:
 Entitlements: `com.apple.security.app-sandbox = NO`,
 `com.apple.security.automation.apple-events = YES`,
 `com.apple.security.personal-information.calendars = YES`.
+
+## Monetization scaffold
+
+Settings → Pro contains a pricing pane (Free vs. Pro cards with a gradient
+CTA, styled after the reference) backed by `LicenseManager`: license keys in
+the `NOTCH-XXXX-XXXX-XXXX` format are validated **locally only** and persist
+in defaults. Before selling, point `LicenseManager.purchaseURL` at your store
+and replace `validate(_:)` with a real backend check (Paddle, Lemon Squeezy,
+or your own). No current features are gated — `isPro` is the hook for future
+pro-only modules.
 
 ## Shipping checklist
 

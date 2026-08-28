@@ -11,6 +11,7 @@ enum NotchMode: Equatable {
 }
 
 enum NotchTab: String, CaseIterable, Identifiable {
+    case home
     case media
     case shelf
     case calendar
@@ -20,6 +21,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .home: "Home"
         case .media: "Media"
         case .shelf: "Shelf"
         case .calendar: "Schedule"
@@ -29,6 +31,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .home: "square.grid.2x2.fill"
         case .media: "music.note"
         case .shelf: "tray.full"
         case .calendar: "calendar"
@@ -43,8 +46,11 @@ enum NotchTab: String, CaseIterable, Identifiable {
 @Observable
 final class NotchState {
     var mode: NotchMode = .collapsed
-    var tab: NotchTab = .media
+    var tab: NotchTab = .home
     var isDropTargeted = false
+
+    /// While pinned, the expanded panel ignores hover-out and outside clicks.
+    var isPinned = false
 
     /// Physical notch size, injected by NotchWindowController at launch.
     var notchSize: CGSize = NotchGeometry.fallbackSize
@@ -81,13 +87,18 @@ final class NotchState {
     // MARK: - Live activity resolution
 
     /// What the collapsed/peek notch is currently showing, by priority:
-    /// transient HUD events, then an imminent meeting, then now-playing.
+    /// transient HUD events, an imminent meeting, the live lyric line, then
+    /// plain now-playing wings.
     var collapsedActivity: LiveActivity? {
         if let transient = activities.transient {
             return transient
         }
         if settings.liveActivitiesEnabled, let event = calendar.upcomingSoon {
             return .meetingSoon(title: event.title, start: event.start)
+        }
+        if settings.lyricActivityEnabled, media.isPlaying,
+           let line = media.collapsedLyricLine {
+            return .lyrics(line: line)
         }
         if media.hasTrack, settings.showMediaWings {
             return .music
@@ -100,6 +111,7 @@ final class NotchState {
     private var activityWingWidth: CGFloat {
         switch collapsedActivity {
         case .music: 120
+        case .lyrics: 150
         case .trackChange: 240
         case .volume: 130
         case .battery: 116
@@ -112,6 +124,10 @@ final class NotchState {
     var collapsedSize: CGSize {
         var size = notchSize
         size.width += activityWingWidth
+        // The lyric activity grows a slim bar under the hardware notch.
+        if case .lyrics = collapsedActivity {
+            size.height += 24
+        }
         return size
     }
 
@@ -163,6 +179,7 @@ final class NotchState {
                     mode = .collapsed
                 }
             case .expanded:
+                guard !isPinned else { return }
                 let work = DispatchWorkItem { [weak self] in
                     self?.collapse()
                 }
@@ -171,6 +188,13 @@ final class NotchState {
             case .collapsed:
                 break
             }
+        }
+    }
+
+    func togglePin() {
+        NotchTheme.Haptics.generic()
+        withAnimation(NotchAnimations.content) {
+            isPinned.toggle()
         }
     }
 
@@ -197,6 +221,7 @@ final class NotchState {
         withAnimation(NotchAnimations.collapse) {
             mode = .collapsed
             isDropTargeted = false
+            isPinned = false
         }
         sleepModules()
     }

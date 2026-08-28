@@ -17,6 +17,8 @@ struct SettingsView: View {
                 .tabItem { Label("Activities", systemImage: "bolt.badge.clock") }
             SystemSettingsPane()
                 .tabItem { Label("System", systemImage: "gauge.with.dots.needle.50percent") }
+            ProSettingsPane()
+                .tabItem { Label("Pro", systemImage: "sparkles") }
             AboutSettingsPane()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
@@ -121,6 +123,7 @@ private struct MediaSettingsPane: View {
         Form {
             Section("Collapsed notch") {
                 Toggle("Artwork and equalizer while playing", isOn: $settings.showMediaWings)
+                Toggle("Live lyric line under the notch", isOn: $settings.lyricActivityEnabled)
                 Toggle("Announce new tracks", isOn: $settings.sneakPeekEnabled)
                 Text("New tracks scroll their title and artist through the notch for a few seconds, even while it's closed.")
                     .font(.callout)
@@ -188,6 +191,205 @@ private struct SystemSettingsPane: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - Pro
+
+private struct ProSettingsPane: View {
+    private var license = LicenseManager.shared
+
+    @State private var keyInput = ""
+    @State private var showInvalidKey = false
+
+    private static let ctaGradient = LinearGradient(
+        colors: [
+            Color(red: 0.36, green: 0.53, blue: 1.0),
+            Color(red: 0.83, green: 0.45, blue: 0.94),
+        ],
+        startPoint: .leading,
+        endPoint: .trailing
+    )
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                if license.isPro {
+                    activeCard
+                } else {
+                    tierCards
+                    activationField
+                }
+
+                Text("License keys are validated locally in this build — connect a licensing backend (Paddle, Lemon Squeezy…) before selling.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 30)
+            }
+            .padding(20)
+        }
+    }
+
+    private var tierCards: some View {
+        HStack(alignment: .top, spacing: 12) {
+            tierCard(
+                chip: "FREE TIER", chipTint: .green,
+                name: "Free", price: "$0", cadence: "forever",
+                features: [
+                    "Media hub & synced lyrics",
+                    "Shelf & AirDrop",
+                    "24-hour schedule",
+                    "Live activities & HUD",
+                    "System telemetry",
+                ],
+                highlighted: false
+            )
+
+            VStack(spacing: 0) {
+                Text("RECOMMENDED")
+                    .font(.system(size: 8.5, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(.blue))
+                    .offset(y: 9)
+                    .zIndex(1)
+
+                tierCard(
+                    chip: "PRO", chipTint: .blue,
+                    name: "Pro", price: "$14.99", cadence: "one-time",
+                    features: [
+                        "Everything in Free",
+                        "Priority feature requests",
+                        "Early access to new modules",
+                        "Supports development",
+                    ],
+                    highlighted: true
+                )
+            }
+        }
+    }
+
+    private func tierCard(
+        chip: String, chipTint: Color,
+        name: String, price: String, cadence: String,
+        features: [String],
+        highlighted: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(chip)
+                .font(.system(size: 9, weight: .heavy))
+                .foregroundStyle(chipTint)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(chipTint.opacity(0.15)))
+
+            Text(name)
+                .font(.system(size: 20, weight: .bold))
+
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(price)
+                    .font(.system(size: 24, weight: .heavy).monospacedDigit())
+                Text("/ \(cadence)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(features, id: \.self) { feature in
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(highlighted ? .blue : .green)
+                        Text(feature)
+                            .font(.system(size: 10.5))
+                    }
+                }
+            }
+            .padding(.top, 2)
+
+            Spacer(minLength: 4)
+
+            if highlighted {
+                Button {
+                    NSWorkspace.shared.open(LicenseManager.purchaseURL)
+                } label: {
+                    Text("GET NOTCH PRO")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 32)
+                        .background(Capsule().fill(Self.ctaGradient))
+                }
+                .buttonStyle(PressableButtonStyle())
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 230, alignment: .topLeading)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(highlighted ? .blue.opacity(0.6) : Color.primary.opacity(0.08), lineWidth: 1)
+        }
+    }
+
+    private var activationField: some View {
+        HStack(spacing: 8) {
+            TextField("NOTCH-XXXX-XXXX-XXXX", text: $keyInput)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11).monospaced())
+            Button("Activate") {
+                switch LicenseManager.shared.activate(keyInput) {
+                case .activated:
+                    showInvalidKey = false
+                    keyInput = ""
+                case .invalidFormat:
+                    showInvalidKey = true
+                }
+            }
+            .disabled(keyInput.isEmpty)
+        }
+        .overlay(alignment: .bottomLeading) {
+            if showInvalidKey {
+                Text("That doesn't look like a valid key.")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.red)
+                    .offset(y: 16)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private var activeCard: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 34))
+                .foregroundStyle(.blue)
+                .padding(.top, 20)
+            Text("Notch Pro is active")
+                .font(.system(size: 17, weight: .bold))
+            if let key = license.maskedKey {
+                Text(key)
+                    .font(.system(size: 11).monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            Text("Thank you for supporting development.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Button("Deactivate License") {
+                LicenseManager.shared.deactivate()
+            }
+            .padding(.top, 6)
+        }
+        .frame(maxWidth: .infinity, minHeight: 230)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        }
     }
 }
 
