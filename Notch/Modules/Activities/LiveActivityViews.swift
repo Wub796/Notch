@@ -2,9 +2,11 @@ import AppKit
 import SwiftUI
 
 /// Wing content for each live activity: a leading glyph on the left of the
-/// hardware notch and a trailing readout on the right.
+/// hardware notch and a trailing readout on the right. Content is sized to
+/// stay inside its wing — see ActivityWingLayout.
 
 struct VolumeActivityView: View {
+    let notchWidth: CGFloat
     let level: Float
     let muted: Bool
 
@@ -15,35 +17,31 @@ struct VolumeActivityView: View {
         return "speaker.wave.3.fill"
     }
 
-    var leading: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(NotchTheme.inkPrimary)
-            .frame(width: 20, alignment: .leading)
-            .contentTransition(.symbolEffect(.replace))
-    }
-
-    var trailing: some View {
-        ZStack(alignment: .leading) {
-            Capsule()
-                .fill(.white.opacity(0.22))
-            Capsule()
-                .fill(.white)
-                .frame(width: 46 * CGFloat(muted ? 0 : level))
-        }
-        .frame(width: 46, height: 5)
-        .animation(NotchAnimations.activity, value: level)
-    }
-
     var body: some View {
-        ActivityWingLayout(leading: leading, trailing: trailing)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Volume")
-            .accessibilityValue(muted ? "Muted" : "\(Int((level * 100).rounded())) percent")
+        ActivityWingLayout(
+            notchWidth: notchWidth,
+            leading: Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .contentTransition(.symbolEffect(.replace)),
+            trailing: ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(.white.opacity(0.22))
+                Capsule()
+                    .fill(.white)
+                    .frame(width: 44 * CGFloat(muted ? 0 : level))
+            }
+            .frame(width: 44, height: 5)
+            .animation(NotchAnimations.activity, value: level)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Volume")
+        .accessibilityValue(muted ? "Muted" : "\(Int((level * 100).rounded())) percent")
     }
 }
 
 struct BatteryActivityView: View {
+    let notchWidth: CGFloat
     let percent: Int
     let charging: Bool
     let low: Bool
@@ -54,10 +52,10 @@ struct BatteryActivityView: View {
 
     var body: some View {
         ActivityWingLayout(
+            notchWidth: notchWidth,
             leading: Image(systemName: charging ? "battery.100percent.bolt" : "battery.25percent")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 24, alignment: .leading),
+                .foregroundStyle(tint),
             trailing: Text("\(percent)%")
                 .font(.system(size: 12, weight: .bold).monospacedDigit())
                 .foregroundStyle(tint)
@@ -69,6 +67,7 @@ struct BatteryActivityView: View {
 }
 
 struct MeetingActivityView: View {
+    let notchWidth: CGFloat
     let title: String
     let start: Date
     let now: Date
@@ -80,16 +79,17 @@ struct MeetingActivityView: View {
 
     var body: some View {
         ActivityWingLayout(
+            notchWidth: notchWidth,
             leading: Image(systemName: "calendar.badge.clock")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.orange)
-                .frame(width: 22, alignment: .leading),
+                .foregroundStyle(.orange),
             trailing: HStack(spacing: 4) {
                 Text(title)
                     .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .lineLimit(1)
-                    .frame(maxWidth: 86, alignment: .trailing)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 78, alignment: .trailing)
                 Text(countdown)
                     .font(.system(size: 10.5, weight: .heavy).monospacedDigit())
                     .foregroundStyle(.orange)
@@ -104,6 +104,7 @@ struct MeetingActivityView: View {
 
 /// Sneak peek: a freshly started track announces itself with a marquee.
 struct TrackChangeActivityView: View {
+    let notchWidth: CGFloat
     let title: String
     let artist: String
     let artwork: NSImage?
@@ -111,6 +112,7 @@ struct TrackChangeActivityView: View {
 
     var body: some View {
         ActivityWingLayout(
+            notchWidth: notchWidth,
             leading: Group {
                 if let artwork {
                     Image(nsImage: artwork)
@@ -127,7 +129,7 @@ struct TrackChangeActivityView: View {
             trailing: MarqueeText(
                 text: artist.isEmpty ? title : "\(title) — \(artist)",
                 font: .system(size: 10.5, weight: .semibold),
-                width: 132
+                width: 100
             )
             .foregroundStyle(NotchTheme.inkPrimary)
         )
@@ -139,31 +141,37 @@ struct TrackChangeActivityView: View {
 
 /// Session lock/unlock moment.
 struct ScreenLockActivityView: View {
+    let notchWidth: CGFloat
     let locked: Bool
 
     var body: some View {
         ActivityWingLayout(
+            notchWidth: notchWidth,
             leading: Image(systemName: locked ? "lock.fill" : "lock.open.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(locked ? NotchTheme.inkSecondary : NotchTheme.battery)
-                .frame(width: 20, alignment: .leading)
                 .contentTransition(.symbolEffect(.replace)),
             trailing: Text(locked ? "Locked" : "Welcome back")
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(NotchTheme.inkPrimary)
+                .lineLimit(1)
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(locked ? "Screen locked" : "Screen unlocked")
     }
 }
 
-/// Shared wing layout: leading glyph, dead zone for the hardware notch,
-/// trailing readout.
+/// Shared wing layout: leading glyph, an exact reserved dead zone for the
+/// hardware notch (content under the camera housing is invisible), trailing
+/// readout. Both wings are equal flexible widths so the dead zone stays
+/// centered whatever each side contains.
 struct ActivityWingLayout<Leading: View, Trailing: View>: View {
+    let notchWidth: CGFloat
     let leading: Leading
     let trailing: Trailing
 
-    init(leading: Leading, trailing: Trailing) {
+    init(notchWidth: CGFloat, leading: Leading, trailing: Trailing) {
+        self.notchWidth = notchWidth
         self.leading = leading
         self.trailing = trailing
     }
@@ -172,9 +180,12 @@ struct ActivityWingLayout<Leading: View, Trailing: View>: View {
         HStack(spacing: 0) {
             leading
                 .padding(.leading, 13)
-            Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Color.clear
+                .frame(width: notchWidth)
             trailing
                 .padding(.trailing, 14)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

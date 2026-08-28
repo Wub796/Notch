@@ -6,13 +6,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let state = NotchState()
 
     private var windowController: NotchWindowController?
+    private var onboardingController: OnboardingWindowController?
     private var scrollMonitor: Any?
+    private var outsideClickMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
         attachToBestScreen()
         installScrollGesture()
+        installOutsideClickMonitor()
+        presentOnboardingIfNeeded()
 
         NotificationCenter.default.addObserver(
             self,
@@ -22,9 +26,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    /// Two-finger scroll over the notch opens it; scrolling back up over the
-    /// open panel closes it (DynamicNotch-style interaction). Scroll events
-    /// route to the window under the pointer, so a local monitor is enough.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let scrollMonitor {
+            NSEvent.removeMonitor(scrollMonitor)
+        }
+        if let outsideClickMonitor {
+            NSEvent.removeMonitor(outsideClickMonitor)
+        }
+    }
+
+    /// Rebuilds the panel on the screen that physically has a notch,
+    /// falling back to the main display on non-notched Macs.
+    private func attachToBestScreen() {
+        guard let screen = NotchGeometry.preferredScreen else { return }
+        // Never carry an expanded panel across a display change — the new
+        // geometry starts from the resting state.
+        state.collapse()
+        windowController?.close()
+        windowController = NotchWindowController(state: state, screen: screen)
+        windowController?.showPanel()
+    }
+
+    @objc private func screenParametersDidChange() {
+        // Display was plugged/unplugged or resolution changed: re-anchor the panel.
+        attachToBestScreen()
+    }
+
+    /// Two-finger scroll over the notch opens it (DynamicNotch-style
+    /// interaction). Scroll events route to the window under the pointer, so
+    /// a local monitor is enough.
     private func installScrollGesture() {
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self,
@@ -43,21 +77,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        false
+    /// A click anywhere outside the app closes the expanded panel — global
+    /// monitors only receive events delivered to other applications, which
+    /// is exactly the "outside" we want.
+    private func installOutsideClickMonitor() {
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            guard let self, self.state.mode == .expanded else { return }
+            self.state.collapse()
+        }
     }
 
-    /// Rebuilds the panel on the screen that physically has a notch,
-    /// falling back to the main display on non-notched Macs.
-    private func attachToBestScreen() {
-        guard let screen = NotchGeometry.preferredScreen else { return }
-        windowController?.close()
-        windowController = NotchWindowController(state: state, screen: screen)
-        windowController?.showPanel()
-    }
-
-    @objc private func screenParametersDidChange() {
-        // Display was plugged/unplugged or resolution changed: re-anchor the panel.
-        attachToBestScreen()
+    private func presentOnboardingIfNeeded() {
+        guard !NotchSettings.shared.hasCompletedOnboarding else { return }
+        onboardingController = OnboardingWindowController(state: state) { [weak self] in
+            NotchSettings.shared.hasCompletedOnboarding = true
+            self?.onboardingController = nil
+        }
+        onboardingController?.present()
     }
 }

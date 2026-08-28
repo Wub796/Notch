@@ -47,6 +47,9 @@ final class NotchSettings {
     /// Raw value of the last tab the user opened; restored across launches.
     var lastTab = "" { didSet { save(lastTab, "lastTab") } }
 
+    /// Welcome window has been shown and dismissed.
+    var hasCompletedOnboarding = false { didSet { save(hasCompletedOnboarding, "hasCompletedOnboarding") } }
+
     var launchAtLogin = false { didSet { applyLaunchAtLogin() } }
 
     private var isApplyingLoginItem = false
@@ -99,6 +102,7 @@ final class NotchSettings {
             telemetryInterval = defaults.double(forKey: "telemetryInterval")
         }
         lastTab = defaults.string(forKey: "lastTab") ?? ""
+        hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
 
         // Login-item state lives in the system, not in defaults.
         isApplyingLoginItem = true

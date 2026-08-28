@@ -50,6 +50,13 @@ live lyrics, a file shelf, your next 24 hours of events, and hardware telemetry.
   fully damped content), adapted from Sapphire's animation tables.
 - Haptic feedback (trackpads) on expand/collapse, drops, and the keep-awake toggle.
 
+## First launch
+
+A one-time welcome window introduces the features and gestures and offers the
+two optional permission grants (Calendar, Location for weather). Hover the
+notch to peek, click or scroll to open, drop files to shelve them, click
+anywhere outside to close.
+
 ## Building
 
 1. Open `Notch.xcodeproj` in Xcode 16+.
@@ -191,6 +198,21 @@ All periodic work is gated on expansion:
 Entitlements: `com.apple.security.app-sandbox = NO`,
 `com.apple.security.automation.apple-events = YES`,
 `com.apple.security.personal-information.calendars = YES`.
+
+## Shipping checklist
+
+To distribute outside the App Store (the MediaRemote dependency rules the App
+Store out):
+
+1. Archive in Xcode with your Developer ID Application certificate
+   (Hardened Runtime is already enabled; the Apple Events entitlement is set).
+2. Notarize: `xcrun notarytool submit Notch.zip --keychain-profile <profile> --wait`
+   then `xcrun stapler staple Notch.app`.
+3. Launch-at-login (SMAppService) and Apple Events consent only behave
+   correctly in signed builds.
+4. The app icon lives in `Notch/Assets.xcassets/AppIcon.appiconset`
+   (generated artwork — replace with final brand art at the same sizes if
+   desired).
 
 ## Notes & caveats
 

@@ -95,17 +95,17 @@ final class NotchState {
         return nil
     }
 
-    /// Wing width added around the hardware notch for the active activity —
-    /// or for the idle face when nothing else is happening.
+    /// Extra width added around the hardware notch for the active activity —
+    /// split evenly into two wings, so each side must fit half of this.
     private var activityWingWidth: CGFloat {
         switch collapsedActivity {
         case .music: 120
-        case .trackChange: 210
+        case .trackChange: 240
         case .volume: 130
         case .battery: 116
-        case .screenLock: 148
-        case .meetingSoon: 190
-        case nil: settings.showIdleFace ? 58 : 0
+        case .screenLock: 180
+        case .meetingSoon: 260
+        case nil: settings.showIdleFace ? 96 : 0
         }
     }
 

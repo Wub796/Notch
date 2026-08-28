@@ -15,20 +15,38 @@ struct CollapsedNotchView: View {
                 musicWings
             case let .trackChange(title, artist):
                 TrackChangeActivityView(
+                    notchWidth: state.notchSize.width,
                     title: title,
                     artist: artist,
                     artwork: state.media.artwork,
                     accent: state.media.accent
                 )
             case let .volume(level, muted):
-                VolumeActivityView(level: level, muted: muted)
+                VolumeActivityView(
+                    notchWidth: state.notchSize.width,
+                    level: level,
+                    muted: muted
+                )
             case let .battery(percent, charging, low):
-                BatteryActivityView(percent: percent, charging: charging, low: low)
+                BatteryActivityView(
+                    notchWidth: state.notchSize.width,
+                    percent: percent,
+                    charging: charging,
+                    low: low
+                )
             case let .screenLock(locked):
-                ScreenLockActivityView(locked: locked)
+                ScreenLockActivityView(
+                    notchWidth: state.notchSize.width,
+                    locked: locked
+                )
             case let .meetingSoon(title, start):
                 TimelineView(.everyMinute) { context in
-                    MeetingActivityView(title: title, start: start, now: context.date)
+                    MeetingActivityView(
+                        notchWidth: state.notchSize.width,
+                        title: title,
+                        start: start,
+                        now: context.date
+                    )
                 }
             case nil:
                 if state.settings.showIdleFace {
@@ -42,26 +60,19 @@ struct CollapsedNotchView: View {
     }
 
     private var idleFaceWing: some View {
-        HStack(spacing: 0) {
-            Spacer(minLength: 0)
-            IdleFaceView()
-                .padding(.trailing, 13)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ActivityWingLayout(
+            notchWidth: state.notchSize.width,
+            leading: Color.clear.frame(width: 1),
+            trailing: IdleFaceView()
+        )
     }
 
     private var musicWings: some View {
-        HStack(spacing: 0) {
-            miniArtwork
-                .padding(.leading, 12)
-
-            // The dead zone occupied by the physical notch hardware.
-            Spacer(minLength: 0)
-
-            AudioBarsView(isAnimating: state.media.isPlaying, tint: state.media.accent)
-                .padding(.trailing, 14)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ActivityWingLayout(
+            notchWidth: state.notchSize.width,
+            leading: miniArtwork,
+            trailing: AudioBarsView(isAnimating: state.media.isPlaying, tint: state.media.accent)
+        )
     }
 
     private var miniArtwork: some View {
