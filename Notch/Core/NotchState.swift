@@ -72,6 +72,10 @@ final class NotchState {
         // Event-driven collapsed-notch features.
         activities.start()
         calendar.bootstrapIfAuthorized()
+
+        media.onTrackChange = { [weak self] track in
+            self?.activities.showTrackChange(title: track.title, artist: track.artist)
+        }
     }
 
     // MARK: - Live activity resolution
@@ -91,14 +95,17 @@ final class NotchState {
         return nil
     }
 
-    /// Wing width added around the hardware notch for the active activity.
+    /// Wing width added around the hardware notch for the active activity —
+    /// or for the idle face when nothing else is happening.
     private var activityWingWidth: CGFloat {
         switch collapsedActivity {
         case .music: 120
+        case .trackChange: 210
         case .volume: 130
         case .battery: 116
+        case .screenLock: 148
         case .meetingSoon: 190
-        case nil: 0
+        case nil: settings.showIdleFace ? 58 : 0
         }
     }
 

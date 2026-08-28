@@ -31,6 +31,15 @@ final class NotchSettings {
     var showWeather = true { didSet { save(showWeather, "showWeather") } }
 
     var showMediaWings = true { didSet { save(showMediaWings, "showMediaWings") } }
+
+    /// Announce new tracks in the collapsed notch (boring.notch's sneak peek).
+    var sneakPeekEnabled = true { didSet { save(sneakPeekEnabled, "sneakPeekEnabled") } }
+
+    /// Blinking idle face in the wing when nothing else is happening.
+    var showIdleFace = true { didSet { save(showIdleFace, "showIdleFace") } }
+
+    /// Two-finger scroll over the notch opens/closes it.
+    var scrollToExpand = true { didSet { save(scrollToExpand, "scrollToExpand") } }
     var fetchLyrics = true { didSet { save(fetchLyrics, "fetchLyrics") } }
     var hapticsEnabled = true { didSet { save(hapticsEnabled, "hapticsEnabled") } }
     var telemetryInterval = 2.0 { didSet { save(telemetryInterval, "telemetryInterval") } }
@@ -70,6 +79,15 @@ final class NotchSettings {
         }
         if defaults.object(forKey: "showWeather") != nil {
             showWeather = defaults.bool(forKey: "showWeather")
+        }
+        if defaults.object(forKey: "sneakPeekEnabled") != nil {
+            sneakPeekEnabled = defaults.bool(forKey: "sneakPeekEnabled")
+        }
+        if defaults.object(forKey: "showIdleFace") != nil {
+            showIdleFace = defaults.bool(forKey: "showIdleFace")
+        }
+        if defaults.object(forKey: "scrollToExpand") != nil {
+            scrollToExpand = defaults.bool(forKey: "scrollToExpand")
         }
         if defaults.object(forKey: "fetchLyrics") != nil {
             fetchLyrics = defaults.bool(forKey: "fetchLyrics")

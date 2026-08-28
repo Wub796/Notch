@@ -6,8 +6,10 @@ import Observation
 /// event, which outranks an imminent meeting, which outranks now-playing.
 enum LiveActivity: Equatable {
     case music
+    case trackChange(title: String, artist: String)
     case meetingSoon(title: String, start: Date)
     case battery(percent: Int, charging: Bool, low: Bool)
+    case screenLock(locked: Bool)
     case volume(level: Float, muted: Bool)
 }
 
@@ -28,6 +30,8 @@ final class LiveActivityManager {
 
     private static let volumeHUDDuration: TimeInterval = 1.6
     private static let batteryEventDuration: TimeInterval = 4.0
+    private static let sneakPeekDuration: TimeInterval = 4.0
+    private static let lockEventDuration: TimeInterval = 2.5
     private static let lowBatteryThreshold = 10
 
     func start() {
@@ -46,7 +50,32 @@ final class LiveActivityManager {
                 self?.handlePowerChange(snapshot)
             }
             powerMonitor.start()
+
+            // Session lock/unlock, announced by the system over the
+            // distributed notification center (DynamicNotch's approach).
+            let center = DistributedNotificationCenter.default()
+            center.addObserver(
+                forName: Notification.Name("com.apple.screenIsLocked"),
+                object: nil, queue: .main
+            ) { [weak self] _ in
+                guard NotchSettings.shared.liveActivitiesEnabled else { return }
+                self?.show(.screenLock(locked: true), for: Self.lockEventDuration)
+            }
+            center.addObserver(
+                forName: Notification.Name("com.apple.screenIsUnlocked"),
+                object: nil, queue: .main
+            ) { [weak self] _ in
+                guard NotchSettings.shared.liveActivitiesEnabled else { return }
+                self?.show(.screenLock(locked: false), for: Self.lockEventDuration)
+            }
         }
+    }
+
+    /// Sneak peek (boring.notch-style): a new track briefly announces itself
+    /// in the collapsed notch.
+    func showTrackChange(title: String, artist: String) {
+        guard NotchSettings.shared.sneakPeekEnabled, !title.isEmpty else { return }
+        show(.trackChange(title: title, artist: artist), for: Self.sneakPeekDuration)
     }
 
     private func handlePowerChange(_ snapshot: PowerMonitor.Snapshot) {

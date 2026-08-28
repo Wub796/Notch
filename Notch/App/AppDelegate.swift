@@ -6,11 +6,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let state = NotchState()
 
     private var windowController: NotchWindowController?
+    private var scrollMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
         attachToBestScreen()
+        installScrollGesture()
 
         NotificationCenter.default.addObserver(
             self,
@@ -18,6 +20,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+    }
+
+    /// Two-finger scroll over the notch opens it; scrolling back up over the
+    /// open panel closes it (DynamicNotch-style interaction). Scroll events
+    /// route to the window under the pointer, so a local monitor is enough.
+    private func installScrollGesture() {
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self,
+                  NotchSettings.shared.scrollToExpand,
+                  let panel = self.windowController?.window,
+                  event.window === panel
+            else { return event }
+
+            // Direction-agnostic: the sign of scrollingDeltaY flips with the
+            // user's natural-scrolling preference, so any decisive scroll
+            // over the closed notch opens it.
+            if abs(event.scrollingDeltaY) > 8, self.state.mode != .expanded {
+                self.state.expand()
+            }
+            return event
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

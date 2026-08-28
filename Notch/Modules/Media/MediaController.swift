@@ -35,6 +35,10 @@ final class MediaController {
 
     let lyrics = LyricsEngine()
 
+    /// Fired when a genuinely new track replaces a previous one — drives the
+    /// collapsed-notch sneak peek.
+    var onTrackChange: ((Track) -> Void)?
+
     private let bridge = MediaRemoteBridge.shared
     private var progressTimer: Timer?
     private var fallbackTimer: Timer?
@@ -212,8 +216,14 @@ final class MediaController {
     }
 
     private func updateTrackIfChanged(_ newTrack: Track) {
-        guard newTrack != track else { return }
+        let previous = track
+        guard newTrack != previous else { return }
         track = newTrack.title.isEmpty ? nil : newTrack
+
+        // Announce track-to-track changes, not the initial pickup at launch.
+        if let current = track, previous != nil, current.title != previous?.title {
+            onTrackChange?(current)
+        }
         if let track {
             if NotchSettings.shared.fetchLyrics {
                 lyrics.load(

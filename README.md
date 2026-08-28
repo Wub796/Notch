@@ -23,15 +23,23 @@ live lyrics, a file shelf, your next 24 hours of events, and hardware telemetry.
   wattage + health, and live network up/down throughput.
 - **Header** — clock + date, battery pill, a caffeine-style **keep-awake** toggle
   (IOKit power assertion), and a gear that opens Settings.
-- **Settings** — launch at login (SMAppService), hover-vs-click expansion with
-  tunable delays, haptics, media wings, lyrics fetching, instant AirDrop,
-  telemetry refresh rate.
+- **Settings** — a native tabbed preferences window (General / Notch / Media /
+  Activities / System / About): launch at login (SMAppService), animation style,
+  hover and scroll expansion with tunable delays, haptics, sneak peek, idle
+  face, live-activity toggles, instant AirDrop, telemetry refresh rate.
 - **Live Activities** (Sapphire-inspired) — the collapsed notch grows wings for
   whatever matters right now, by priority: a **volume HUD** (CoreAudio listener)
   when you change the system volume, a **battery event** when you plug/unplug or
-  cross 10%, a **meeting-soon countdown** starting 15 minutes before your next
-  event, and otherwise the now-playing artwork + equalizer. Every source is
-  push-based — no polling while collapsed.
+  cross 10%, a **lock/unlock moment** ("Welcome back"), a **track sneak peek**
+  (boring.notch-style: new tracks marquee their title through the closed notch),
+  a **meeting-soon countdown** starting 15 minutes before your next event, and
+  otherwise the now-playing artwork + equalizer. Every source is push-based — no
+  polling while collapsed.
+- **Idle face** — an homage to boring.notch's animated face: a tiny blinking
+  companion in the wing when nothing else is happening (PhaseAnimator, no
+  timers; still under Reduce Motion; toggleable).
+- **Scroll gesture** (DynamicNotch-style) — a two-finger scroll over the closed
+  notch springs it open.
 - **Hover peek** — hovering scales the closed pill 1.10× (Sapphire's signature
   affordance) before a click or hover-linger springs it fully open; corner radii
   step 10 → 18 → 32 with the state.

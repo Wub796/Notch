@@ -136,10 +136,14 @@ private struct ShelfItemCard: View {
                 hovering = isHovering
             }
         }
+        .onTapGesture(count: 2) {
+            NSWorkspace.shared.open(item.url)
+        }
         .onDrag {
             NSItemProvider(contentsOf: item.url) ?? NSItemProvider()
         }
         .contextMenu {
+            Button("Open") { NSWorkspace.shared.open(item.url) }
             Button("AirDrop") { shelf.airDrop(item) }
             Button("Copy") { shelf.copyToPasteboard(item) }
             Button("Reveal in Finder") { shelf.revealInFinder(item) }
@@ -150,6 +154,6 @@ private struct ShelfItemCard: View {
                 }
             }
         }
-        .help(item.name)
+        .help("\(item.name) — double-click to open")
     }
 }

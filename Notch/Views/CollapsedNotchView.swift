@@ -13,17 +13,39 @@ struct CollapsedNotchView: View {
             switch state.collapsedActivity {
             case .music:
                 musicWings
+            case let .trackChange(title, artist):
+                TrackChangeActivityView(
+                    title: title,
+                    artist: artist,
+                    artwork: state.media.artwork,
+                    accent: state.media.accent
+                )
             case let .volume(level, muted):
                 VolumeActivityView(level: level, muted: muted)
             case let .battery(percent, charging, low):
                 BatteryActivityView(percent: percent, charging: charging, low: low)
+            case let .screenLock(locked):
+                ScreenLockActivityView(locked: locked)
             case let .meetingSoon(title, start):
                 TimelineView(.everyMinute) { context in
                     MeetingActivityView(title: title, start: start, now: context.date)
                 }
             case nil:
-                Color.clear
+                if state.settings.showIdleFace {
+                    idleFaceWing
+                } else {
+                    Color.clear
+                }
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var idleFaceWing: some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            IdleFaceView()
+                .padding(.trailing, 13)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

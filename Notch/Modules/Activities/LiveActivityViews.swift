@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Wing content for each live activity: a leading glyph on the left of the
@@ -98,6 +99,61 @@ struct MeetingActivityView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Upcoming: \(title)")
         .accessibilityValue("starts in \(countdown)")
+    }
+}
+
+/// Sneak peek: a freshly started track announces itself with a marquee.
+struct TrackChangeActivityView: View {
+    let title: String
+    let artist: String
+    let artwork: NSImage?
+    let accent: Color
+
+    var body: some View {
+        ActivityWingLayout(
+            leading: Group {
+                if let artwork {
+                    Image(nsImage: artwork)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 18, height: 18)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                } else {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(accent)
+                }
+            },
+            trailing: MarqueeText(
+                text: artist.isEmpty ? title : "\(title) — \(artist)",
+                font: .system(size: 10.5, weight: .semibold),
+                width: 132
+            )
+            .foregroundStyle(NotchTheme.inkPrimary)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Now playing")
+        .accessibilityValue(artist.isEmpty ? title : "\(title) by \(artist)")
+    }
+}
+
+/// Session lock/unlock moment.
+struct ScreenLockActivityView: View {
+    let locked: Bool
+
+    var body: some View {
+        ActivityWingLayout(
+            leading: Image(systemName: locked ? "lock.fill" : "lock.open.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(locked ? NotchTheme.inkSecondary : NotchTheme.battery)
+                .frame(width: 20, alignment: .leading)
+                .contentTransition(.symbolEffect(.replace)),
+            trailing: Text(locked ? "Locked" : "Welcome back")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(locked ? "Screen locked" : "Screen unlocked")
     }
 }
 
