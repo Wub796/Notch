@@ -10,7 +10,7 @@ struct TelemetryView: View {
     let telemetry: TelemetryController
 
     var body: some View {
-        HStack(alignment: .center, spacing: 24) {
+        HStack(alignment: .center, spacing: 22) {
             VStack(spacing: 6) {
                 CircularGaugeView(
                     value: telemetry.cpuUsage,
@@ -57,11 +57,6 @@ struct TelemetryView: View {
                     )
                 }
             }
-
-            Rectangle()
-                .fill(NotchTheme.hairline)
-                .frame(width: 1)
-                .padding(.vertical, 14)
 
             VStack(alignment: .leading, spacing: 10) {
                 statTile(
@@ -163,7 +158,7 @@ struct CircularGaugeView: View {
                         .animation(.notchSpring, value: detail)
                 }
             }
-            .frame(width: 64, height: 64)
+            .frame(width: 58, height: 58)
 
             Text(title)
                 .font(.system(size: 10, weight: .medium))

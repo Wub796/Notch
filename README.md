@@ -11,9 +11,15 @@ live lyrics, a file shelf, your next 24 hours of events, and hardware telemetry.
 ## Features
 
 - **Home dashboard** (default tab, modeled on the reference demo) — now
-  playing with inline transport, weather with wind/rain/humidity and your
-  city, and today's date + next event, side by side; each widget jumps to
-  its full tab.
+  playing with inline transport and a badge showing which app the audio comes
+  from, weather (icon, temperature, city, condition), and today's date + next
+  event. One clean slab: no dividers, no boxes, no centered controls.
+- **Flanking icon strip** — tabs and settings sit to the left of the hardware
+  notch, battery / keep-awake / pin to the right, borderless. They appear as
+  the slab opens and collapse away with it.
+- **Tight hover target** — hit testing while closed is limited to the notch
+  itself, so the panel only reacts when the pointer is actually on it, and a
+  dwell requirement means sweeping past never opens it.
 - **Lyric live activity** — while music plays, the *closed* notch grows a slim
   bar showing the current synced lyric line in the artwork accent.
 - **Pin** — a header pin holds the panel open, ignoring hover-out and outside

@@ -150,7 +150,8 @@ private struct ActivitiesSettingsPane: View {
             Section {
                 Toggle("Battery, lock, and meeting alerts", isOn: $settings.liveActivitiesEnabled)
                 Toggle("Volume changes", isOn: $settings.volumeHUDEnabled)
-                Toggle("Weather in the header", isOn: $settings.showWeather)
+                Toggle("Weather on the dashboard", isOn: $settings.showWeather)
+                Toggle("Battery percentage beside the icon", isOn: $settings.showBatteryPercentage)
             } header: {
                 Text("Live activities")
             } footer: {

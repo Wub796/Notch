@@ -43,6 +43,11 @@ final class MediaController {
     /// playing (Sapphire-style lyric live activity).
     private(set) var collapsedLyricLine: String?
 
+    /// The app the audio is coming from (Spotify, Music, Safari…).
+    private(set) var sourceAppName: String?
+    private(set) var sourceAppIcon: NSImage?
+    private var sourceAppPID: Int32 = 0
+
     private let bridge = MediaRemoteBridge.shared
     private var progressTimer: Timer?
     private var fallbackTimer: Timer?
@@ -199,6 +204,11 @@ final class MediaController {
                 self?.apply(info)
             }
         }
+        bridge.nowPlayingApplicationPID { [weak self] pid in
+            DispatchQueue.main.async {
+                self?.updateSourceApp(pid: pid)
+            }
+        }
         bridge.isPlaying { [weak self] playing in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -244,6 +254,21 @@ final class MediaController {
         }
 
         updateTrackIfChanged(newTrack)
+    }
+
+    /// Resolves the now-playing app from its PID, once per change.
+    private func updateSourceApp(pid: Int32) {
+        guard pid != sourceAppPID else { return }
+        sourceAppPID = pid
+        guard pid > 0,
+              let app = NSRunningApplication(processIdentifier: pid_t(pid))
+        else {
+            sourceAppName = nil
+            sourceAppIcon = nil
+            return
+        }
+        sourceAppName = app.localizedName
+        sourceAppIcon = app.icon
     }
 
     /// Extracts the artwork accent off the main thread, once per unique image.
@@ -335,6 +360,14 @@ final class MediaController {
 
         updateTrackIfChanged(newTrack)
         updateLyricActivityTimer()
+
+        // The AppleScript path only ever talks to Music.app.
+        if sourceAppName == nil,
+           let music = NSRunningApplication
+               .runningApplications(withBundleIdentifier: "com.apple.Music").first {
+            sourceAppName = music.localizedName
+            sourceAppIcon = music.icon
+        }
     }
 
     private func runMusicCommand(_ command: String) {

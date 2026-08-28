@@ -54,7 +54,29 @@ final class NotchState {
 
     /// Physical notch size, injected by NotchWindowController at launch.
     var notchSize: CGSize = NotchGeometry.fallbackSize
-    let expandedSize = CGSize(width: 670, height: 310)
+
+    /// Each tab sizes the slab to its own content — the dashboard is wide and
+    /// short, detail tabs are narrower and a little taller.
+    var expandedSize: CGSize {
+        switch tab {
+        case .home: CGSize(width: 780, height: 150)
+        case .media: CGSize(width: 600, height: 208)
+        case .shelf: CGSize(width: 620, height: 190)
+        case .calendar: CGSize(width: 560, height: 214)
+        case .telemetry: CGSize(width: 700, height: 178)
+        }
+    }
+
+    /// Largest slab any tab can request; the panel window is sized to this.
+    static let maxExpandedSize = CGSize(width: 780, height: 214)
+
+    /// Hover is only detected over the physical notch (plus a small margin),
+    /// never over the full slab — a wide detection radius made the notch open
+    /// when the pointer was merely near the menu bar.
+    var hoverProbeSize: CGSize {
+        guard mode != .expanded else { return currentSize }
+        return CGSize(width: notchSize.width + 16, height: notchSize.height + 4)
+    }
 
     /// Hover peek grows the closed pill by this factor (Sapphire's scale).
     static let peekScale: CGFloat = 1.10
@@ -69,6 +91,11 @@ final class NotchState {
     let activities = LiveActivityManager()
 
     private var pendingHoverWork: DispatchWorkItem?
+    private var hoverStartedAt: Date?
+
+    /// Minimum dwell before a click counts as intentional rather than the tail
+    /// of a fast pointer sweep across the menu bar.
+    private static let minimumDwellForClick: TimeInterval = 0.06
 
     init() {
         // Personalization: reopen on the tab the user last used.
@@ -149,8 +176,8 @@ final class NotchState {
     var cornerRadius: CGFloat {
         switch mode {
         case .collapsed: 10
-        case .peek: 18
-        case .expanded: 32
+        case .peek: 16
+        case .expanded: 26
         }
     }
 
@@ -160,12 +187,15 @@ final class NotchState {
         pendingHoverWork?.cancel()
 
         if hovering {
+            hoverStartedAt = Date()
             if mode == .collapsed {
                 withAnimation(NotchAnimations.hover) {
                     mode = .peek
                 }
             }
-            // Linger past the open delay to expand fully (when enabled).
+            // Linger past the open delay to expand fully (when enabled). The
+            // work item is cancelled the moment the pointer leaves, so a
+            // quick pass over the notch never opens it.
             guard settings.expandOnHover, mode == .peek else { return }
             let work = DispatchWorkItem { [weak self] in
                 self?.expand()
@@ -173,6 +203,7 @@ final class NotchState {
             pendingHoverWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + settings.openDelay, execute: work)
         } else {
+            hoverStartedAt = nil
             switch mode {
             case .peek:
                 withAnimation(NotchAnimations.hover) {
@@ -198,11 +229,16 @@ final class NotchState {
         }
     }
 
-    /// Click always opens fully, from collapsed or peek.
+    /// Click always opens fully, from collapsed or peek — but ignores a click
+    /// that lands in the first instants of a hover, which is characteristic of
+    /// a pointer sweeping through rather than aiming at the notch.
     func handleTap() {
-        if mode != .expanded {
-            expand()
+        guard mode != .expanded else { return }
+        if let started = hoverStartedAt,
+           Date().timeIntervalSince(started) < Self.minimumDwellForClick {
+            return
         }
+        expand()
     }
 
     func expand() {

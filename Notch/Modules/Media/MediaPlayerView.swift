@@ -9,9 +9,9 @@ struct MediaPlayerView: View {
     let namespace: Namespace.ID
 
     var body: some View {
-        HStack(alignment: .top, spacing: 18) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 14) {
+        HStack(alignment: .top, spacing: 20) {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 12) {
                     artwork
                     trackInfo
                 }
@@ -26,15 +26,10 @@ struct MediaPlayerView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Rectangle()
-                .fill(NotchTheme.hairline)
-                .frame(width: 1)
-                .padding(.vertical, 6)
-
             LyricsView(lyrics: media.lyrics, accent: media.accent) { time in
                 media.seek(to: time + 0.05)
             }
-            .frame(width: 235)
+            .frame(width: 196)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
@@ -68,18 +63,29 @@ struct MediaPlayerView: View {
                     }
             }
         }
-        .frame(width: 82, height: 82)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .frame(width: 64, height: 64)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
-        .shadow(color: .black.opacity(0.45), radius: 10, y: 4)
+        .shadow(color: .black.opacity(0.45), radius: 9, y: 4)
+        .overlay(alignment: .bottomLeading) {
+            if let icon = media.sourceAppIcon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 17, height: 17)
+                    .clipShape(Circle())
+                    .overlay { Circle().stroke(.black.opacity(0.55), lineWidth: 1.5) }
+                    .offset(x: -5, y: 5)
+                    .accessibilityLabel("Playing in \(media.sourceAppName ?? "another app")")
+            }
+        }
     }
 
     private var trackInfo: some View {
         VStack(alignment: .leading, spacing: 3) {
             MarqueeText(
                 text: media.track?.title ?? "Nothing Playing",
-                font: .system(size: 14.5, weight: .semibold),
-                width: 222
+                font: .system(size: 13.5, weight: .semibold),
+                width: 190
             )
             .foregroundStyle(NotchTheme.inkPrimary)
             Text(media.track?.artist ?? "Play something to see it here")
@@ -97,7 +103,7 @@ struct MediaPlayerView: View {
     }
 
     private var transportControls: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 20) {
             Spacer()
 
             TransportIconButton(
@@ -114,7 +120,7 @@ struct MediaPlayerView: View {
                 Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(.black)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 34, height: 34)
                     .background {
                         Circle().fill(media.accent)
                     }

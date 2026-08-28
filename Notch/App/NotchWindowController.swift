@@ -17,8 +17,12 @@ final class NotchWindowController: NSWindowController {
         let geometry = NotchGeometry(screen: screen)
         state.notchSize = geometry.notchSize
 
-        let width = max(state.expandedSize.width, geometry.notchSize.width) + Self.overshootMargin * 2
-        let height = state.expandedSize.height + geometry.notchSize.height + Self.overshootMargin
+        // Sized for the largest slab any tab can request, so switching tabs
+        // never needs to resize the window mid-animation.
+        let width = max(NotchState.maxExpandedSize.width, geometry.notchSize.width)
+            + Self.overshootMargin * 2
+        let height = NotchState.maxExpandedSize.height + geometry.notchSize.height
+            + Self.overshootMargin
 
         let frame = NSRect(
             x: screen.frame.midX - width / 2,

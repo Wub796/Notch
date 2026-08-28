@@ -40,12 +40,15 @@ final class MediaRemoteBridge {
         @convention(c) (Int32, CFDictionary?) -> Bool
     private typealias SetElapsedTimeFunc =
         @convention(c) (Double) -> Void
+    private typealias GetApplicationPIDFunc =
+        @convention(c) (DispatchQueue, @escaping @convention(block) (Int32) -> Void) -> Void
 
     private var getNowPlayingInfoFunc: GetNowPlayingInfoFunc?
     private var getIsPlayingFunc: GetIsPlayingFunc?
     private var registerNotificationsFunc: RegisterNotificationsFunc?
     private var sendCommandFunc: SendCommandFunc?
     private var setElapsedTimeFunc: SetElapsedTimeFunc?
+    private var getApplicationPIDFunc: GetApplicationPIDFunc?
 
     let isAvailable: Bool
 
@@ -68,6 +71,10 @@ final class MediaRemoteBridge {
         registerNotificationsFunc = symbol("MRMediaRemoteRegisterForNowPlayingNotifications", as: RegisterNotificationsFunc.self)
         sendCommandFunc = symbol("MRMediaRemoteSendCommand", as: SendCommandFunc.self)
         setElapsedTimeFunc = symbol("MRMediaRemoteSetElapsedTime", as: SetElapsedTimeFunc.self)
+        getApplicationPIDFunc = symbol(
+            "MRMediaRemoteGetNowPlayingApplicationPID",
+            as: GetApplicationPIDFunc.self
+        )
 
         isAvailable = getNowPlayingInfoFunc != nil && registerNotificationsFunc != nil
     }
@@ -109,5 +116,17 @@ final class MediaRemoteBridge {
 
     func setElapsedTime(_ seconds: Double) {
         setElapsedTimeFunc?(seconds)
+    }
+
+    /// PID of the app currently publishing now-playing info, used to show
+    /// which app the audio is coming from.
+    func nowPlayingApplicationPID(_ completion: @escaping (Int32) -> Void) {
+        guard let getApplicationPIDFunc else {
+            completion(0)
+            return
+        }
+        getApplicationPIDFunc(.main) { pid in
+            completion(pid)
+        }
     }
 }

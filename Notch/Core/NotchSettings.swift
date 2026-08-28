@@ -9,7 +9,9 @@ final class NotchSettings {
     static let shared = NotchSettings()
 
     var expandOnHover = true { didSet { save(expandOnHover, "expandOnHover") } }
-    var openDelay = 0.1 { didSet { save(openDelay, "openDelay") } }
+    /// Dwell required before a hover opens the notch. Long enough that
+    /// sweeping the pointer past the notch never triggers it.
+    var openDelay = 0.28 { didSet { save(openDelay, "openDelay") } }
     var closeDelay = 0.35 { didSet { save(closeDelay, "closeDelay") } }
 
     /// When on, dropped files go straight to AirDrop; when off they land on
@@ -27,8 +29,11 @@ final class NotchSettings {
     /// Show system volume changes as a HUD in the collapsed notch.
     var volumeHUDEnabled = true { didSet { save(volumeHUDEnabled, "volumeHUDEnabled") } }
 
-    /// Current conditions chip in the expanded header (Open-Meteo).
+    /// Current conditions in the dashboard (Open-Meteo).
     var showWeather = true { didSet { save(showWeather, "showWeather") } }
+
+    /// Show the numeric percentage beside the battery glyph.
+    var showBatteryPercentage = true { didSet { save(showBatteryPercentage, "showBatteryPercentage") } }
 
     var showMediaWings = true { didSet { save(showMediaWings, "showMediaWings") } }
 
@@ -86,6 +91,9 @@ final class NotchSettings {
         }
         if defaults.object(forKey: "showWeather") != nil {
             showWeather = defaults.bool(forKey: "showWeather")
+        }
+        if defaults.object(forKey: "showBatteryPercentage") != nil {
+            showBatteryPercentage = defaults.bool(forKey: "showBatteryPercentage")
         }
         if defaults.object(forKey: "sneakPeekEnabled") != nil {
             sneakPeekEnabled = defaults.bool(forKey: "sneakPeekEnabled")
