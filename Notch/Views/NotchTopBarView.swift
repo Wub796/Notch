@@ -27,7 +27,7 @@ struct NotchTopBarView: View {
     }
 
     private var leadingIcons: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             ForEach(NotchTab.allCases) { tab in
                 BareIconButton(
                     systemImage: tab.systemImage,
@@ -127,13 +127,13 @@ struct BareIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 12.5, weight: isActive ? .semibold : .regular))
+                .font(.system(size: 12, weight: isActive ? .semibold : .regular))
                 .foregroundStyle(
                     isActive
                         ? NotchTheme.inkPrimary
                         : NotchTheme.inkSecondary.opacity(hovering ? 1 : 0.7)
                 )
-                .frame(width: 22, height: 22)
+                .frame(width: 21, height: 21)
                 .contentShape(Rectangle())
                 .overlay(alignment: .topTrailing) {
                     if badge > 0 {

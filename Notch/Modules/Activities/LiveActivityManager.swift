@@ -7,10 +7,15 @@ import Observation
 enum LiveActivity: Equatable {
     case music
     case lyrics(line: String)
+    case timer(remaining: TimeInterval, progress: Double)
     case trackChange(title: String, artist: String)
     case meetingSoon(title: String, start: Date)
     case battery(percent: Int, charging: Bool, low: Bool)
     case screenLock(locked: Bool)
+    case focusMode(name: String, symbol: String)
+    case eyeBreak(active: Bool)
+    case desktopChange
+    case accessoryBattery(name: String, symbol: String, percent: Int)
     case volume(level: Float, muted: Bool)
 }
 
@@ -77,6 +82,39 @@ final class LiveActivityManager {
     func showTrackChange(title: String, artist: String) {
         guard NotchSettings.shared.sneakPeekEnabled, !title.isEmpty else { return }
         show(.trackChange(title: title, artist: artist), for: Self.sneakPeekDuration)
+    }
+
+    /// Focus mode changed (Do Not Disturb, Work, Sleep…).
+    func showFocusChange(name: String, symbol: String) {
+        guard NotchSettings.shared.liveActivitiesEnabled else { return }
+        show(.focusMode(name: name, symbol: symbol), for: Self.batteryEventDuration)
+    }
+
+    /// A Space switch.
+    func showDesktopChange() {
+        guard NotchSettings.shared.desktopChangeEnabled else { return }
+        show(.desktopChange, for: 1.1)
+    }
+
+    /// Eye break started or ended.
+    func showEyeBreak(active: Bool) {
+        show(.eyeBreak(active: active), for: active ? EyeBreakManager.breakDuration : 2.0)
+    }
+
+    /// A newly connected accessory reporting its battery.
+    func showAccessoryBattery(name: String, symbol: String, percent: Int) {
+        guard NotchSettings.shared.liveActivitiesEnabled else { return }
+        show(
+            .accessoryBattery(name: name, symbol: symbol, percent: percent),
+            for: Self.batteryEventDuration
+        )
+    }
+
+    /// Clears any transient activity immediately (used when a timer that owns
+    /// the notch is cancelled).
+    func clearTransient() {
+        dismissWork?.cancel()
+        transient = nil
     }
 
     private func handlePowerChange(_ snapshot: PowerMonitor.Snapshot) {

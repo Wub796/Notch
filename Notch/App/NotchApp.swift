@@ -51,6 +51,23 @@ struct NotchApp: App {
 
             Divider()
 
+            Button("Start 5-Minute Timer") {
+                appDelegate.state.timer.start(minutes: 5)
+            }
+            .disabled(appDelegate.state.timer.isRunning)
+
+            Button("Cancel Timer") {
+                appDelegate.state.timer.cancel()
+            }
+            .disabled(!appDelegate.state.timer.isRunning)
+
+            Toggle("Eye Break Reminders", isOn: Binding(
+                get: { appDelegate.state.eyeBreak.isEnabled },
+                set: { appDelegate.state.eyeBreak.setEnabled($0) }
+            ))
+
+            Divider()
+
             SettingsLink {
                 Text("Settings…")
             }

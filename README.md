@@ -213,6 +213,44 @@ Entitlements: `com.apple.security.app-sandbox = NO`,
 `com.apple.security.automation.apple-events = YES`,
 `com.apple.security.personal-information.calendars = YES`.
 
+## Sapphire feature parity
+
+Modules ported from [Sapphire](https://github.com/cshariq/Sapphire), rebuilt on
+public APIs:
+
+| Sapphire module | Status here |
+|---|---|
+| Notch shape, states, animation profiles | ✅ |
+| Music + synced lyrics + lyric live activity | ✅ |
+| Weather | ✅ Open-Meteo, reduced-accuracy location |
+| Calendar + meeting links | ✅ |
+| Battery / stats / energy | ✅ CPU, memory, battery, network |
+| File shelf + AirDrop | ✅ with Quick Look thumbnails |
+| Caffeinate (keep awake) | ✅ IOKit power assertion |
+| Clipboard manager | ✅ history, pinning, paste-back |
+| Notes | ✅ autosaving scratchpad |
+| Timer | ✅ with countdown live activity |
+| Eye break (20-20-20) | ✅ |
+| Focus mode detection | ✅ reads the DND database |
+| Bluetooth accessory battery | ✅ AirPods / mouse / keyboard via IORegistry |
+| Audio device switching | ✅ CoreAudio output picker |
+| Shortcuts runner | ✅ via the `shortcuts` CLI |
+| Desktop (Space) change | ✅ |
+| Volume / lock / sneak-peek HUDs | ✅ |
+| Nearby Share (NearDrop) | ❌ requires reimplementing Google's Quick Share protobuf protocol |
+| Launchpad replacement | ❌ separate full-screen app surface |
+| Lock screen replacement | ❌ private window levels + login-session hooks |
+| Menu bar management (spacing/hiding) | ❌ needs Accessibility control of the system menu bar |
+| Snap zones / window tiling | ❌ needs Accessibility API window control |
+| Multi-audio / per-app EQ | ❌ needs an audio HAL plugin |
+| DDC display / brightness control | ❌ needs I²C display access |
+| Face ID unlock | ❌ camera + biometric surface |
+| Gemini AI / Circle to Search | ❌ third-party AI service and API keys |
+| Sports / Finance widgets | ❌ (stubs in Sapphire too) |
+
+The unported items all need a privileged helper, a private framework, or a
+third-party service — deliberate omissions, not oversights.
+
 ## Monetization scaffold
 
 Settings → Pro contains a pricing pane (Free vs. Pro cards with a gradient

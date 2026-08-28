@@ -67,8 +67,17 @@ struct ExpandedNotchView: View {
         case .shelf:
             ShelfView(shelf: state.shelf)
                 .transition(.opacity)
+        case .clipboard:
+            ClipboardView(clipboard: state.clipboard)
+                .transition(.opacity)
         case .calendar:
             CalendarView(calendar: state.calendar)
+                .transition(.opacity)
+        case .tools:
+            ToolsView(state: state)
+                .transition(.opacity)
+        case .notes:
+            NotesView(notes: state.notes)
                 .transition(.opacity)
         case .telemetry:
             TelemetryView(telemetry: state.telemetry)

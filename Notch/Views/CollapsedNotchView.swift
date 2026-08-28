@@ -47,6 +47,32 @@ struct CollapsedNotchView: View {
                     notchWidth: state.notchSize.width,
                     locked: locked
                 )
+            case let .timer(remaining, progress):
+                TimerActivityView(
+                    notchWidth: state.notchSize.width,
+                    remaining: remaining,
+                    progress: progress
+                )
+            case let .focusMode(name, symbol):
+                FocusActivityView(
+                    notchWidth: state.notchSize.width,
+                    name: name,
+                    symbol: symbol
+                )
+            case let .eyeBreak(active):
+                EyeBreakActivityView(
+                    notchWidth: state.notchSize.width,
+                    active: active
+                )
+            case .desktopChange:
+                DesktopChangeActivityView(notchWidth: state.notchSize.width)
+            case let .accessoryBattery(name, symbol, percent):
+                AccessoryBatteryActivityView(
+                    notchWidth: state.notchSize.width,
+                    name: name,
+                    symbol: symbol,
+                    percent: percent
+                )
             case let .meetingSoon(title, start):
                 TimelineView(.everyMinute) { context in
                     MeetingActivityView(

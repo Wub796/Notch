@@ -152,10 +152,19 @@ private struct ActivitiesSettingsPane: View {
                 Toggle("Volume changes", isOn: $settings.volumeHUDEnabled)
                 Toggle("Weather on the dashboard", isOn: $settings.showWeather)
                 Toggle("Battery percentage beside the icon", isOn: $settings.showBatteryPercentage)
+                Toggle("Desktop switches", isOn: $settings.desktopChangeEnabled)
             } header: {
                 Text("Live activities")
             } footer: {
-                Text("All sources are event-driven — nothing polls in the background. Weather uses your approximate location via Open-Meteo. Monitor changes apply on next launch.")
+                Text("These sources are event-driven — nothing polls in the background. Weather uses your approximate location via Open-Meteo. Monitor changes apply on next launch.")
+            }
+
+            Section {
+                Toggle("Clipboard history", isOn: $settings.clipboardHistoryEnabled)
+            } header: {
+                Text("Clipboard")
+            } footer: {
+                Text("macOS provides no clipboard-change notification, so this is the one feature that polls (once a second while enabled). Items marked concealed by password managers are ignored, and only pinned items are written to disk.")
             }
 
             Section {

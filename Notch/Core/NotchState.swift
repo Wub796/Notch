@@ -14,7 +14,10 @@ enum NotchTab: String, CaseIterable, Identifiable {
     case home
     case media
     case shelf
+    case clipboard
     case calendar
+    case tools
+    case notes
     case telemetry
 
     var id: String { rawValue }
@@ -24,7 +27,10 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .home: "Home"
         case .media: "Media"
         case .shelf: "Shelf"
+        case .clipboard: "Clipboard"
         case .calendar: "Schedule"
+        case .tools: "Tools"
+        case .notes: "Notes"
         case .telemetry: "System"
         }
     }
@@ -34,7 +40,10 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .home: "square.grid.2x2.fill"
         case .media: "music.note"
         case .shelf: "tray.full"
+        case .clipboard: "doc.on.clipboard"
         case .calendar: "calendar"
+        case .tools: "slider.horizontal.3"
+        case .notes: "note.text"
         case .telemetry: "gauge.with.dots.needle.50percent"
         }
     }
@@ -59,16 +68,21 @@ final class NotchState {
     /// short, detail tabs are narrower and a little taller.
     var expandedSize: CGSize {
         switch tab {
+        // Widths never drop below 700: the icon strip has to fit in the wing
+        // beside the hardware notch, which is up to ~230pt wide itself.
         case .home: CGSize(width: 780, height: 150)
-        case .media: CGSize(width: 600, height: 208)
-        case .shelf: CGSize(width: 620, height: 190)
-        case .calendar: CGSize(width: 560, height: 214)
-        case .telemetry: CGSize(width: 700, height: 178)
+        case .media: CGSize(width: 700, height: 208)
+        case .shelf: CGSize(width: 700, height: 190)
+        case .clipboard: CGSize(width: 740, height: 190)
+        case .calendar: CGSize(width: 700, height: 214)
+        case .tools: CGSize(width: 740, height: 206)
+        case .notes: CGSize(width: 700, height: 200)
+        case .telemetry: CGSize(width: 720, height: 178)
         }
     }
 
     /// Largest slab any tab can request; the panel window is sized to this.
-    static let maxExpandedSize = CGSize(width: 780, height: 214)
+    static let maxExpandedSize = CGSize(width: 790, height: 220)
 
     /// Hover is only detected over the physical notch (plus a small margin),
     /// never over the full slab — a wide detection radius made the notch open
@@ -89,6 +103,16 @@ final class NotchState {
     let keepAwake = KeepAwakeController()
     let weather = WeatherService()
     let activities = LiveActivityManager()
+    let clipboard = ClipboardManager()
+    let notes = NotesManager()
+    let timer = TimerManager()
+    let eyeBreak = EyeBreakManager()
+    let shortcuts = ShortcutsManager()
+    let audio = AudioOutputManager()
+    let bluetooth = BluetoothBatteryMonitor()
+
+    private let focusMonitor = FocusModeMonitor()
+    private let desktopMonitor = DesktopChangeMonitor()
 
     private var pendingHoverWork: DispatchWorkItem?
     private var hoverStartedAt: Date?
@@ -109,6 +133,35 @@ final class NotchState {
         media.onTrackChange = { [weak self] track in
             self?.activities.showTrackChange(title: track.title, artist: track.artist)
         }
+
+        focusMonitor.onChange = { [weak self] mode in
+            guard let mode else {
+                self?.activities.showFocusChange(name: "Focus Off", symbol: "moon.zzz")
+                return
+            }
+            self?.activities.showFocusChange(name: mode.name, symbol: mode.symbolName)
+        }
+        focusMonitor.start()
+
+        desktopMonitor.onChange = { [weak self] in
+            self?.activities.showDesktopChange()
+        }
+        desktopMonitor.start()
+
+        eyeBreak.onBreakChange = { [weak self] active in
+            self?.activities.showEyeBreak(active: active)
+        }
+
+        timer.onFinished = { [weak self] in
+            self?.activities.clearTransient()
+        }
+
+        clipboard.start()
+    }
+
+    /// The focus mode currently active, for the dashboard.
+    var activeFocus: FocusModeMonitor.Mode? {
+        focusMonitor.activeMode
     }
 
     // MARK: - Live activity resolution
@@ -119,6 +172,10 @@ final class NotchState {
     var collapsedActivity: LiveActivity? {
         if let transient = activities.transient {
             return transient
+        }
+        // A running timer owns the notch until it finishes or is cancelled.
+        if timer.isRunning {
+            return .timer(remaining: timer.remaining, progress: timer.progress)
         }
         if settings.liveActivitiesEnabled, let event = calendar.upcomingSoon {
             return .meetingSoon(title: event.title, start: event.start)
@@ -139,10 +196,15 @@ final class NotchState {
         switch collapsedActivity {
         case .music: 120
         case .lyrics: 150
+        case .timer: 130
         case .trackChange: 240
         case .volume: 130
         case .battery: 116
         case .screenLock: 180
+        case .focusMode: 190
+        case .eyeBreak: 210
+        case .desktopChange: 150
+        case .accessoryBattery: 240
         case .meetingSoon: 260
         case nil: settings.showIdleFace ? 96 : 0
         }
@@ -276,10 +338,14 @@ final class NotchState {
         calendar.refresh()
         telemetry.start()
         weather.refresh()
+        audio.refresh()
+        bluetooth.start()
+        shortcuts.refresh()
     }
 
     private func sleepModules() {
         media.setActive(false)
         telemetry.stop()
+        bluetooth.stop()
     }
 }

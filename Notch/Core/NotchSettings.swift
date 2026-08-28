@@ -49,6 +49,17 @@ final class NotchSettings {
 
     /// Two-finger scroll over the notch opens/closes it.
     var scrollToExpand = true { didSet { save(scrollToExpand, "scrollToExpand") } }
+
+    /// Clipboard history. This is the only feature that polls (macOS has no
+    /// pasteboard-change notification), so it is separately switchable.
+    var clipboardHistoryEnabled = true {
+        didSet { save(clipboardHistoryEnabled, "clipboardHistoryEnabled") }
+    }
+
+    /// Announce Space switches in the notch.
+    var desktopChangeEnabled = true {
+        didSet { save(desktopChangeEnabled, "desktopChangeEnabled") }
+    }
     var fetchLyrics = true { didSet { save(fetchLyrics, "fetchLyrics") } }
     var hapticsEnabled = true { didSet { save(hapticsEnabled, "hapticsEnabled") } }
     var telemetryInterval = 2.0 { didSet { save(telemetryInterval, "telemetryInterval") } }
@@ -106,6 +117,12 @@ final class NotchSettings {
         }
         if defaults.object(forKey: "scrollToExpand") != nil {
             scrollToExpand = defaults.bool(forKey: "scrollToExpand")
+        }
+        if defaults.object(forKey: "clipboardHistoryEnabled") != nil {
+            clipboardHistoryEnabled = defaults.bool(forKey: "clipboardHistoryEnabled")
+        }
+        if defaults.object(forKey: "desktopChangeEnabled") != nil {
+            desktopChangeEnabled = defaults.bool(forKey: "desktopChangeEnabled")
         }
         if defaults.object(forKey: "fetchLyrics") != nil {
             fetchLyrics = defaults.bool(forKey: "fetchLyrics")

@@ -211,6 +211,132 @@ struct ScreenLockActivityView: View {
     }
 }
 
+/// Countdown timer running in the collapsed notch, with a progress ring.
+struct TimerActivityView: View {
+    let notchWidth: CGFloat
+    let remaining: TimeInterval
+    let progress: Double
+
+    var body: some View {
+        ActivityWingLayout(
+            notchWidth: notchWidth,
+            leading: ZStack {
+                Circle()
+                    .stroke(.white.opacity(0.18), lineWidth: 2)
+                Circle()
+                    .trim(from: 0, to: max(0.001, min(progress, 1)))
+                    .stroke(.orange, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: "timer")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.orange)
+            }
+            .frame(width: 17, height: 17)
+            .animation(NotchAnimations.activity, value: progress),
+            trailing: Text(TimerManager.timeString(remaining))
+                .font(.system(size: 12, weight: .bold).monospacedDigit())
+                .foregroundStyle(.orange)
+                .contentTransition(.numericText())
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Timer")
+        .accessibilityValue(TimerManager.timeString(remaining) + " remaining")
+    }
+}
+
+/// Focus mode turned on or off.
+struct FocusActivityView: View {
+    let notchWidth: CGFloat
+    let name: String
+    let symbol: String
+
+    var body: some View {
+        ActivityWingLayout(
+            notchWidth: notchWidth,
+            leading: Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.purple),
+            trailing: Text(name)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .lineLimit(1)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Focus")
+        .accessibilityValue(name)
+    }
+}
+
+/// The 20-20-20 eye break.
+struct EyeBreakActivityView: View {
+    let notchWidth: CGFloat
+    let active: Bool
+
+    var body: some View {
+        ActivityWingLayout(
+            notchWidth: notchWidth,
+            leading: Image(systemName: active ? "eye.fill" : "eye.slash.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(active ? NotchTheme.battery : NotchTheme.inkSecondary),
+            trailing: Text(active ? "Look 20 ft away" : "Break over")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .lineLimit(1)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(active ? "Eye break started" : "Eye break over")
+    }
+}
+
+/// A Space switch.
+struct DesktopChangeActivityView: View {
+    let notchWidth: CGFloat
+
+    var body: some View {
+        ActivityWingLayout(
+            notchWidth: notchWidth,
+            leading: Image(systemName: "macwindow.on.rectangle")
+                .font(.system(size: 12))
+                .foregroundStyle(NotchTheme.inkSecondary),
+            trailing: Text("Desktop")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Switched desktop")
+    }
+}
+
+/// A connected accessory reporting its battery level.
+struct AccessoryBatteryActivityView: View {
+    let notchWidth: CGFloat
+    let name: String
+    let symbol: String
+    let percent: Int
+
+    var body: some View {
+        ActivityWingLayout(
+            notchWidth: notchWidth,
+            leading: Image(systemName: symbol)
+                .font(.system(size: 13))
+                .foregroundStyle(NotchTheme.inkPrimary),
+            trailing: HStack(spacing: 5) {
+                Text(name)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: 74, alignment: .trailing)
+                Text("\(percent)%")
+                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                    .foregroundStyle(percent <= 20 ? .red : NotchTheme.battery)
+            }
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(name)
+        .accessibilityValue("\(percent) percent")
+    }
+}
+
 /// Shared wing layout: leading glyph, an exact reserved dead zone for the
 /// hardware notch (content under the camera housing is invisible), trailing
 /// readout. Both wings are equal flexible widths so the dead zone stays

@@ -36,10 +36,28 @@ struct HomeDashboardView: View {
                 )
                 .foregroundStyle(NotchTheme.inkPrimary)
 
-                Text(state.media.track?.artist ?? "Play something to see it here")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(NotchTheme.inkSecondary)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(state.media.track?.artist ?? "Play something to see it here")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(NotchTheme.inkSecondary)
+                        .lineLimit(1)
+
+                    // Active Focus rides alongside the artist line.
+                    if let focus = state.activeFocus {
+                        HStack(spacing: 3) {
+                            Image(systemName: focus.symbolName)
+                                .font(.system(size: 8))
+                            Text(focus.name)
+                                .font(.system(size: 8.5, weight: .semibold))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(.purple)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(Capsule().fill(.purple.opacity(0.16)))
+                        .accessibilityLabel("Focus: \(focus.name)")
+                    }
+                }
 
                 HStack(spacing: 16) {
                     miniTransport("backward.fill", label: "Previous track") {
