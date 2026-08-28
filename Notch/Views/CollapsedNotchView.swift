@@ -45,27 +45,34 @@ struct CollapsedNotchView: View {
         .frame(width: 20, height: 20)
         .clipShape(RoundedRectangle(cornerRadius: 4))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
+        .accessibilityHidden(true)
     }
 }
 
 /// Minimal four-bar equalizer shown in the right wing, tinted with the
-/// artwork accent; freezes at rest heights while paused.
+/// artwork accent; freezes at rest heights while paused. Purely decorative:
+/// hidden from accessibility, and held static under Reduce Motion.
 struct AudioBarsView: View {
     let isAnimating: Bool
     let tint: Color
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animate = false
 
     private let barHeights: [CGFloat] = [10, 16, 7, 13]
+
+    private var shouldAnimate: Bool {
+        isAnimating && !reduceMotion
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 2.5) {
             ForEach(barHeights.indices, id: \.self) { index in
                 Capsule()
                     .fill(tint)
-                    .frame(width: 2.5, height: animate ? barHeights[index] : 4)
+                    .frame(width: 2.5, height: barHeight(index))
                     .animation(
-                        isAnimating
+                        shouldAnimate
                             ? .easeInOut(duration: 0.45)
                                 .repeatForever(autoreverses: true)
                                 .delay(Double(index) * 0.12)
@@ -75,9 +82,16 @@ struct AudioBarsView: View {
             }
         }
         .frame(height: 16)
-        .onAppear { animate = isAnimating }
-        .onChange(of: isAnimating) { _, playing in
-            animate = playing
+        .accessibilityHidden(true)
+        .onAppear { animate = shouldAnimate }
+        .onChange(of: shouldAnimate) { _, animating in
+            animate = animating
         }
+    }
+
+    private func barHeight(_ index: Int) -> CGFloat {
+        if animate { return barHeights[index] }
+        // Reduce Motion while playing: hold mid heights instead of pulsing.
+        return isAnimating ? barHeights[index] * 0.6 : 4
     }
 }

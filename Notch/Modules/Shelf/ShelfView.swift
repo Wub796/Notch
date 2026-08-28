@@ -103,7 +103,7 @@ private struct ShelfItemCard: View {
                 .truncationMode(.middle)
 
             Text(item.detail)
-                .font(.system(size: 8.5))
+                .font(.system(size: 9.5))
                 .foregroundStyle(NotchTheme.inkMuted)
                 .lineLimit(1)
         }
@@ -128,6 +128,7 @@ private struct ShelfItemCard: View {
                 .buttonStyle(.plain)
                 .offset(x: 5, y: -5)
                 .transition(.opacity)
+                .accessibilityLabel("Remove \(item.name) from shelf")
             }
         }
         .onHover { isHovering in

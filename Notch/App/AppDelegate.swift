@@ -1,13 +1,15 @@
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var state: NotchState!
+    /// Root app state; exposed so the menu bar scene can drive commands
+    /// (open notch, play/pause, keep awake) against the same instance.
+    let state = NotchState()
+
     private var windowController: NotchWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        state = NotchState()
         attachToBestScreen()
 
         NotificationCenter.default.addObserver(

@@ -17,10 +17,12 @@ enum NotchTheme {
     static let network = Color(red: 2 / 255, green: 132 / 255, blue: 199 / 255) // #0284C7
 
     // MARK: Ink — text always wears these, never a series color
+    // Opacities are chosen so normal text stays ≥ 4.5:1 against the black
+    // glass (0.47 white on black ≈ 4.8:1).
 
     static let inkPrimary = Color.white
-    static let inkSecondary = Color.white.opacity(0.55)
-    static let inkMuted = Color.white.opacity(0.35)
+    static let inkSecondary = Color.white.opacity(0.62)
+    static let inkMuted = Color.white.opacity(0.47)
 
     // MARK: Surfaces
 

@@ -96,6 +96,9 @@ struct MediaPlayerView: View {
             }
             .buttonStyle(PressableButtonStyle())
             .hoverLift()
+            .disabled(!media.hasTrack)
+            .opacity(media.hasTrack ? 1 : 0.35)
+            .accessibilityLabel("Previous track")
 
             Button {
                 media.togglePlayPause()
@@ -112,6 +115,9 @@ struct MediaPlayerView: View {
             .buttonStyle(PressableButtonStyle())
             .hoverLift(1.05)
             .shadow(color: media.accent.opacity(0.35), radius: 10, y: 2)
+            .disabled(!media.hasTrack)
+            .opacity(media.hasTrack ? 1 : 0.35)
+            .accessibilityLabel(media.isPlaying ? "Pause" : "Play")
 
             Button {
                 media.nextTrack()
@@ -124,6 +130,9 @@ struct MediaPlayerView: View {
             }
             .buttonStyle(PressableButtonStyle())
             .hoverLift()
+            .disabled(!media.hasTrack)
+            .opacity(media.hasTrack ? 1 : 0.35)
+            .accessibilityLabel("Next track")
 
             Spacer()
         }
@@ -212,8 +221,14 @@ struct ScrubberBar: View {
                 Spacer()
                 Text(MediaPlayerView.timeString(duration))
             }
-            .font(.system(size: 9, weight: .medium).monospacedDigit())
+            .font(.system(size: 9.5, weight: .medium).monospacedDigit())
             .foregroundStyle(NotchTheme.inkMuted)
         }
+        .opacity(duration > 0 ? 1 : 0.4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Playback position")
+        .accessibilityValue(
+            "\(MediaPlayerView.timeString(elapsed)) of \(MediaPlayerView.timeString(duration))"
+        )
     }
 }

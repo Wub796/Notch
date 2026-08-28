@@ -12,11 +12,30 @@ struct CalendarView: View {
         Group {
             switch calendar.accessState {
             case .denied:
-                message(
-                    icon: "calendar.badge.exclamationmark",
-                    title: "Calendar access denied",
-                    subtitle: "Enable it in System Settings → Privacy & Security → Calendars"
-                )
+                VStack(spacing: 10) {
+                    message(
+                        icon: "calendar.badge.exclamationmark",
+                        title: "Calendar access denied",
+                        subtitle: "Notch needs calendar access to show your next 24 hours"
+                    )
+                    Button {
+                        if let url = URL(string:
+                            "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"
+                        ) {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        Text("Open Privacy Settings")
+                            .font(.system(size: 11, weight: .bold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(NotchTheme.surfaceHover))
+                            .foregroundStyle(NotchTheme.inkPrimary)
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                    .hoverLift(1.04)
+                    .padding(.bottom, 8)
+                }
             case .undetermined:
                 message(
                     icon: "calendar",
@@ -125,6 +144,7 @@ private struct EventRow: View {
                 }
                 .buttonStyle(PressableButtonStyle())
                 .hoverLift(1.05)
+                .accessibilityLabel("Join \(item.title)")
             }
         }
         .padding(.horizontal, 12)
@@ -152,7 +172,7 @@ private struct EventRow: View {
 
     private func chip(_ text: String, tint: Color) -> some View {
         Text(text)
-            .font(.system(size: 8.5, weight: .heavy).monospacedDigit())
+            .font(.system(size: 9, weight: .heavy).monospacedDigit())
             .foregroundStyle(tint)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)

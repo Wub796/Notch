@@ -43,7 +43,7 @@ struct LyricsView: View {
                                 size: isCurrent ? 13 : 11.5,
                                 weight: isCurrent ? .bold : .regular
                             ))
-                            .foregroundStyle(isCurrent ? accent : NotchTheme.inkPrimary.opacity(0.38))
+                            .foregroundStyle(isCurrent ? accent : NotchTheme.inkPrimary.opacity(0.5))
                             .fixedSize(horizontal: false, vertical: true)
                             .id(line.id)
                             .animation(.notchSpring, value: isCurrent)

@@ -55,6 +55,13 @@ final class NotchState {
 
     private var pendingHoverWork: DispatchWorkItem?
 
+    init() {
+        // Personalization: reopen on the tab the user last used.
+        if let restored = NotchTab(rawValue: settings.lastTab) {
+            tab = restored
+        }
+    }
+
     /// Collapsed width grows a pair of "wings" around the hardware notch when
     /// a track is loaded, to fit the mini artwork and the audio visualizer.
     var showsMediaWings: Bool {
@@ -124,6 +131,7 @@ final class NotchState {
         withAnimation(.notchSpring) {
             tab = newTab
         }
+        settings.lastTab = newTab.rawValue
     }
 
     // MARK: - Module lifecycle (zero background work while collapsed)

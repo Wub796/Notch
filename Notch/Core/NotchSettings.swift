@@ -21,6 +21,9 @@ final class NotchSettings {
     var hapticsEnabled = true { didSet { save(hapticsEnabled, "hapticsEnabled") } }
     var telemetryInterval = 2.0 { didSet { save(telemetryInterval, "telemetryInterval") } }
 
+    /// Raw value of the last tab the user opened; restored across launches.
+    var lastTab = "" { didSet { save(lastTab, "lastTab") } }
+
     var launchAtLogin = false { didSet { applyLaunchAtLogin() } }
 
     private var isApplyingLoginItem = false
@@ -51,6 +54,7 @@ final class NotchSettings {
         if defaults.object(forKey: "telemetryInterval") != nil {
             telemetryInterval = defaults.double(forKey: "telemetryInterval")
         }
+        lastTab = defaults.string(forKey: "lastTab") ?? ""
 
         // Login-item state lives in the system, not in defaults.
         isApplyingLoginItem = true

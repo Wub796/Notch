@@ -121,6 +121,29 @@ band, chroma, color-vision-deficiency separation, and 3:1 contrast. Every metric
 is identified by icon + direct label — never color alone — and values wear
 white/secondary ink, not series colors.
 
+### Accessibility & HIG conformance
+
+The UI was audited against the Apple Human Interface Guidelines (macOS) and the
+ui-ux-pro-max design ruleset:
+
+- **Reduce Motion** collapses every spring to a short ease and freezes the
+  equalizer; auto-animating content never pulses under the setting.
+- **Contrast**: ink tokens keep normal text ≥ 4.5:1 on the black glass
+  (muted ink is 47% white ≈ 4.8:1); no text below 9pt.
+- **VoiceOver**: every icon-only control has an accessibility label; gauges,
+  stat tiles, the scrubber, and the battery pill announce label + value as
+  single elements; decorative artwork/equalizer/sparkline are hidden.
+- **Menu bar commands** (HIG): open/close notch (⌥⌘N), play/pause (⌥⌘P),
+  next/previous track, keep-awake toggle, AirDrop shelf — all functional
+  without touching the notch, with disabled states when inapplicable.
+- **Motion**: tab content exits with a plain fade and enters with the glass
+  settle (exit faster than enter); transport controls dim and disable when
+  no track is loaded.
+- **Personalization** (HIG): the notch reopens on the last-used tab; hover
+  delays, modules, and behaviors are configurable in Settings.
+- Actionable empty states: calendar-denied links straight to
+  Privacy & Security → Calendars.
+
 ### Zero-impact collapsed state
 
 All periodic work is gated on expansion:

@@ -60,6 +60,12 @@ struct NotchHeaderView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(Capsule().fill(NotchTheme.surface))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Battery")
+        .accessibilityValue(
+            "\(Int((state.telemetry.batteryPercent * 100).rounded())) percent"
+            + (state.telemetry.isCharging ? ", charging" : "")
+        )
     }
 
     private func headerButton(
@@ -81,5 +87,6 @@ struct NotchHeaderView: View {
         .buttonStyle(PressableButtonStyle())
         .hoverLift(1.1)
         .help(help)
+        .accessibilityLabel(help)
     }
 }

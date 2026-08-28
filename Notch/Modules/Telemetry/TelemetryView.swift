@@ -99,10 +99,13 @@ struct TelemetryView: View {
                     .contentTransition(.numericText())
                     .animation(.notchSpring, value: value)
                 Text(label)
-                    .font(.system(size: 9.5))
+                    .font(.system(size: 10))
                     .foregroundStyle(NotchTheme.inkSecondary)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
     }
 
     private func percentString(_ fraction: Double) -> String {
@@ -157,6 +160,9 @@ struct CircularGaugeView: View {
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(NotchTheme.inkSecondary)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(detail)
     }
 }
 
@@ -190,6 +196,7 @@ struct SparklineView: View {
                 }
             }
         }
+        .accessibilityHidden(true)
     }
 
     private static func points(for values: [Double], in size: CGSize) -> [CGPoint] {

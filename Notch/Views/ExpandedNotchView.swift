@@ -61,7 +61,7 @@ struct ExpandedNotchView: View {
                         .overlay(alignment: .topTrailing) {
                             if tab == .shelf, state.shelf.items.count > 0 {
                                 Text("\(state.shelf.items.count)")
-                                    .font(.system(size: 8, weight: .heavy).monospacedDigit())
+                                    .font(.system(size: 9, weight: .heavy).monospacedDigit())
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 1.5)
@@ -77,21 +77,28 @@ struct ExpandedNotchView: View {
         .animation(.notchSpring, value: state.tab)
     }
 
+    /// Content enters with the frosted glass settle and exits with a plain
+    /// fade, so outgoing views clear faster than incoming ones arrive.
+    private static let tabTransition = AnyTransition.asymmetric(
+        insertion: .glass,
+        removal: .opacity
+    )
+
     @ViewBuilder
     private var content: some View {
         switch state.tab {
         case .media:
             MediaPlayerView(media: state.media, namespace: namespace)
-                .transition(.glass)
+                .transition(Self.tabTransition)
         case .shelf:
             ShelfView(shelf: state.shelf)
-                .transition(.glass)
+                .transition(Self.tabTransition)
         case .calendar:
             CalendarView(calendar: state.calendar)
-                .transition(.glass)
+                .transition(Self.tabTransition)
         case .telemetry:
             TelemetryView(telemetry: state.telemetry)
-                .transition(.glass)
+                .transition(Self.tabTransition)
         }
     }
 }
