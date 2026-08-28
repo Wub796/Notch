@@ -26,7 +26,35 @@ final class CalendarController {
     private(set) var accessState: AccessState = .undetermined
     private(set) var items: [ScheduleItem] = []
 
+    /// The next event starting within the live-activity window, published in
+    /// the collapsed notch wings.
+    private(set) var upcomingSoon: ScheduleItem?
+
     private let store = EKEventStore()
+    private var upcomingWork: [DispatchWorkItem] = []
+    private static let upcomingWindow: TimeInterval = 15 * 60
+    private static let upcomingGrace: TimeInterval = 5 * 60
+
+    init() {
+        // Wake on external calendar edits so the timeline and the
+        // meeting-soon activity stay correct without polling.
+        NotificationCenter.default.addObserver(
+            forName: .EKEventStoreChanged, object: store, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.accessState == .granted else { return }
+            self.loadEvents()
+        }
+    }
+
+    /// If access was granted in an earlier launch, load immediately so the
+    /// meeting-soon activity works before the notch is ever expanded.
+    func bootstrapIfAuthorized() {
+        guard accessState == .undetermined,
+              EKEventStore.authorizationStatus(for: .event) == .fullAccess
+        else { return }
+        accessState = .granted
+        loadEvents()
+    }
 
     private static let meetingHosts = [
         "zoom.us",
@@ -82,6 +110,59 @@ final class CalendarController {
                 meetingURL: Self.detectMeetingURL(in: event)
             )
         }
+
+        armUpcomingWatch()
+    }
+
+    // MARK: - Meeting-soon live activity
+
+    /// One-shot timers (not polling) that raise/lower the meeting-soon
+    /// activity: show at start − 15 min, clear at start + 5 min, then re-arm
+    /// for the following event.
+    private func armUpcomingWatch() {
+        guard NotchSettings.shared.liveActivitiesEnabled else {
+            upcomingSoon = nil
+            return
+        }
+
+        upcomingWork.forEach { $0.cancel() }
+        upcomingWork.removeAll()
+
+        let now = Date()
+        let candidate = items.first {
+            !$0.isAllDay && $0.start.timeIntervalSince(now) > -Self.upcomingGrace
+        }
+
+        guard let event = candidate else {
+            upcomingSoon = nil
+            return
+        }
+
+        let showAt = event.start.addingTimeInterval(-Self.upcomingWindow)
+        let clearAt = event.start.addingTimeInterval(Self.upcomingGrace)
+
+        if now >= showAt {
+            upcomingSoon = event
+        } else {
+            upcomingSoon = nil
+            schedule(at: showAt) { [weak self] in
+                self?.upcomingSoon = event
+            }
+        }
+
+        schedule(at: clearAt) { [weak self] in
+            self?.upcomingSoon = nil
+            self?.loadEvents()
+        }
+    }
+
+    private func schedule(at date: Date, _ action: @escaping () -> Void) {
+        let work = DispatchWorkItem(block: action)
+        upcomingWork.append(work)
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + max(date.timeIntervalSinceNow, 0),
+            execute: work
+        )
     }
 
     // MARK: - Meeting link detection

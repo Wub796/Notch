@@ -26,8 +26,20 @@ live lyrics, a file shelf, your next 24 hours of events, and hardware telemetry.
 - **Settings** — launch at login (SMAppService), hover-vs-click expansion with
   tunable delays, haptics, media wings, lyrics fetching, instant AirDrop,
   telemetry refresh rate.
-- **Collapsed wings** — mini artwork + an accent-tinted equalizer hug the hardware
-  notch while a track is loaded.
+- **Live Activities** (Sapphire-inspired) — the collapsed notch grows wings for
+  whatever matters right now, by priority: a **volume HUD** (CoreAudio listener)
+  when you change the system volume, a **battery event** when you plug/unplug or
+  cross 10%, a **meeting-soon countdown** starting 15 minutes before your next
+  event, and otherwise the now-playing artwork + equalizer. Every source is
+  push-based — no polling while collapsed.
+- **Hover peek** — hovering scales the closed pill 1.10× (Sapphire's signature
+  affordance) before a click or hover-linger springs it fully open; corner radii
+  step 10 → 18 → 32 with the state.
+- **Weather** — current conditions chip in the header via keyless Open-Meteo with
+  reduced-accuracy location, cached 30 minutes, fetched only on expand.
+- **Animation profiles** — Snappy / Bouncy / Calm personalities with distinct
+  springs per gesture (overshooting expand, hard-settling collapse, quick hover,
+  fully damped content), adapted from Sapphire's animation tables.
 - Haptic feedback (trackpads) on expand/collapse, drops, and the keep-awake toggle.
 
 ## Building

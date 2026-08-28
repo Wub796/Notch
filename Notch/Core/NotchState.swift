@@ -1,8 +1,12 @@
 import SwiftUI
 import Observation
 
+/// Sapphire-style three-state interaction: hovering the notch makes it
+/// "peek" (a subtle 1.10× grow), and a click — or a hover linger, when
+/// enabled — springs it fully open.
 enum NotchMode: Equatable {
     case collapsed
+    case peek
     case expanded
 }
 
@@ -35,7 +39,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
 
 /// Root observable state for the notch UI. Owns every feature module and
 /// starts/stops their polling so the app does no periodic work while the
-/// notch is collapsed.
+/// notch is collapsed — the live-activity sources are all push-based.
 @Observable
 final class NotchState {
     var mode: NotchMode = .collapsed
@@ -46,12 +50,17 @@ final class NotchState {
     var notchSize: CGSize = NotchGeometry.fallbackSize
     let expandedSize = CGSize(width: 670, height: 310)
 
+    /// Hover peek grows the closed pill by this factor (Sapphire's scale).
+    static let peekScale: CGFloat = 1.10
+
     let settings = NotchSettings.shared
     let media = MediaController()
     let calendar = CalendarController()
     let telemetry = TelemetryController()
     let shelf = ShelfController()
     let keepAwake = KeepAwakeController()
+    let weather = WeatherService()
+    let activities = LiveActivityManager()
 
     private var pendingHoverWork: DispatchWorkItem?
 
@@ -60,67 +69,125 @@ final class NotchState {
         if let restored = NotchTab(rawValue: settings.lastTab) {
             tab = restored
         }
+        // Event-driven collapsed-notch features.
+        activities.start()
+        calendar.bootstrapIfAuthorized()
     }
 
-    /// Collapsed width grows a pair of "wings" around the hardware notch when
-    /// a track is loaded, to fit the mini artwork and the audio visualizer.
-    var showsMediaWings: Bool {
-        media.hasTrack && settings.showMediaWings
+    // MARK: - Live activity resolution
+
+    /// What the collapsed/peek notch is currently showing, by priority:
+    /// transient HUD events, then an imminent meeting, then now-playing.
+    var collapsedActivity: LiveActivity? {
+        if let transient = activities.transient {
+            return transient
+        }
+        if settings.liveActivitiesEnabled, let event = calendar.upcomingSoon {
+            return .meetingSoon(title: event.title, start: event.start)
+        }
+        if media.hasTrack, settings.showMediaWings {
+            return .music
+        }
+        return nil
+    }
+
+    /// Wing width added around the hardware notch for the active activity.
+    private var activityWingWidth: CGFloat {
+        switch collapsedActivity {
+        case .music: 120
+        case .volume: 130
+        case .battery: 116
+        case .meetingSoon: 190
+        case nil: 0
+        }
     }
 
     var collapsedSize: CGSize {
         var size = notchSize
-        if showsMediaWings {
-            size.width += 120
-        }
+        size.width += activityWingWidth
         return size
     }
 
     var currentSize: CGSize {
-        mode == .expanded ? expandedSize : collapsedSize
+        switch mode {
+        case .collapsed:
+            return collapsedSize
+        case .peek:
+            return CGSize(
+                width: collapsedSize.width * Self.peekScale,
+                height: collapsedSize.height * Self.peekScale
+            )
+        case .expanded:
+            return expandedSize
+        }
+    }
+
+    /// Corner radius per state (Sapphire's closed/hover/click values).
+    var cornerRadius: CGFloat {
+        switch mode {
+        case .collapsed: 10
+        case .peek: 18
+        case .expanded: 32
+        }
     }
 
     // MARK: - Hover / expansion
 
     func hoverChanged(_ hovering: Bool) {
-        // Hover can only open the notch when the preference allows it;
-        // hover-out always closes, however it was opened.
-        if hovering, !settings.expandOnHover, mode == .collapsed {
-            return
-        }
-
         pendingHoverWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            hovering ? self?.expand() : self?.collapse()
+
+        if hovering {
+            if mode == .collapsed {
+                withAnimation(NotchAnimations.hover) {
+                    mode = .peek
+                }
+            }
+            // Linger past the open delay to expand fully (when enabled).
+            guard settings.expandOnHover, mode == .peek else { return }
+            let work = DispatchWorkItem { [weak self] in
+                self?.expand()
+            }
+            pendingHoverWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + settings.openDelay, execute: work)
+        } else {
+            switch mode {
+            case .peek:
+                withAnimation(NotchAnimations.hover) {
+                    mode = .collapsed
+                }
+            case .expanded:
+                let work = DispatchWorkItem { [weak self] in
+                    self?.collapse()
+                }
+                pendingHoverWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + settings.closeDelay, execute: work)
+            case .collapsed:
+                break
+            }
         }
-        pendingHoverWork = work
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + (hovering ? settings.openDelay : settings.closeDelay),
-            execute: work
-        )
     }
 
-    /// Click-to-open, used when hover expansion is disabled (and harmless
-    /// alongside it).
+    /// Click always opens fully, from collapsed or peek.
     func handleTap() {
-        if mode == .collapsed {
+        if mode != .expanded {
             expand()
         }
     }
 
     func expand() {
         guard mode != .expanded else { return }
+        pendingHoverWork?.cancel()
         NotchTheme.Haptics.alignment()
-        withAnimation(.notchSpring) {
+        withAnimation(NotchAnimations.expand) {
             mode = .expanded
         }
         wakeModules()
     }
 
     func collapse() {
-        guard mode != .collapsed else { return }
+        guard mode == .expanded else { return }
         NotchTheme.Haptics.alignment()
-        withAnimation(.notchSpring) {
+        withAnimation(NotchAnimations.collapse) {
             mode = .collapsed
             isDropTargeted = false
         }
@@ -128,7 +195,7 @@ final class NotchState {
     }
 
     func select(_ newTab: NotchTab) {
-        withAnimation(.notchSpring) {
+        withAnimation(NotchAnimations.content) {
             tab = newTab
         }
         settings.lastTab = newTab.rawValue
@@ -140,6 +207,7 @@ final class NotchState {
         media.setActive(true)
         calendar.refresh()
         telemetry.start()
+        weather.refresh()
     }
 
     private func sleepModules() {

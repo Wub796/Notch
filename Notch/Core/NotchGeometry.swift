@@ -13,16 +13,22 @@ struct NotchGeometry {
     }
 
     /// Exact hardware notch size: height from the safe area inset, width from
-    /// the gap between the two auxiliary menu bar areas.
+    /// the gap between the two auxiliary menu bar areas plus a small bleed so
+    /// the drawn pill fully covers the camera housing. Displays without a
+    /// notch simulate one at menu bar height.
     var notchSize: CGSize {
         let topInset = screen.safeAreaInsets.top
         guard topInset > 0,
               let leftArea = screen.auxiliaryTopLeftArea,
               let rightArea = screen.auxiliaryTopRightArea
         else {
-            return Self.fallbackSize
+            let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
+            return CGSize(
+                width: Self.fallbackSize.width,
+                height: menuBarHeight > 0 ? menuBarHeight : Self.fallbackSize.height
+            )
         }
-        let width = screen.frame.width - leftArea.width - rightArea.width
+        let width = screen.frame.width - leftArea.width - rightArea.width + 4
         return CGSize(width: width, height: topInset)
     }
 

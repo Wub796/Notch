@@ -21,6 +21,10 @@ struct NotchHeaderView: View {
 
                 Spacer()
 
+                if let weather = state.weather.snapshot {
+                    weatherChip(weather)
+                }
+
                 if state.telemetry.hasBattery {
                     batteryPill
                 }
@@ -45,6 +49,23 @@ struct NotchHeaderView: View {
             }
         }
         .frame(height: 20)
+    }
+
+    private func weatherChip(_ weather: WeatherService.Snapshot) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: WeatherService.symbol(for: weather.weatherCode, isDay: weather.isDay))
+                .font(.system(size: 10, weight: .semibold))
+                .symbolRenderingMode(.multicolor)
+            Text(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
+                .font(.system(size: 10, weight: .bold).monospacedDigit())
+                .foregroundStyle(NotchTheme.inkPrimary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(NotchTheme.surface))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Weather")
+        .accessibilityValue(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
     }
 
     private var batteryPill: some View {

@@ -1,16 +1,15 @@
 import SwiftUI
 
 /// Root SwiftUI view hosted in the panel. Renders the morphing notch body,
-/// top-anchored so it grows downward out of the hardware notch.
+/// top-anchored so it grows downward out of the hardware notch. Three visual
+/// states: closed pill, hover peek (1.10×), and the full glass panel.
 struct NotchContainerView: View {
     let state: NotchState
 
     @Namespace private var notchNamespace
 
     private var shape: NotchShape {
-        state.mode == .expanded
-            ? NotchShape(topRadius: 14, bottomRadius: 24)
-            : NotchShape()
+        NotchShape(cornerRadius: state.cornerRadius)
     }
 
     var body: some View {
@@ -59,7 +58,11 @@ struct NotchContainerView: View {
                 )
             }
         }
-        .shadow(color: .black.opacity(state.mode == .expanded ? 0.55 : 0), radius: 20, y: 8)
+        .shadow(
+            color: .black.opacity(state.mode == .expanded ? 0.55 : (state.mode == .peek ? 0.3 : 0)),
+            radius: state.mode == .expanded ? 20 : 8,
+            y: state.mode == .expanded ? 8 : 3
+        )
         .onHover { hovering in
             state.hoverChanged(hovering)
         }
@@ -70,7 +73,7 @@ struct NotchContainerView: View {
             of: ShelfController.acceptedTypes,
             delegate: NotchDropDelegate(state: state)
         )
-        .animation(.notchSpring, value: state.mode)
-        .animation(.notchSpring, value: state.showsMediaWings)
+        .animation(NotchAnimations.forMode(state.mode), value: state.mode)
+        .animation(NotchAnimations.activity, value: state.collapsedActivity)
     }
 }

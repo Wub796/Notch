@@ -16,6 +16,20 @@ final class NotchSettings {
     /// the shelf first.
     var instantAirDrop = false { didSet { save(instantAirDrop, "instantAirDrop") } }
 
+    /// Animation personality: snappy / bouncy / calm.
+    var animationProfile = AnimationProfile.snappy.rawValue {
+        didSet { save(animationProfile, "animationProfile") }
+    }
+
+    /// Battery plug/unplug and meeting-soon activities in the collapsed notch.
+    var liveActivitiesEnabled = true { didSet { save(liveActivitiesEnabled, "liveActivitiesEnabled") } }
+
+    /// Show system volume changes as a HUD in the collapsed notch.
+    var volumeHUDEnabled = true { didSet { save(volumeHUDEnabled, "volumeHUDEnabled") } }
+
+    /// Current conditions chip in the expanded header (Open-Meteo).
+    var showWeather = true { didSet { save(showWeather, "showWeather") } }
+
     var showMediaWings = true { didSet { save(showMediaWings, "showMediaWings") } }
     var fetchLyrics = true { didSet { save(fetchLyrics, "fetchLyrics") } }
     var hapticsEnabled = true { didSet { save(hapticsEnabled, "hapticsEnabled") } }
@@ -44,6 +58,18 @@ final class NotchSettings {
         }
         if defaults.object(forKey: "showMediaWings") != nil {
             showMediaWings = defaults.bool(forKey: "showMediaWings")
+        }
+        if let profile = defaults.string(forKey: "animationProfile") {
+            animationProfile = profile
+        }
+        if defaults.object(forKey: "liveActivitiesEnabled") != nil {
+            liveActivitiesEnabled = defaults.bool(forKey: "liveActivitiesEnabled")
+        }
+        if defaults.object(forKey: "volumeHUDEnabled") != nil {
+            volumeHUDEnabled = defaults.bool(forKey: "volumeHUDEnabled")
+        }
+        if defaults.object(forKey: "showWeather") != nil {
+            showWeather = defaults.bool(forKey: "showWeather")
         }
         if defaults.object(forKey: "fetchLyrics") != nil {
             fetchLyrics = defaults.bool(forKey: "fetchLyrics")

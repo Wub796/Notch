@@ -1,27 +1,43 @@
 import AppKit
 import SwiftUI
 
-/// Collapsed state: pure black, exactly the hardware notch — plus small
-/// "wings" with mini artwork and an accent-tinted audio visualizer while a
-/// track is loaded.
+/// Collapsed and peek states: pure black, hugging the hardware notch, with
+/// live-activity wings — now playing, a volume HUD, battery events, or an
+/// imminent meeting — appearing around the camera housing.
 struct CollapsedNotchView: View {
     let state: NotchState
     let namespace: Namespace.ID
 
     var body: some View {
-        HStack(spacing: 0) {
-            if state.showsMediaWings {
-                miniArtwork
-                    .padding(.leading, 12)
+        ZStack {
+            switch state.collapsedActivity {
+            case .music:
+                musicWings
+            case let .volume(level, muted):
+                VolumeActivityView(level: level, muted: muted)
+            case let .battery(percent, charging, low):
+                BatteryActivityView(percent: percent, charging: charging, low: low)
+            case let .meetingSoon(title, start):
+                TimelineView(.everyMinute) { context in
+                    MeetingActivityView(title: title, start: start, now: context.date)
+                }
+            case nil:
+                Color.clear
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var musicWings: some View {
+        HStack(spacing: 0) {
+            miniArtwork
+                .padding(.leading, 12)
 
             // The dead zone occupied by the physical notch hardware.
             Spacer(minLength: 0)
 
-            if state.showsMediaWings {
-                AudioBarsView(isAnimating: state.media.isPlaying, tint: state.media.accent)
-                    .padding(.trailing, 14)
-            }
+            AudioBarsView(isAnimating: state.media.isPlaying, tint: state.media.accent)
+                .padding(.trailing, 14)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

@@ -9,6 +9,20 @@ struct SettingsView: View {
             Section("General") {
                 Toggle("Launch at login", isOn: $settings.launchAtLogin)
                 Toggle("Haptic feedback", isOn: $settings.hapticsEnabled)
+                Picker("Animation style", selection: $settings.animationProfile) {
+                    ForEach(AnimationProfile.allCases) { profile in
+                        Text(profile.title).tag(profile.rawValue)
+                    }
+                }
+            }
+
+            Section("Live activities") {
+                Toggle("Battery and meeting alerts around the notch", isOn: $settings.liveActivitiesEnabled)
+                Toggle("Show volume changes in the notch", isOn: $settings.volumeHUDEnabled)
+                Toggle("Weather in the header", isOn: $settings.showWeather)
+                Text("Activity sources are event-driven — they add no background polling. Weather uses your approximate location via Open-Meteo. Changes to monitors apply on next launch.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Expansion") {
@@ -70,6 +84,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 440, height: 540)
+        .frame(width: 440, height: 620)
     }
 }
