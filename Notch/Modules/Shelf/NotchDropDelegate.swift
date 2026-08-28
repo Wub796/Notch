@@ -2,13 +2,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Drop target for the whole notch surface. Dragging anything over the
-/// collapsed notch springs it open into the AirDrop zone; releasing hands the
-/// items straight to the AirDrop sharing service.
+/// collapsed notch springs it open into the drop zone; releasing shelves the
+/// items (or AirDrops immediately, per settings).
 struct NotchDropDelegate: DropDelegate {
     let state: NotchState
 
     func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: AirDropController.acceptedTypes)
+        info.hasItemsConforming(to: ShelfController.acceptedTypes)
     }
 
     func dropEntered(info: DropInfo) {
@@ -32,9 +32,16 @@ struct NotchDropDelegate: DropDelegate {
         withAnimation(.notchSpring) {
             state.isDropTargeted = false
         }
-        let providers = info.itemProviders(for: AirDropController.acceptedTypes)
+        let providers = info.itemProviders(for: ShelfController.acceptedTypes)
         guard !providers.isEmpty else { return false }
-        state.airDrop.share(providers)
+
+        NotchTheme.Haptics.generic()
+        state.shelf.handleDrop(providers) { accepted in
+            // Land the user on the shelf so they see their items arrive.
+            if accepted > 0, !NotchSettings.shared.instantAirDrop {
+                state.select(.shelf)
+            }
+        }
         return true
     }
 }

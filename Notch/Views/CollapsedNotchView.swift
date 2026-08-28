@@ -2,14 +2,15 @@ import AppKit
 import SwiftUI
 
 /// Collapsed state: pure black, exactly the hardware notch — plus small
-/// "wings" with mini artwork and an audio visualizer while media plays.
+/// "wings" with mini artwork and an accent-tinted audio visualizer while a
+/// track is loaded.
 struct CollapsedNotchView: View {
     let state: NotchState
     let namespace: Namespace.ID
 
     var body: some View {
         HStack(spacing: 0) {
-            if state.media.hasActiveTrack {
+            if state.showsMediaWings {
                 miniArtwork
                     .padding(.leading, 12)
             }
@@ -17,8 +18,8 @@ struct CollapsedNotchView: View {
             // The dead zone occupied by the physical notch hardware.
             Spacer(minLength: 0)
 
-            if state.media.hasActiveTrack {
-                AudioBarsView(isAnimating: state.media.isPlaying)
+            if state.showsMediaWings {
+                AudioBarsView(isAnimating: state.media.isPlaying, tint: state.media.accent)
                     .padding(.trailing, 14)
             }
         }
@@ -33,11 +34,11 @@ struct CollapsedNotchView: View {
                     .aspectRatio(contentMode: .fill)
             } else {
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(.white.opacity(0.15))
+                    .fill(NotchTheme.surfaceHover)
                     .overlay {
                         Image(systemName: "music.note")
                             .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.6))
+                            .foregroundStyle(NotchTheme.inkSecondary)
                     }
             }
         }
@@ -47,9 +48,11 @@ struct CollapsedNotchView: View {
     }
 }
 
-/// Minimal three-bar equalizer shown in the right wing while audio plays.
+/// Minimal four-bar equalizer shown in the right wing, tinted with the
+/// artwork accent; freezes at rest heights while paused.
 struct AudioBarsView: View {
     let isAnimating: Bool
+    let tint: Color
 
     @State private var animate = false
 
@@ -59,7 +62,7 @@ struct AudioBarsView: View {
         HStack(alignment: .center, spacing: 2.5) {
             ForEach(barHeights.indices, id: \.self) { index in
                 Capsule()
-                    .fill(.green)
+                    .fill(tint)
                     .frame(width: 2.5, height: animate ? barHeights[index] : 4)
                     .animation(
                         isAnimating

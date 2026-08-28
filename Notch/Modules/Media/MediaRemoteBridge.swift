@@ -38,11 +38,14 @@ final class MediaRemoteBridge {
         @convention(c) (DispatchQueue) -> Void
     private typealias SendCommandFunc =
         @convention(c) (Int32, CFDictionary?) -> Bool
+    private typealias SetElapsedTimeFunc =
+        @convention(c) (Double) -> Void
 
     private var getNowPlayingInfoFunc: GetNowPlayingInfoFunc?
     private var getIsPlayingFunc: GetIsPlayingFunc?
     private var registerNotificationsFunc: RegisterNotificationsFunc?
     private var sendCommandFunc: SendCommandFunc?
+    private var setElapsedTimeFunc: SetElapsedTimeFunc?
 
     let isAvailable: Bool
 
@@ -64,8 +67,13 @@ final class MediaRemoteBridge {
         getIsPlayingFunc = symbol("MRMediaRemoteGetNowPlayingApplicationIsPlaying", as: GetIsPlayingFunc.self)
         registerNotificationsFunc = symbol("MRMediaRemoteRegisterForNowPlayingNotifications", as: RegisterNotificationsFunc.self)
         sendCommandFunc = symbol("MRMediaRemoteSendCommand", as: SendCommandFunc.self)
+        setElapsedTimeFunc = symbol("MRMediaRemoteSetElapsedTime", as: SetElapsedTimeFunc.self)
 
         isAvailable = getNowPlayingInfoFunc != nil && registerNotificationsFunc != nil
+    }
+
+    var canSeek: Bool {
+        setElapsedTimeFunc != nil
     }
 
     /// Starts delivery of the now-playing notifications to the default
@@ -97,5 +105,9 @@ final class MediaRemoteBridge {
     @discardableResult
     func send(_ command: Command) -> Bool {
         sendCommandFunc?(command.rawValue, nil) ?? false
+    }
+
+    func setElapsedTime(_ seconds: Double) {
+        setElapsedTimeFunc?(seconds)
     }
 }

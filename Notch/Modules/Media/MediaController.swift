@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import SwiftUI
 
 /// System-wide now-playing state. Primary source is MediaRemote (push-based
 /// notifications, zero polling while collapsed); when that is unavailable it
@@ -18,6 +19,11 @@ final class MediaController {
     private(set) var artwork: NSImage?
     private(set) var isPlaying = false
 
+    /// Legible accent derived from the current artwork; tints the scrubber,
+    /// play button, lyrics highlight, and the collapsed equalizer.
+    private(set) var accent: Color = .white
+    private var accentSourceHash: Int?
+
     /// Elapsed seconds at `anchorDate`; the live position is extrapolated so
     /// no timer is needed to keep it accurate.
     private var elapsedAnchor: TimeInterval = 0
@@ -34,8 +40,8 @@ final class MediaController {
     private var fallbackTimer: Timer?
     private var isActive = false
 
-    var hasActiveTrack: Bool {
-        track != nil && isPlaying
+    var hasTrack: Bool {
+        track != nil
     }
 
     var currentElapsed: TimeInterval {
@@ -120,6 +126,23 @@ final class MediaController {
         }
     }
 
+    /// Jumps playback to an absolute position (scrubber drag or lyric tap).
+    func seek(to seconds: TimeInterval) {
+        let upperBound = (track?.duration ?? 0) > 0 ? track!.duration : seconds
+        let clamped = max(0, min(seconds, upperBound))
+
+        elapsedAnchor = clamped
+        anchorDate = Date()
+        displayedElapsed = clamped
+        lyrics.updateCurrentLine(for: clamped)
+
+        if bridge.isAvailable, bridge.canSeek {
+            bridge.setElapsedTime(clamped)
+        } else {
+            runMusicCommand("set player position to \(Int(clamped))")
+        }
+    }
+
     // MARK: - MediaRemote source
 
     private func refreshFromMediaRemote() {
@@ -164,24 +187,49 @@ final class MediaController {
 
         if let data = info[MediaRemoteBridge.InfoKey.artworkData] as? Data {
             artwork = NSImage(data: data)
+            updateAccentIfNeeded(for: data)
         }
 
         updateTrackIfChanged(newTrack)
+    }
+
+    /// Extracts the artwork accent off the main thread, once per unique image.
+    private func updateAccentIfNeeded(for artworkData: Data) {
+        let hash = artworkData.hashValue
+        guard hash != accentSourceHash else { return }
+        accentSourceHash = hash
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let image = NSImage(data: artworkData) else { return }
+            let color = NotchTheme.accent(from: image)
+            DispatchQueue.main.async {
+                guard let self, self.accentSourceHash == hash else { return }
+                withAnimation(.notchSpring) {
+                    self.accent = color
+                }
+            }
+        }
     }
 
     private func updateTrackIfChanged(_ newTrack: Track) {
         guard newTrack != track else { return }
         track = newTrack.title.isEmpty ? nil : newTrack
         if let track {
-            lyrics.load(
-                title: track.title,
-                artist: track.artist,
-                album: track.album,
-                duration: track.duration
-            )
+            if NotchSettings.shared.fetchLyrics {
+                lyrics.load(
+                    title: track.title,
+                    artist: track.artist,
+                    album: track.album,
+                    duration: track.duration
+                )
+            } else {
+                lyrics.clear()
+            }
         } else {
             lyrics.clear()
             artwork = nil
+            accent = .white
+            accentSourceHash = nil
         }
     }
 

@@ -6,16 +6,29 @@ struct NotchApp: App {
 
     var body: some Scene {
         // The notch panel is managed entirely by AppDelegate/NotchWindowController.
-        // The only scene we expose is a menu bar item so the agent app can be quit.
+        // These scenes provide the menu bar item (quit/settings) and the
+        // Settings window.
         MenuBarExtra("Notch", systemImage: "sparkles.rectangle.stack") {
+            SettingsLink {
+                Text("Settings…")
+            }
+            .keyboardShortcut(",")
+
             Button("About Notch") {
+                NSApp.activate(ignoringOtherApps: true)
                 NSApp.orderFrontStandardAboutPanel(nil)
             }
+
             Divider()
+
             Button("Quit Notch") {
                 NSApp.terminate(nil)
             }
             .keyboardShortcut("q")
+        }
+
+        Settings {
+            SettingsView()
         }
     }
 }

@@ -8,6 +8,7 @@ enum NotchMode: Equatable {
 
 enum NotchTab: String, CaseIterable, Identifiable {
     case media
+    case shelf
     case calendar
     case telemetry
 
@@ -16,6 +17,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .media: "Media"
+        case .shelf: "Shelf"
         case .calendar: "Schedule"
         case .telemetry: "System"
         }
@@ -24,6 +26,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .media: "music.note"
+        case .shelf: "tray.full"
         case .calendar: "calendar"
         case .telemetry: "gauge.with.dots.needle.50percent"
         }
@@ -41,20 +44,26 @@ final class NotchState {
 
     /// Physical notch size, injected by NotchWindowController at launch.
     var notchSize: CGSize = NotchGeometry.fallbackSize
-    let expandedSize = CGSize(width: 640, height: 280)
+    let expandedSize = CGSize(width: 670, height: 310)
 
+    let settings = NotchSettings.shared
     let media = MediaController()
     let calendar = CalendarController()
     let telemetry = TelemetryController()
-    let airDrop = AirDropController()
+    let shelf = ShelfController()
+    let keepAwake = KeepAwakeController()
 
     private var pendingHoverWork: DispatchWorkItem?
 
     /// Collapsed width grows a pair of "wings" around the hardware notch when
-    /// media is playing, to fit the mini artwork and the audio visualizer.
+    /// a track is loaded, to fit the mini artwork and the audio visualizer.
+    var showsMediaWings: Bool {
+        media.hasTrack && settings.showMediaWings
+    }
+
     var collapsedSize: CGSize {
         var size = notchSize
-        if media.hasActiveTrack {
+        if showsMediaWings {
             size.width += 120
         }
         return size
@@ -67,18 +76,34 @@ final class NotchState {
     // MARK: - Hover / expansion
 
     func hoverChanged(_ hovering: Bool) {
+        // Hover can only open the notch when the preference allows it;
+        // hover-out always closes, however it was opened.
+        if hovering, !settings.expandOnHover, mode == .collapsed {
+            return
+        }
+
         pendingHoverWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             hovering ? self?.expand() : self?.collapse()
         }
         pendingHoverWork = work
-        // Slight open delay avoids expanding on accidental fly-bys; the close
-        // delay keeps the panel open while the pointer crosses internal gaps.
-        DispatchQueue.main.asyncAfter(deadline: .now() + (hovering ? 0.1 : 0.35), execute: work)
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + (hovering ? settings.openDelay : settings.closeDelay),
+            execute: work
+        )
+    }
+
+    /// Click-to-open, used when hover expansion is disabled (and harmless
+    /// alongside it).
+    func handleTap() {
+        if mode == .collapsed {
+            expand()
+        }
     }
 
     func expand() {
         guard mode != .expanded else { return }
+        NotchTheme.Haptics.alignment()
         withAnimation(.notchSpring) {
             mode = .expanded
         }
@@ -87,6 +112,7 @@ final class NotchState {
 
     func collapse() {
         guard mode != .collapsed else { return }
+        NotchTheme.Haptics.alignment()
         withAnimation(.notchSpring) {
             mode = .collapsed
             isDropTargeted = false

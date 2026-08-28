@@ -11,19 +11,28 @@ final class TelemetryController {
     private(set) var cpuUsage: Double = 0
     private(set) var memoryPressure: Double = 0
 
+    /// Rolling CPU samples for the sparkline (most recent last).
+    private(set) var cpuHistory: [Double] = []
+    static let historyLength = 40
+
     private(set) var hasBattery = false
     private(set) var batteryPercent: Double = 0
     private(set) var batteryWatts: Double = 0
     private(set) var batteryHealth: Double = 0
     private(set) var isCharging = false
 
+    private(set) var downloadBytesPerSecond: Double = 0
+    private(set) var uploadBytesPerSecond: Double = 0
+
     private var timer: Timer?
     private var previousTicks: (user: UInt32, system: UInt32, idle: UInt32, nice: UInt32)?
+    private var previousNetworkSample: (received: UInt64, sent: UInt64, at: Date)?
 
     func start() {
         guard timer == nil else { return }
         sample()
-        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        let interval = max(NotchSettings.shared.telemetryInterval, 1.0)
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.sample()
         }
     }
@@ -32,12 +41,14 @@ final class TelemetryController {
         timer?.invalidate()
         timer = nil
         previousTicks = nil
+        previousNetworkSample = nil
     }
 
     private func sample() {
         sampleCPU()
         sampleMemory()
         sampleBattery()
+        sampleNetwork()
     }
 
     // MARK: - CPU (host_statistics / HOST_CPU_LOAD_INFO)
@@ -71,6 +82,10 @@ final class TelemetryController {
         guard total > 0 else { return }
 
         cpuUsage = min(max((user + system + nice) / total, 0), 1)
+        cpuHistory.append(cpuUsage)
+        if cpuHistory.count > Self.historyLength {
+            cpuHistory.removeFirst(cpuHistory.count - Self.historyLength)
+        }
     }
 
     // MARK: - Memory (host_statistics64 / HOST_VM_INFO64)
@@ -144,5 +159,53 @@ final class TelemetryController {
         }
 
         isCharging = properties["IsCharging"] as? Bool ?? false
+    }
+
+    // MARK: - Network throughput (getifaddrs deltas over en* interfaces)
+
+    private func sampleNetwork() {
+        guard let totals = Self.interfaceByteCounts() else { return }
+        let now = Date()
+        defer { previousNetworkSample = (totals.received, totals.sent, now) }
+
+        guard let previous = previousNetworkSample else { return }
+        let dt = now.timeIntervalSince(previous.at)
+        guard dt > 0 else { return }
+
+        // Counters are sums of 32-bit values; treat a decrease (wrap or
+        // interface removal) as a skipped sample.
+        downloadBytesPerSecond = totals.received >= previous.received
+            ? Double(totals.received - previous.received) / dt
+            : 0
+        uploadBytesPerSecond = totals.sent >= previous.sent
+            ? Double(totals.sent - previous.sent) / dt
+            : 0
+    }
+
+    private static func interfaceByteCounts() -> (received: UInt64, sent: UInt64)? {
+        var addresses: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&addresses) == 0 else { return nil }
+        defer { freeifaddrs(addresses) }
+
+        var received: UInt64 = 0
+        var sent: UInt64 = 0
+
+        var cursor = addresses
+        while let current = cursor {
+            let interface = current.pointee
+            cursor = interface.ifa_next
+
+            guard let address = interface.ifa_addr,
+                  address.pointee.sa_family == UInt8(AF_LINK),
+                  let dataPointer = interface.ifa_data,
+                  String(cString: interface.ifa_name).hasPrefix("en")
+            else { continue }
+
+            let data = dataPointer.assumingMemoryBound(to: if_data.self).pointee
+            received += UInt64(data.ifi_ibytes)
+            sent += UInt64(data.ifi_obytes)
+        }
+
+        return (received, sent)
     }
 }

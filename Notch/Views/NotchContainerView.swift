@@ -27,7 +27,7 @@ struct NotchContainerView: View {
         ZStack(alignment: .top) {
             if state.mode == .expanded {
                 ExpandedNotchView(state: state, namespace: notchNamespace)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                    .transition(.glass)
             } else {
                 CollapsedNotchView(state: state, namespace: notchNamespace)
                     .transition(.opacity)
@@ -46,19 +46,31 @@ struct NotchContainerView: View {
         }
         .clipShape(shape)
         .overlay {
+            // Rim light: invisible where the shape meets the bezel, catching
+            // the lower curve like an edge highlight.
             if state.mode == .expanded {
-                shape.stroke(.white.opacity(0.08), lineWidth: 1)
+                shape.stroke(
+                    LinearGradient(
+                        colors: [.white.opacity(0.02), .white.opacity(0.22)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1
+                )
             }
         }
-        .shadow(color: .black.opacity(state.mode == .expanded ? 0.55 : 0), radius: 18, y: 8)
+        .shadow(color: .black.opacity(state.mode == .expanded ? 0.55 : 0), radius: 20, y: 8)
         .onHover { hovering in
             state.hoverChanged(hovering)
         }
+        .onTapGesture {
+            state.handleTap()
+        }
         .onDrop(
-            of: AirDropController.acceptedTypes,
+            of: ShelfController.acceptedTypes,
             delegate: NotchDropDelegate(state: state)
         )
         .animation(.notchSpring, value: state.mode)
-        .animation(.notchSpring, value: state.media.hasActiveTrack)
+        .animation(.notchSpring, value: state.showsMediaWings)
     }
 }
