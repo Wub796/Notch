@@ -46,11 +46,24 @@ struct MediaPlayerView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else {
+                // Vinyl-style placeholder disc.
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(NotchTheme.surface)
                     .overlay {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [.white.opacity(0.16), .white.opacity(0.03)],
+                                    center: .center,
+                                    startRadius: 4,
+                                    endRadius: 34
+                                )
+                            )
+                            .padding(8)
+                    }
+                    .overlay {
                         Image(systemName: "music.note")
-                            .font(.system(size: 26))
+                            .font(.system(size: 22))
                             .foregroundStyle(NotchTheme.inkMuted)
                     }
             }
@@ -63,10 +76,12 @@ struct MediaPlayerView: View {
 
     private var trackInfo: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(media.track?.title ?? "Nothing Playing")
-                .font(.system(size: 14.5, weight: .semibold))
-                .foregroundStyle(NotchTheme.inkPrimary)
-                .lineLimit(1)
+            MarqueeText(
+                text: media.track?.title ?? "Nothing Playing",
+                font: .system(size: 14.5, weight: .semibold),
+                width: 222
+            )
+            .foregroundStyle(NotchTheme.inkPrimary)
             Text(media.track?.artist ?? "Play something to see it here")
                 .font(.system(size: 12))
                 .foregroundStyle(NotchTheme.inkSecondary)
@@ -85,20 +100,13 @@ struct MediaPlayerView: View {
         HStack(spacing: 24) {
             Spacer()
 
-            Button {
+            TransportIconButton(
+                systemImage: "backward.fill",
+                accessibilityLabel: "Previous track",
+                isEnabled: media.hasTrack
+            ) {
                 media.previousTrack()
-            } label: {
-                Image(systemName: "backward.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(NotchTheme.inkPrimary)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Circle())
             }
-            .buttonStyle(PressableButtonStyle())
-            .hoverLift()
-            .disabled(!media.hasTrack)
-            .opacity(media.hasTrack ? 1 : 0.35)
-            .accessibilityLabel("Previous track")
 
             Button {
                 media.togglePlayPause()
@@ -119,20 +127,13 @@ struct MediaPlayerView: View {
             .opacity(media.hasTrack ? 1 : 0.35)
             .accessibilityLabel(media.isPlaying ? "Pause" : "Play")
 
-            Button {
+            TransportIconButton(
+                systemImage: "forward.fill",
+                accessibilityLabel: "Next track",
+                isEnabled: media.hasTrack
+            ) {
                 media.nextTrack()
-            } label: {
-                Image(systemName: "forward.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(NotchTheme.inkPrimary)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Circle())
             }
-            .buttonStyle(PressableButtonStyle())
-            .hoverLift()
-            .disabled(!media.hasTrack)
-            .opacity(media.hasTrack ? 1 : 0.35)
-            .accessibilityLabel("Next track")
 
             Spacer()
         }
@@ -142,6 +143,39 @@ struct MediaPlayerView: View {
         guard interval.isFinite, interval >= 0 else { return "0:00" }
         let total = Int(interval)
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}
+
+/// Secondary transport control: faint circular hover background, press
+/// compression, dimmed when disabled.
+private struct TransportIconButton: View {
+    let systemImage: String
+    let accessibilityLabel: String
+    let isEnabled: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .frame(width: 32, height: 32)
+                .background {
+                    Circle().fill(.white.opacity(hovering ? 0.1 : 0))
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .onHover { isHovering in
+            withAnimation(.notchSpring) {
+                hovering = isHovering
+            }
+        }
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.35)
+        .accessibilityLabel(accessibilityLabel)
     }
 }
 
@@ -155,6 +189,7 @@ struct ScrubberBar: View {
 
     @State private var dragFraction: Double?
     @State private var hovering = false
+    @State private var showRemaining = false
 
     private var playbackFraction: Double {
         guard duration > 0 else { return 0 }
@@ -219,7 +254,14 @@ struct ScrubberBar: View {
             HStack {
                 Text(MediaPlayerView.timeString(dragFraction.map { $0 * duration } ?? elapsed))
                 Spacer()
-                Text(MediaPlayerView.timeString(duration))
+                // Click to flip between total and remaining time.
+                Text(showRemaining
+                    ? "−" + MediaPlayerView.timeString(max(duration - elapsed, 0))
+                    : MediaPlayerView.timeString(duration))
+                    .contentShape(Rectangle())
+                    .onTapGesture { showRemaining.toggle() }
+                    .accessibilityLabel(showRemaining ? "Time remaining" : "Track duration")
+                    .accessibilityHint("Click to toggle between total and remaining time")
             }
             .font(.system(size: 9.5, weight: .medium).monospacedDigit())
             .foregroundStyle(NotchTheme.inkMuted)

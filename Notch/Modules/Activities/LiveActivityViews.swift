@@ -117,7 +117,7 @@ struct TrackChangeActivityView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 18, height: 18)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 } else {
                     Image(systemName: "music.note")
                         .font(.system(size: 11, weight: .semibold))

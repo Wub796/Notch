@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import QuickLookThumbnailing
 import UniformTypeIdentifiers
 
 /// Dropover-style holding area for files dropped onto the notch. Items can be
@@ -13,7 +14,9 @@ final class ShelfController {
         let url: URL
         let name: String
         let detail: String
-        let icon: NSImage
+        /// File icon initially; replaced by a real Quick Look thumbnail once
+        /// one has been generated.
+        var icon: NSImage
 
         static func == (lhs: Item, rhs: Item) -> Bool {
             lhs.url == rhs.url
@@ -98,6 +101,30 @@ final class ShelfController {
             .filter { url in !items.contains { $0.url == url } }
             .map(Self.makeItem)
         items.insert(contentsOf: newItems, at: 0)
+        newItems.forEach(loadThumbnail)
+    }
+
+    /// Upgrades an item's generic file icon to a real Quick Look thumbnail.
+    private func loadThumbnail(for item: Item) {
+        let request = QLThumbnailGenerator.Request(
+            fileAt: item.url,
+            size: CGSize(width: 80, height: 80),
+            scale: 2,
+            representationTypes: .thumbnail
+        )
+        QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] representation, _ in
+            guard let representation else { return }
+            let image = NSImage(
+                cgImage: representation.cgImage,
+                size: NSSize(width: 40, height: 40)
+            )
+            DispatchQueue.main.async {
+                guard let self,
+                      let index = self.items.firstIndex(where: { $0.id == item.id })
+                else { return }
+                self.items[index].icon = image
+            }
+        }
     }
 
     // MARK: - Item actions

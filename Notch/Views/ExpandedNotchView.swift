@@ -16,6 +16,7 @@ struct ExpandedNotchView: View {
                 )
             } else {
                 NotchHeaderView(state: state)
+                headerDivider
                 tabBar
                 content
             }
@@ -25,22 +26,45 @@ struct ExpandedNotchView: View {
         .padding(.bottom, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background {
-            if state.tab == .media, state.media.artwork != nil {
-                Ellipse()
-                    .fill(state.media.accent)
-                    .opacity(0.13)
-                    .blur(radius: 55)
-                    .frame(width: 440, height: 220)
-                    .offset(y: -30)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
+            // Ambient backdrop on the media tab: the artwork itself, blurred
+            // and dimmed into a glow; accent wash as the no-artwork fallback.
+            if state.tab == .media {
+                Group {
+                    if let artwork = state.media.artwork {
+                        Image(nsImage: artwork)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 560, height: 280)
+                            .blur(radius: 64)
+                            .saturation(1.5)
+                            .opacity(0.24)
+                            .offset(y: -16)
+                    } else {
+                        Ellipse()
+                            .fill(state.media.accent)
+                            .opacity(0.1)
+                            .blur(radius: 55)
+                            .frame(width: 440, height: 220)
+                            .offset(y: -30)
+                    }
+                }
+                .allowsHitTesting(false)
+                .transition(.opacity)
             }
         }
         .animation(.notchSpring, value: state.tab)
     }
 
+    /// Full-bleed hairline separating the header strip from the content.
+    private var headerDivider: some View {
+        Rectangle()
+            .fill(NotchTheme.hairline)
+            .frame(height: 1)
+            .padding(.horizontal, -24)
+    }
+
     private var tabBar: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 3) {
             ForEach(NotchTab.allCases) { tab in
                 Button {
                     state.select(tab)
@@ -48,7 +72,7 @@ struct ExpandedNotchView: View {
                     Label(tab.title, systemImage: tab.systemImage)
                         .font(.system(size: 11, weight: .semibold))
                         .labelStyle(.titleAndIcon)
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 11)
                         .padding(.vertical, 5)
                         .background {
                             if state.tab == tab {
@@ -72,8 +96,15 @@ struct ExpandedNotchView: View {
                 }
                 .buttonStyle(PressableButtonStyle())
             }
-            Spacer()
         }
+        .padding(3)
+        .background {
+            Capsule().fill(.white.opacity(0.05))
+        }
+        .overlay {
+            Capsule().stroke(NotchTheme.hairline, lineWidth: 1)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
         .animation(.notchSpring, value: state.tab)
     }
 
@@ -103,10 +134,14 @@ struct ExpandedNotchView: View {
     }
 }
 
-/// Full-surface drop zone shown while a drag hovers over the notch.
+/// Full-surface drop zone shown while a drag hovers over the notch, with a
+/// marching-ants border while active.
 struct DropZoneView: View {
     let isResolving: Bool
     let instantAirDrop: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var dashPhase: CGFloat = 0
 
     private var title: String {
         if isResolving {
@@ -143,12 +178,18 @@ struct DropZoneView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(
                     .blue.opacity(0.7),
-                    style: StrokeStyle(lineWidth: 1.5, dash: [7, 5])
+                    style: StrokeStyle(lineWidth: 1.5, dash: [7, 5], dashPhase: dashPhase)
                 )
                 .background {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(.blue.opacity(0.08))
                 }
+        }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
+                dashPhase = -12
+            }
         }
     }
 }

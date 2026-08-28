@@ -71,7 +71,7 @@ struct CollapsedNotchView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else {
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(NotchTheme.surfaceHover)
                     .overlay {
                         Image(systemName: "music.note")
@@ -81,7 +81,7 @@ struct CollapsedNotchView: View {
             }
         }
         .frame(width: 20, height: 20)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .accessibilityHidden(true)
     }

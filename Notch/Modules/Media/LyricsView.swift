@@ -9,14 +9,22 @@ struct LyricsView: View {
     let onSelect: (TimeInterval) -> Void
 
     var body: some View {
-        Group {
-            if lyrics.lines.isEmpty {
-                emptyState
-            } else {
-                lyricsScroller
+        VStack(alignment: .leading, spacing: 2) {
+            Text("LYRICS")
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(0.8)
+                .foregroundStyle(NotchTheme.inkMuted)
+                .accessibilityAddTraits(.isHeader)
+
+            Group {
+                if lyrics.lines.isEmpty {
+                    emptyState
+                } else {
+                    lyricsScroller
+                }
             }
+            .frame(maxHeight: .infinity)
         }
-        .frame(maxHeight: .infinity)
     }
 
     private var emptyState: some View {

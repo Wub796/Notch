@@ -93,7 +93,8 @@ private struct ShelfItemCard: View {
             Image(nsImage: item.icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 36, height: 36)
+                .frame(width: 38, height: 38)
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
 
             Text(item.name)

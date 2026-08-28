@@ -77,19 +77,36 @@ struct CalendarView: View {
         let nextUpcomingID = calendar.items
             .first { !$0.isAllDay && $0.start > now }?
             .id
+        let todayItems = calendar.items.filter { Calendar.current.isDateInToday($0.start) }
+        let laterItems = calendar.items.filter { !Calendar.current.isDateInToday($0.start) }
 
         return ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(spacing: 7) {
-                ForEach(calendar.items) { item in
-                    EventRow(
-                        item: item,
-                        now: now,
-                        isNextUpcoming: item.id == nextUpcomingID
-                    )
+            LazyVStack(alignment: .leading, spacing: 7) {
+                if !todayItems.isEmpty {
+                    dayHeader("Today")
+                    ForEach(todayItems) { item in
+                        EventRow(item: item, now: now, isNextUpcoming: item.id == nextUpcomingID)
+                    }
+                }
+                if !laterItems.isEmpty {
+                    dayHeader("Tomorrow")
+                        .padding(.top, todayItems.isEmpty ? 0 : 5)
+                    ForEach(laterItems) { item in
+                        EventRow(item: item, now: now, isNextUpcoming: item.id == nextUpcomingID)
+                    }
                 }
             }
             .padding(.vertical, 2)
         }
+    }
+
+    private func dayHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 9, weight: .heavy))
+            .tracking(0.8)
+            .foregroundStyle(NotchTheme.inkMuted)
+            .padding(.leading, 4)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 

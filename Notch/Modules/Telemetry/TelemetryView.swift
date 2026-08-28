@@ -139,8 +139,17 @@ struct CircularGaugeView: View {
                     .stroke(.white.opacity(0.12), style: StrokeStyle(lineWidth: 5, lineCap: .round))
                 Circle()
                     .trim(from: 0, to: max(0.001, min(value, 1)))
-                    .stroke(tint, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                    .stroke(
+                        AngularGradient(
+                            colors: [tint.opacity(0.55), tint],
+                            center: .center,
+                            startAngle: .degrees(0),
+                            endAngle: .degrees(360)
+                        ),
+                        style: StrokeStyle(lineWidth: 5, lineCap: .round)
+                    )
                     .rotationEffect(.degrees(-90))
+                    .shadow(color: tint.opacity(0.35), radius: 4)
                     .animation(.notchSpring, value: value)
 
                 VStack(spacing: 1) {
