@@ -1,6 +1,19 @@
 import AppKit
 import SwiftUI
 
+/// Which half of the audio screen is showing.
+///
+/// Declared alongside the view but outside it, so `NotchState` can hold the
+/// selection without depending on a view type — a compile error anywhere in
+/// the view would otherwise take the whole state object down with it.
+enum AudioScreenTab: String, CaseIterable, Identifiable {
+    case apps, devices
+
+    var id: String { rawValue }
+    var title: String { self == .apps ? "Apps" : "Devices" }
+    var symbol: String { self == .apps ? "square.grid.2x2.fill" : "hifispeaker.2.fill" }
+}
+
 /// The audio screen, laid out like the Sapphire reference: a segmented
 /// Apps / Devices switch over a list of rows, each with an icon, a name and
 /// status, a wide blue level bar, and a trailing cluster of round buttons.
@@ -13,14 +26,6 @@ import SwiftUI
 /// worse than saying so.
 struct AudioDevicesView: View {
     let state: NotchState
-
-    enum Tab: String, CaseIterable, Identifiable {
-        case apps, devices
-
-        var id: String { rawValue }
-        var title: String { self == .apps ? "Apps" : "Devices" }
-        var symbol: String { self == .apps ? "square.grid.2x2.fill" : "hifispeaker.2.fill" }
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -55,7 +60,7 @@ struct AudioDevicesView: View {
 
     private var tabSwitch: some View {
         HStack(spacing: 10) {
-            ForEach(Tab.allCases) { tab in
+            ForEach(AudioScreenTab.allCases) { tab in
                 let isActive = state.audioTab == tab
                 Button {
                     withAnimation(NotchAnimations.content) { state.audioTab = tab }

@@ -117,7 +117,7 @@ final class NotchState {
     let audioApps = AudioAppMonitor()
 
     /// Which half of the audio screen is showing.
-    var audioTab: AudioDevicesView.Tab = .devices
+    var audioTab: AudioScreenTab = .devices
 
     private let focusMonitor = FocusModeMonitor()
     private let desktopMonitor = DesktopChangeMonitor()

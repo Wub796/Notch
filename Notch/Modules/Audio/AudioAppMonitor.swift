@@ -11,6 +11,14 @@ import Observation
 /// call, anything, not only whatever holds the now-playing session.
 ///
 /// Setting a process's volume is still not exposed; only observing it is.
+///
+/// The three selectors are spelled as four-character codes rather than by
+/// name. `kAudioHardwarePropertyProcessObjectList` and friends only exist in
+/// the macOS 14.4 SDK, so naming them makes the whole file — and therefore
+/// this type — fail to compile on Xcode 15.2 and earlier, which then reads as
+/// "cannot find AudioAppMonitor in scope" everywhere it is used. The values
+/// are stable ABI; the `#available` check below is what keeps them from being
+/// called on a system that does not implement them.
 @Observable
 final class AudioAppMonitor {
     struct App: Identifiable, Equatable {
@@ -54,10 +62,19 @@ final class AudioAppMonitor {
 
     // MARK: - CoreAudio process list
 
+    /// `'prs#'`, `'ppid'` and `'piro'` from AudioHardware.h.
+    private static let processObjectListSelector = fourCharCode("prs#")
+    private static let processPIDSelector = fourCharCode("ppid")
+    private static let processIsRunningOutputSelector = fourCharCode("piro")
+
+    private static func fourCharCode(_ value: String) -> AudioObjectPropertySelector {
+        value.utf8.reduce(0) { ($0 << 8) + AudioObjectPropertySelector($1) }
+    }
+
     @available(macOS 14.4, *)
     private static func audioProcesses() -> [(pid: pid_t, isRunningOutput: Bool)] {
         var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyProcessObjectList,
+            mSelector: processObjectListSelector,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
@@ -82,7 +99,7 @@ final class AudioAppMonitor {
     @available(macOS 14.4, *)
     private static func processID(of object: AudioObjectID) -> pid_t? {
         var address = AudioObjectPropertyAddress(
-            mSelector: kAudioProcessPropertyPID,
+            mSelector: processPIDSelector,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
@@ -96,7 +113,7 @@ final class AudioAppMonitor {
     @available(macOS 14.4, *)
     private static func isRunningOutput(_ object: AudioObjectID) -> Bool {
         var address = AudioObjectPropertyAddress(
-            mSelector: kAudioProcessPropertyIsRunningOutput,
+            mSelector: processIsRunningOutputSelector,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
