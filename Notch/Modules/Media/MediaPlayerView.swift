@@ -10,14 +10,13 @@ struct MediaPlayerView: View {
 
     private var media: MediaController { state.media }
 
-    @State private var showLyrics = true
     @State private var isFavorite = false
     @State private var shuffleOn = false
 
     var body: some View {
         // Budget: `NotchState.moduleContentSize`, about 498 x 250. Metadata
-        // row 72, scrubber 22, queue row 30, transport 46, secondary 28, with
-        // 12pt gaps.
+        // row 72, scrubber 22, lyrics or queue 30, transport 46, actions 28,
+        // with 12pt gaps.
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 14) {
                 artwork
@@ -59,7 +58,15 @@ struct MediaPlayerView: View {
 
             progressRow
 
-            queueRow
+            secondaryRow
+
+            if state.mediaShowsFullLyrics {
+                LyricsView(lyrics: media.lyrics, accent: media.accent) { time in
+                    media.seek(to: time + 0.05)
+                }
+                .frame(height: 104)
+                .transition(.opacity)
+            }
 
             transportRow
                 .frame(maxWidth: .infinity)
@@ -117,36 +124,82 @@ struct MediaPlayerView: View {
         }
     }
 
-    /// The rest of the queue as chips, in place of the reference's suggestion
-    /// row — same shape, but every entry is a track that is genuinely coming.
+    /// The row under the scrubber: the lyrics, or the queue.
+    ///
+    /// Lyrics lost their home when the panel narrowed — the side column no
+    /// longer fits at 498pt — and the one-line fallback only appeared when
+    /// Spotify had nothing queued, so with an account connected they never
+    /// showed at all. It is the live line again by default, with the queue
+    /// when there are no lyrics — and the list button in the transport row
+    /// opens the full scrolling panel, which grows the whole player.
     @ViewBuilder
-    private var queueRow: some View {
-        if media.queue.count > 1 {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(Array(media.queue.dropFirst().prefix(6).enumerated()),
-                            id: \.offset) { _, item in
-                        HStack(spacing: 5) {
-                            Image(systemName: "music.note")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(media.accent)
-                            Text(item.title)
-                                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-                                .foregroundStyle(NotchTheme.inkPrimary)
-                                .lineLimit(1)
-                        }
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(NotchTheme.surface))
-                    }
-                }
-                .padding(.horizontal, 1)
+    private var secondaryRow: some View {
+        Group {
+            if media.lyrics.isSynced, !media.lyrics.lines.isEmpty {
+                lyricStrip
+            } else if media.queue.count > 1 {
+                queueChips
+            } else {
+                lyricLine
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(height: 30)
-        } else {
-            lyricLine
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(height: 30)
+        }
+        .frame(height: 30)
+    }
+
+    /// The live line with the one after it trailing behind, so there is a hint
+    /// of where the song is going rather than a single word in isolation.
+    private var lyricStrip: some View {
+        let index = media.lyrics.currentIndex
+        let current = index.map { media.lyrics.lines[$0].text } ?? ""
+        let next = index
+            .map { $0 + 1 }
+            .flatMap { media.lyrics.lines.indices.contains($0) ? media.lyrics.lines[$0].text : nil }
+
+        return HStack(spacing: 10) {
+            Text(current.isEmpty ? "♪" : current)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(media.accent)
+                .lineLimit(1)
+                .contentTransition(.opacity)
+
+            if let next, !next.isEmpty {
+                Text(next)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(NotchTheme.inkMuted)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .animation(.notchSpring, value: media.lyrics.currentIndex)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Lyrics")
+        .accessibilityValue(current)
+    }
+
+    /// The queue as chips: every one is a track that is genuinely coming.
+    private var queueChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(media.queue.dropFirst().prefix(6).enumerated()),
+                        id: \.offset) { _, item in
+                    HStack(spacing: 5) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(media.accent)
+                        Text(item.title)
+                            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkPrimary)
+                            .lineLimit(1)
+                    }
+                    .fixedSize()
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(NotchTheme.surface))
+                }
+            }
+            .padding(.horizontal, 1)
         }
     }
 
@@ -194,7 +247,12 @@ struct MediaPlayerView: View {
                     .foregroundStyle(.blue)
                     .accessibilityLabel("Verified artist")
             }
+
+            Spacer(minLength: 0)
         }
+        // The glyphs cannot compress the way the name can, so without this the
+        // badge wraps onto its own line when the column gets tight.
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Progress & lyrics
@@ -233,13 +291,15 @@ struct MediaPlayerView: View {
     private var transportRow: some View {
         HStack(spacing: 24) {
             transportIcon(
-                showLyrics ? "list.bullet.rectangle.fill" : "list.bullet.rectangle",
+                state.mediaShowsFullLyrics
+                    ? "list.bullet.rectangle.fill"
+                    : "list.bullet.rectangle",
                 size: 15,
-                label: showLyrics ? "Hide lyrics panel" : "Show lyrics panel",
-                tint: showLyrics ? nil : NotchTheme.inkMuted
+                label: state.mediaShowsFullLyrics ? "Hide full lyrics" : "Show full lyrics",
+                tint: state.mediaShowsFullLyrics ? nil : NotchTheme.inkMuted
             ) {
                 withAnimation(NotchAnimations.content) {
-                    showLyrics.toggle()
+                    state.mediaShowsFullLyrics.toggle()
                 }
             }
 
@@ -330,10 +390,17 @@ struct MediaPlayerView: View {
         .accessibilityLabel(label)
     }
 
+    /// "3:07", or "1:02:33" once a track runs past an hour — podcasts and DJ
+    /// sets did the latter and came out as "83:20".
     static func timeString(_ interval: TimeInterval) -> String {
         guard interval.isFinite, interval >= 0 else { return "0:00" }
         let total = Int(interval)
-        return String(format: "%d:%02d", total / 60, total % 60)
+        let hours = total / 3_600
+        let minutes = (total % 3_600) / 60
+        let seconds = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
+            : String(format: "%d:%02d", minutes, seconds)
     }
 }
 
@@ -373,9 +440,11 @@ struct ScrubberBar: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(MediaPlayerView.timeString(dragFraction.map { $0 * duration } ?? elapsed))
-                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
                 .foregroundStyle(NotchTheme.inkPrimary)
-                .frame(width: 34, alignment: .trailing)
+                // Sized by its content: a fixed 34 clipped anything past
+                // "9:59", so long tracks and podcasts lost digits.
+                .fixedSize()
 
             GeometryReader { proxy in
                 let width = proxy.size.width
@@ -419,9 +488,9 @@ struct ScrubberBar: View {
             Text(showRemaining
                 ? "−" + MediaPlayerView.timeString(remaining)
                 : MediaPlayerView.timeString(duration))
-                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
                 .foregroundStyle(NotchTheme.inkPrimary)
-                .frame(width: 38, alignment: .leading)
+                .fixedSize()
                 .contentShape(Rectangle())
                 .onTapGesture { showRemaining.toggle() }
                 .accessibilityLabel(showRemaining ? "Time remaining" : "Track duration")

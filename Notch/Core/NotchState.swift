@@ -40,6 +40,10 @@ final class NotchState {
     /// While pinned, the expanded panel ignores hover-out and outside clicks.
     var isPinned = false
 
+    /// Whether the player is showing the full lyrics panel, which makes the
+    /// panel taller. Held here because the size depends on it.
+    var mediaShowsFullLyrics = false
+
     /// Whether the weather screen shows the five-day strip instead of hourly.
     /// Held here rather than in the view because the chips that toggle it sit
     /// in the header, which is a sibling of the module.
@@ -58,7 +62,13 @@ final class NotchState {
     /// are genuinely different shapes, and forcing both into one box shrank
     /// each past legibility.
     var expandedSize: CGSize {
-        NotchSizing.openNotchSize(for: tab)
+        var size = NotchSizing.openNotchSize(for: tab)
+        // Full lyrics need a panel to live in, so the player grows for them
+        // rather than squeezing a scrolling list into a 30pt strip.
+        if tab == .media, mediaShowsFullLyrics {
+            size.height += 110
+        }
+        return size
     }
 
     /// Room left for a module once the header and the slab's own insets are
@@ -432,6 +442,9 @@ final class NotchState {
     func select(_ newTab: NotchTab) {
         withAnimation(NotchAnimations.content) {
             tab = newTab
+            // Leaving the player resets its lyrics panel, so returning to it
+            // does not reopen at the taller size unexpectedly.
+            if newTab != .media { mediaShowsFullLyrics = false }
         }
         settings.lastTab = newTab.rawValue
     }

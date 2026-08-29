@@ -19,15 +19,10 @@ struct CalendarDetailView: View {
             if state.calendar.isMonthView {
                 monthGrid
             } else {
-                HStack(alignment: .top, spacing: 20) {
+                VStack(alignment: .leading, spacing: 16) {
                     dateHeader
-                        .frame(width: 120, alignment: .leading)
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        weekStrip
-                        bodyContent
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    weekStrip
+                    bodyContent
                 }
             }
         }
@@ -40,23 +35,37 @@ struct CalendarDetailView: View {
 
     // MARK: - Date header
 
+    /// The big blue day number beside its weekday, month and year, as in the
+    /// reference. The month carries the weight and the year sits under it a
+    /// size down; all three lines share the same left edge.
     private var dateHeader: some View {
         let selected = state.calendar.selectedDate
 
-        return VStack(alignment: .leading, spacing: -2) {
+        return HStack(alignment: .center, spacing: 12) {
             Text("\(calendar.component(.day, from: selected))")
                 .font(.system(size: 40, weight: .heavy, design: .rounded).monospacedDigit())
                 .foregroundStyle(.blue)
+                .fixedSize()
 
-            Text(weekdayName(of: selected).uppercased())
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(NotchTheme.inkPrimary)
+            VStack(alignment: .leading, spacing: -1) {
+                Text(weekdayName(of: selected).uppercased())
+                    .font(.system(size: 12, weight: .heavy, design: .rounded))
+                    .tracking(0.6)
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .fixedSize()
 
-            Text(monthYear(of: selected))
-                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-                .foregroundStyle(NotchTheme.inkSecondary)
-                .lineLimit(1)
-                .padding(.top, 2)
+                Text(selected.formatted(.dateTime.month(.wide)))
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(NotchTheme.inkPrimary)
+                    .fixedSize()
+
+                Text(selected.formatted(.dateTime.year()))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .fixedSize()
+            }
+
+            Spacer(minLength: 0)
         }
         .contentTransition(.numericText())
         .animation(.notchSpring, value: state.calendar.selectedDate)
@@ -65,7 +74,7 @@ struct CalendarDetailView: View {
     // MARK: - Week strip
 
     private var weekStrip: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             ForEach(Array(state.calendar.selectedWeek.enumerated()), id: \.offset) { _, day in
                 WeekDayCell(
                     day: day,
@@ -186,10 +195,6 @@ struct CalendarDetailView: View {
 
     private func weekdayName(of date: Date) -> String {
         date.formatted(.dateTime.weekday(.abbreviated))
-    }
-
-    private func monthYear(of date: Date) -> String {
-        date.formatted(.dateTime.month(.wide).year())
     }
 }
 

@@ -196,6 +196,7 @@ struct HomeDashboardView: View {
                 .font(.system(size: 14, weight: .bold, design: .rounded).monospacedDigit())
                 .foregroundStyle(NotchTheme.inkPrimary)
         }
+        .fixedSize()
         .accessibilityElement(children: .combine)
     }
 
@@ -306,6 +307,7 @@ struct HomeDashboardView: View {
             Image(systemName: event == nil ? "calendar.badge.checkmark" : "calendar")
                 .font(.system(size: 13))
                 .foregroundStyle(NotchTheme.inkSecondary)
+                .fixedSize()
 
             if let event {
                 Text(event.start.formatted(date: .omitted, time: .shortened))

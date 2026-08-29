@@ -114,7 +114,7 @@ struct WeatherDetailView: View {
     }
 
     private func metric(_ systemImage: String, _ text: String) -> some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             Image(systemName: systemImage)
                 .font(.system(size: 12))
                 .symbolRenderingMode(.multicolor)
@@ -123,6 +123,9 @@ struct WeatherDetailView: View {
                 .foregroundStyle(NotchTheme.inkSecondary)
                 .fixedSize()
         }
+        // Glyph and label travel together: an Image cannot shrink, so a tight
+        // column wraps it onto its own line instead.
+        .fixedSize()
         .accessibilityElement(children: .combine)
     }
 
