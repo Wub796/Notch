@@ -10,17 +10,25 @@ struct CalendarDetailView: View {
     private var calendar: Calendar { Calendar.current }
 
     var body: some View {
-        // Budget: NotchState.moduleContentSize, about 160pt tall. The month
-        // grid alone is six rows plus its weekday strip, so it takes the whole
-        // panel and the large date header is week-view only — the header bar
-        // above already carries the day controls.
-        VStack(alignment: .leading, spacing: 12) {
+        // Budget: NotchState.moduleContentSize, about 136pt tall. Stacking the
+        // date header, week strip and agenda vertically needed roughly 200 and
+        // silently clipped everything under the strip, so the week view is
+        // laid out across instead: the date on the left, the strip and the
+        // day's events beside it. The month grid takes the whole panel.
+        Group {
             if state.calendar.isMonthView {
                 monthGrid
             } else {
-                dateHeader
-                weekStrip
-                bodyContent
+                HStack(alignment: .top, spacing: 20) {
+                    dateHeader
+                        .frame(width: 120, alignment: .leading)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        weekStrip
+                        bodyContent
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -35,20 +43,20 @@ struct CalendarDetailView: View {
     private var dateHeader: some View {
         let selected = state.calendar.selectedDate
 
-        return HStack(alignment: .center, spacing: 10) {
+        return VStack(alignment: .leading, spacing: -2) {
             Text("\(calendar.component(.day, from: selected))")
-                .font(.system(size: 34, weight: .heavy, design: .rounded).monospacedDigit())
+                .font(.system(size: 46, weight: .heavy, design: .rounded).monospacedDigit())
                 .foregroundStyle(.blue)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(weekdayName(of: selected).uppercased())
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(NotchTheme.inkPrimary)
-                Text(monthYear(of: selected))
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(NotchTheme.inkSecondary)
-            }
-            .offset(y: 3)
+            Text(weekdayName(of: selected).uppercased())
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(NotchTheme.inkPrimary)
+
+            Text(monthYear(of: selected))
+                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(NotchTheme.inkSecondary)
+                .lineLimit(1)
+                .padding(.top, 2)
         }
         .contentTransition(.numericText())
         .animation(.notchSpring, value: state.calendar.selectedDate)
@@ -83,8 +91,10 @@ struct CalendarDetailView: View {
                 calendar.date(byAdding: .day, value: $0, to: gridStart)
             }
 
-            VStack(spacing: 8) {
-                HStack(spacing: 4) {
+            // Six 17pt rows plus the weekday strip is 130, which fits the
+            // panel; at 24 it was 164 and the last two weeks were clipped.
+            VStack(spacing: 5) {
+                HStack(spacing: 3) {
                     ForEach(Array("MTWTFSS".enumerated()), id: \.offset) { _, letter in
                         Text(String(letter))
                             .font(.system(size: 8, weight: .bold, design: .rounded))
@@ -94,8 +104,8 @@ struct CalendarDetailView: View {
                 }
 
                 LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7),
-                    spacing: 4
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 7),
+                    spacing: 2
                 ) {
                     ForEach(days, id: \.self) { day in
                         MonthDayCell(
@@ -120,26 +130,23 @@ struct CalendarDetailView: View {
         let events = state.calendar.itemsOnSelectedDay
 
         if events.isEmpty {
-            VStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 22, weight: .heavy))
+                    .font(.system(size: 15, weight: .heavy))
                     .foregroundStyle(.black)
-                    .frame(width: 52, height: 52)
+                    .frame(width: 32, height: 32)
                     .background(Circle().fill(calendarGreen))
                     .accessibilityHidden(true)
 
                 Text("All Clear")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundStyle(NotchTheme.inkPrimary)
-
-                Text("You have no events or reminders scheduled.")
-                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
-                    .foregroundStyle(NotchTheme.inkSecondary)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(events) { event in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(events) { event in
                     HStack(spacing: 8) {
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
                             .fill(Color(cgColor: event.calendarColor ?? .init(gray: 0.7, alpha: 1)))
@@ -155,12 +162,13 @@ struct CalendarDetailView: View {
                                 .foregroundStyle(NotchTheme.inkSecondary)
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 10)
-                    .background {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(NotchTheme.surface)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 10)
+                        .background {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(NotchTheme.surface)
+                        }
                     }
                 }
             }
@@ -246,7 +254,7 @@ private struct MonthDayCell: View {
                     isInMonth ? (isSelected ? .white : NotchTheme.inkPrimary) : NotchTheme.inkMuted
                 )
                 .frame(maxWidth: .infinity)
-                .frame(height: 24)
+                .frame(height: 17)
                 .background {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(isSelected ? Color.blue : (isHovering ? NotchTheme.surfaceHover : Color.clear))

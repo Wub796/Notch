@@ -21,8 +21,9 @@ enum AnimationProfile: String, CaseIterable, Identifiable, Hashable, Sendable {
 /// Shared animation curves.
 ///
 /// The open and close springs are the references' shape — critically damped,
-/// close a touch slower than open — but longer than their 0.42/0.45. Theirs
-/// snap; at this size a slower settle reads as deliberate rather than abrupt.
+/// close a touch slower than open — but much longer than their 0.42/0.45.
+/// Theirs snap shut; a slab this size reads as premium only when it takes its
+/// time, so these are roughly a third of a second longer.
 /// They live here rather than in the view so the Animation Style picker
 /// actually reaches the expansion, which is the motion it most obviously
 /// describes.
@@ -42,9 +43,9 @@ enum NotchAnimations {
     static var open: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.5, dampingFraction: 1, blendDuration: 0)
-        case .bouncy: return .spring(response: 0.52, dampingFraction: 0.78, blendDuration: 0)
-        case .calm: return .spring(response: 0.7, dampingFraction: 1, blendDuration: 0)
+        case .snappy: return .spring(response: 0.68, dampingFraction: 1, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.7, dampingFraction: 0.8, blendDuration: 0)
+        case .calm: return .spring(response: 0.92, dampingFraction: 1, blendDuration: 0)
         }
     }
 
@@ -53,9 +54,9 @@ enum NotchAnimations {
     static var close: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.54, dampingFraction: 1, blendDuration: 0)
-        case .bouncy: return .spring(response: 0.56, dampingFraction: 0.95, blendDuration: 0)
-        case .calm: return .spring(response: 0.74, dampingFraction: 1, blendDuration: 0)
+        case .snappy: return .spring(response: 0.74, dampingFraction: 1, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.76, dampingFraction: 0.95, blendDuration: 0)
+        case .calm: return .spring(response: 1.0, dampingFraction: 1, blendDuration: 0)
         }
     }
 

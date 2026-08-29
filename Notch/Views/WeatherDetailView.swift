@@ -3,23 +3,20 @@ import SwiftUI
 /// Full weather detail: a hero band (illustration, temperature, place and a
 /// six-cell metric grid), then hourly and five-day forecast strips.
 ///
-/// Every tab now shares one open panel (as in boring.notch and Atoll), which
-/// at the default size leaves about 160pt for a module. Hero 72 + one 70pt
-/// strip + a 12pt gap fits that, so the hourly and five-day forecasts share
-/// the strip and a segmented control swaps between them rather than stacking
-/// and overrunning the slab.
+/// Every tab shares one open panel (as in boring.notch and Atoll), which at
+/// the default size leaves about 136pt for a module. Hero 62 + one 62pt strip
+/// + an 8pt gap fits that, so the hourly and five-day forecasts share the
+/// strip; the chips that swap between them live in the header, where there is
+/// room the panel body does not have.
 struct WeatherDetailView: View {
     let state: NotchState
-
-    @State private var showsDaily = false
 
     var body: some View {
         Group {
             if let weather = state.weather.snapshot {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     hero(weather)
-                    forecastSwitcher
-                    if showsDaily {
+                    if state.showsDailyForecast {
                         dailyStrip(weather)
                     } else {
                         hourlyStrip(weather)
@@ -66,35 +63,6 @@ struct WeatherDetailView: View {
         return state.weather.failureMessage ?? "Weather unavailable"
     }
 
-    /// Two flat chips rather than a segmented picker: the picker's chrome
-    /// reads as a form control in a panel that has none.
-    private var forecastSwitcher: some View {
-        HStack(spacing: 6) {
-            forecastTab("Hourly", isActive: !showsDaily) { showsDaily = false }
-            forecastTab("5 Days", isActive: showsDaily) { showsDaily = true }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func forecastTab(
-        _ title: String,
-        isActive: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 10, weight: .heavy, design: .rounded))
-                .tracking(0.6)
-                .foregroundStyle(isActive ? NotchTheme.inkPrimary : NotchTheme.inkMuted)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(.white.opacity(isActive ? 0.14 : 0)))
-                .contentShape(Capsule())
-        }
-        .buttonStyle(PressableButtonStyle())
-        .accessibilityAddTraits(isActive ? [.isSelected] : [])
-    }
-
     // MARK: - Hero
 
     private func hero(_ weather: WeatherService.Snapshot) -> some View {
@@ -120,7 +88,7 @@ struct WeatherDetailView: View {
 
             metrics(weather)
         }
-        .frame(height: 66)
+        .frame(height: 62)
         .accessibilityElement(children: .combine)
     }
 
@@ -245,7 +213,7 @@ struct WeatherDetailView: View {
         HStack(alignment: .center, spacing: 0) {
             content()
         }
-        .frame(height: 66)
+        .frame(height: 62)
         .frame(maxWidth: .infinity)
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous)

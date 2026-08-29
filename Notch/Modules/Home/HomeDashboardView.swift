@@ -15,21 +15,16 @@ struct HomeDashboardView: View {
     let namespace: Namespace.ID
 
     var body: some View {
-        // Weather and calendar take exactly the width their content needs
-        // (fixedSize), so a wider weekday or temperature can never be forced
-        // past a hard frame and clipped by the slab. Music absorbs the rest.
-        HStack(alignment: .center, spacing: 20) {
+        // All three columns take exactly the width their content needs, and the
+        // row is centred as a whole. Giving music maxWidth: .infinity instead
+        // made it absorb every spare point, which is what opened the gap
+        // between the player and the weather.
+        HStack(alignment: .center, spacing: 26) {
             mediaPlayerSection
-                .frame(maxWidth: .infinity, alignment: .leading)
-
             weatherWidget
-                .fixedSize(horizontal: true, vertical: false)
-                .layoutPriority(1)
-
             calendarWidget
-                .fixedSize(horizontal: true, vertical: false)
-                .layoutPriority(1)
         }
+        .fixedSize(horizontal: true, vertical: false)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
@@ -44,7 +39,7 @@ struct HomeDashboardView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { state.select(.media) }
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 // Title and artist only — the album line was a third string
                 // competing for the same glance.
                 MarqueeText(
@@ -74,7 +69,7 @@ struct HomeDashboardView: View {
 
                 scrubber
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: 190, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture { state.select(.media) }
             .help("Open the full player")

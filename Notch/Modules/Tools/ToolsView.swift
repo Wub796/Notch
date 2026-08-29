@@ -7,9 +7,9 @@ struct ToolsView: View {
     let state: NotchState
 
     var body: some View {
-        // Budget: NotchState.moduleContentSize, about 698 x 160 at the
+        // Budget: NotchState.moduleContentSize, about 738 x 136 at the
         // default panel size — the columns were sized for a 1000pt slab.
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 16) {
             audioColumn
                 .frame(width: 164, alignment: .leading)
 
@@ -182,7 +182,7 @@ struct ToolsView: View {
     // MARK: - Timer, eye break, shortcuts
 
     private var timerColumn: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 5) {
             sectionLabel("TIMER")
 
             if state.timer.isRunning {

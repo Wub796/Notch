@@ -13,7 +13,6 @@ struct NotchContainerView: View {
     let state: NotchState
 
     @Namespace private var notchNamespace
-    @State private var isHovering = false
 
     /// The open/close springs, which follow the user's Animation Style.
     private var notchAnimation: Animation {
@@ -36,7 +35,31 @@ struct NotchContainerView: View {
     }
 
     private var notchBody: some View {
-        NotchLayoutView(state: state, namespace: notchNamespace, isHovering: isHovering)
+        ZStack(alignment: .top) {
+            slab
+
+            // Closed, hovering and clicking are detected by this and nothing
+            // else: a rectangle of exactly the hardware notch's size, pinned to
+            // the top centre. The previous approach derived the region from a
+            // custom Shape laid inside the slab's own bounds — bounds that
+            // animate, and that the live-activity wings make far wider than the
+            // notch — so the region moved with them. A real view with a real
+            // frame cannot drift.
+            if state.mode != .expanded {
+                Color.clear
+                    .frame(
+                        width: state.adjustedNotchSize.width,
+                        height: state.adjustedNotchSize.height
+                    )
+                    .contentShape(Rectangle())
+                    .onHover { state.hoverChanged($0) }
+                    .onTapGesture { state.handleTap() }
+            }
+        }
+    }
+
+    private var slab: some View {
+        NotchLayoutView(state: state, namespace: notchNamespace, isHovering: state.isHovering)
             // Open, the horizontal inset clears the top flare and the extra 12
             // is the references' slab padding. Closed it is zero, which is the
             // one place this diverges from them: they pad the closed pill too
@@ -69,66 +92,21 @@ struct NotchContainerView: View {
             // Only the open slab and the hovered pill cast a shadow; a closed
             // pill sitting on the black notch does not need one.
             .shadow(
-                color: (state.mode == .expanded || isHovering) ? .black.opacity(0.7) : .clear,
+                color: (state.mode == .expanded || state.isHovering)
+                    ? .black.opacity(0.7)
+                    : .clear,
                 radius: state.settings.cornerRadiusScaling ? 6 : 4
             )
             .animation(notchAnimation, value: state.mode)
-            .animation(NotchAnimations.hover, value: isHovering)
+            .animation(NotchAnimations.hover, value: state.isHovering)
             .animation(notchAnimation, value: state.collapsedActivity)
-            .contentShape(
-                HoverRegionShape(
-                    probe: state.mode == .expanded ? nil : state.hoverProbeSize
-                )
-            )
-            .onHover { hovering in
-                isHovering = hovering
-                state.hoverChanged(hovering)
-            }
-            .modifier(
-                ConditionalTapModifier(active: state.mode != .expanded) {
-                    state.handleTap()
-                }
-            )
+            // Closed, the slab is purely visual — the probe above owns hover
+            // and clicks, so the wings beside the notch are not a target.
+            .allowsHitTesting(state.mode == .expanded)
+            .onHover { state.hoverChanged($0) }
             .onDrop(
                 of: ShelfController.acceptedTypes,
                 delegate: NotchDropDelegate(state: state)
             )
-            .onChange(of: state.mode) { _, newMode in
-                if newMode != .expanded, isHovering {
-                    isHovering = false
-                }
-            }
-    }
-}
-
-/// Applies the tap gesture only while `active`, so the container never
-/// competes with its child buttons.
-private struct ConditionalTapModifier: ViewModifier {
-    let active: Bool
-    let action: () -> Void
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if active {
-            content.onTapGesture(perform: action)
-        } else {
-            content
-        }
-    }
-}
-
-/// Hit-test region: the full bounds when `probe` is nil, otherwise a
-/// top-centered rectangle of exactly that size.
-private struct HoverRegionShape: Shape {
-    let probe: CGSize?
-
-    func path(in rect: CGRect) -> Path {
-        guard let probe else { return Path(rect) }
-        return Path(CGRect(
-            x: rect.midX - probe.width / 2,
-            y: rect.minY,
-            width: probe.width,
-            height: min(probe.height, rect.height)
-        ))
     }
 }

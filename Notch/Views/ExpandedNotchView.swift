@@ -63,9 +63,12 @@ struct ExpandedNotchView: View {
 
     private var weatherHeaderTrailing: some View {
         HStack(spacing: 8) {
-            Text(updatedLabel)
-                .font(.system(size: 9.5, weight: .medium, design: .rounded).monospacedDigit())
-                .foregroundStyle(NotchTheme.inkMuted)
+            forecastChip("Hourly", isActive: !state.showsDailyForecast) {
+                state.showsDailyForecast = false
+            }
+            forecastChip("5 Days", isActive: state.showsDailyForecast) {
+                state.showsDailyForecast = true
+            }
 
             NotchIconButton(systemImage: "arrow.clockwise", help: "Refresh weather") {
                 state.weather.refresh(force: true)
@@ -73,11 +76,25 @@ struct ExpandedNotchView: View {
         }
     }
 
-    private var updatedLabel: String {
-        guard let snapshot = state.weather.snapshot else { return "No data yet" }
-        let ago = Date().timeIntervalSince(snapshot.fetchedAt)
-        if ago < 60 { return "Updated just now" }
-        return "Updated \(Int(ago / 60))m ago"
+    /// Flat chips rather than a segmented picker: the picker's chrome reads as
+    /// a form control in a panel that has none.
+    private func forecastChip(
+        _ title: String,
+        isActive: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 10, weight: .heavy, design: .rounded))
+                .tracking(0.6)
+                .foregroundStyle(isActive ? NotchTheme.inkPrimary : NotchTheme.inkMuted)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(.white.opacity(isActive ? 0.16 : 0)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .accessibilityAddTraits(isActive ? [.isSelected] : [])
     }
 
     private var calendarHeaderTrailing: some View {

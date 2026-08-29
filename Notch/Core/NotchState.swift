@@ -38,6 +38,11 @@ final class NotchState {
     /// While pinned, the expanded panel ignores hover-out and outside clicks.
     var isPinned = false
 
+    /// Whether the weather screen shows the five-day strip instead of hourly.
+    /// Held here rather than in the view because the chips that toggle it sit
+    /// in the header, which is a sibling of the module.
+    var showsDailyForecast = false
+
     /// Notifies the window controller of mode transitions so it can manage
     /// key-window status (SwiftUI buttons in borderless panels only fire
     /// reliably once the panel is key).
@@ -90,18 +95,6 @@ final class NotchState {
         max(adjustedNotchSize.height, 38)
     }
 
-    /// Hover is detected over the hardware notch and nowhere else.
-    ///
-    /// Exactly the notch, with no margin: the closed pill is often much wider
-    /// than the notch because of its live-activity wings, and any margin on
-    /// top of that opened the notch when the pointer was merely crossing the
-    /// menu bar near it. Expanded, the whole slab stays live so hovering
-    /// anywhere inside keeps it open.
-    var hoverProbeSize: CGSize {
-        mode == .expanded ? expandedSize : adjustedNotchSize
-    }
-
-
     let settings = NotchSettings.shared
     let media = MediaController()
     let calendar = CalendarController()
@@ -125,7 +118,10 @@ final class NotchState {
 
     private var pendingHoverWork: DispatchWorkItem?
     private var hoverStartedAt: Date?
-    private var isHovering = false
+
+    /// Whether the pointer is over the notch. Read by the view for its hover
+    /// affordances; there is deliberately only one copy of this.
+    private(set) var isHovering = false
 
     /// Minimum dwell before a click counts as intentional rather than the tail
     /// of a fast pointer sweep across the menu bar.
@@ -393,6 +389,11 @@ final class NotchState {
         mode = .collapsed
         isDropTargeted = false
         isPinned = false
+        // A collapse can arrive from an outside click or the hotkey, with the
+        // pointer nowhere near the notch; leaving this set would make the next
+        // genuine hover a no-op.
+        isHovering = false
+        pendingHoverWork?.cancel()
         onModeChange?(mode)
         sleepModules()
     }
