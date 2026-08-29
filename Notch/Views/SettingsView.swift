@@ -1,35 +1,153 @@
 import AppKit
 import SwiftUI
 
-/// The Settings window (⌘, from the menu bar item, or the gear in the notch):
-/// native macOS preferences style — one tab per concern, grouped forms with
-/// explanatory footers.
+/// The Settings window (⌘, from the menu bar item, or the gear in the notch).
+/// A sidebar rather than a tab strip: eight tabs crowded the tab bar and left
+/// each pane cramped, and the sidebar is the modern macOS settings idiom.
 struct SettingsView: View {
-    var body: some View {
-        TabView {
-            GeneralSettingsPane()
-                .tabItem { Label("General", systemImage: "gearshape") }
-            NotchSettingsPane()
-                .tabItem { Label("Notch", systemImage: "sparkles.rectangle.stack") }
-            MediaSettingsPane()
-                .tabItem { Label("Media", systemImage: "music.note") }
-            ActivitiesSettingsPane()
-                .tabItem { Label("Activities", systemImage: "bolt.badge.clock") }
-            SystemSettingsPane()
-                .tabItem { Label("System", systemImage: "gauge.with.dots.needle.50percent") }
-            PrivacySettingsPane()
-                .tabItem { Label("Privacy", systemImage: "hand.raised") }
-            ProSettingsPane()
-                .tabItem { Label("Pro", systemImage: "sparkles") }
-            AboutSettingsPane()
-                .tabItem { Label("About", systemImage: "info.circle") }
+    private enum Pane: String, CaseIterable, Identifiable {
+        case general, notch, media, weather, activities, system, privacy, pro, about
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .general: "General"
+            case .notch: "Notch"
+            case .media: "Media"
+            case .weather: "Weather"
+            case .activities: "Activities"
+            case .system: "System"
+            case .privacy: "Privacy"
+            case .pro: "Pro"
+            case .about: "About"
+            }
         }
-        .frame(width: 580, height: 520)
-        // Match the notch's dark glass aesthetic.
+
+        var systemImage: String {
+            switch self {
+            case .general: "gearshape"
+            case .notch: "sparkles.rectangle.stack"
+            case .media: "music.note"
+            case .weather: "cloud.sun"
+            case .activities: "bolt.badge.clock"
+            case .system: "gauge.with.dots.needle.50percent"
+            case .privacy: "hand.raised"
+            case .pro: "sparkles"
+            case .about: "info.circle"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .general: .gray
+            case .notch: .indigo
+            case .media: .pink
+            case .weather: .cyan
+            case .activities: .orange
+            case .system: .green
+            case .privacy: .blue
+            case .pro: .purple
+            case .about: .secondary
+            }
+        }
+    }
+
+    @State private var selection: Pane = .general
+
+    var body: some View {
+        NavigationSplitView {
+            List(Pane.allCases, selection: $selection) { section in
+                Label {
+                    Text(section.title)
+                } icon: {
+                    Image(systemName: section.systemImage)
+                        .foregroundStyle(section.tint)
+                }
+                .tag(section)
+            }
+            .navigationSplitViewColumnWidth(178)
+        } detail: {
+            detail
+                .navigationTitle(selection.title)
+        }
+        .frame(width: 760, height: 560)
+        // Match the notch's dark aesthetic.
         .preferredColorScheme(.dark)
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
         }
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch selection {
+        case .general: GeneralSettingsPane()
+        case .notch: NotchSettingsPane()
+        case .media: MediaSettingsPane()
+        case .weather: WeatherSettingsPane()
+        case .activities: ActivitiesSettingsPane()
+        case .system: SystemSettingsPane()
+        case .privacy: PrivacySettingsPane()
+        case .pro: ProSettingsPane()
+        case .about: AboutSettingsPane()
+        }
+    }
+}
+
+// MARK: - Weather
+
+/// Weather options, split out of Activities so the unit picker and the
+/// location controls sit together with a live status line.
+private struct WeatherSettingsPane: View {
+    @Bindable var settings = NotchSettings.shared
+
+    @State private var refreshToken = 0
+
+    private var locationStatus: IntegrationPermissions.Status {
+        IntegrationPermissions.Integration.location.status
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Show weather", isOn: $settings.showWeather)
+                Toggle("Weather in the compact notch", isOn: $settings.showCompactWeather)
+                Picker("Temperature unit", selection: $settings.temperatureUnit) {
+                    ForEach(TemperatureUnit.allCases) { unit in
+                        Text(unit.title).tag(unit)
+                    }
+                }
+            } header: {
+                Text("Display")
+            }
+
+            Section {
+                LabeledContent("Location access") {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(locationStatus == .granted ? .green : .orange)
+                            .frame(width: 7, height: 7)
+                        Text(locationStatus.title)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if locationStatus != .granted {
+                    Button("Grant Location Access") {
+                        IntegrationPermissions.Integration.location.request {
+                            refreshToken += 1
+                        }
+                    }
+                }
+            } header: {
+                Text("Location")
+            } footer: {
+                Text("Weather works without location access — the notch falls back to an approximate position from your network connection. Granting access makes it accurate to your city.")
+            }
+        }
+        .formStyle(.grouped)
+        .id(refreshToken)
     }
 }
 
@@ -115,20 +233,6 @@ private struct NotchSettingsPane: View {
                 } footer: {
                     Text("Configures dwell time before the notch opens or closes on pointer hover.")
                 }
-            }
-
-            Section {
-                Toggle("Show weather in compact notch", isOn: $settings.showCompactWeather)
-
-                Picker("Temperature unit", selection: $settings.temperatureUnit) {
-                    ForEach(TemperatureUnit.allCases) { unit in
-                        Text(unit.title).tag(unit)
-                    }
-                }
-            } header: {
-                Label("Compact Notch", systemImage: "cloud.sun")
-            } footer: {
-                Text("When idle or playing music, the collapsed notch shows the weather condition icon and bold temperature.")
             }
 
         }

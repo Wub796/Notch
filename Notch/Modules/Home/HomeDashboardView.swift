@@ -199,19 +199,37 @@ struct HomeDashboardView: View {
                     + ", " + WeatherService.condition(for: weather.weatherCode)
                 )
             } else {
-                HStack(spacing: 7) {
-                    Image(systemName: "cloud.sun.fill")
+                HStack(spacing: 8) {
+                    Image(systemName: weatherPlaceholderIcon)
                         .font(.system(size: 20))
                         .foregroundStyle(NotchTheme.inkMuted)
-                    Text(state.settings.showWeather ? "Weather loading…" : "Weather off")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(NotchTheme.inkMuted)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(weatherPlaceholderTitle)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkSecondary)
+                        if !state.settings.showWeather || state.weather.failureMessage != nil {
+                            Text("Click to retry")
+                                .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                                .foregroundStyle(NotchTheme.inkMuted)
+                        }
+                    }
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { state.select(.weather) }
                 .help("Open the weather detail")
             }
         }
+    }
+
+    private var weatherPlaceholderIcon: String {
+        if !state.settings.showWeather { return "cloud.slash" }
+        return state.weather.failureMessage == nil ? "cloud.sun.fill" : "exclamationmark.icloud"
+    }
+
+    private var weatherPlaceholderTitle: String {
+        if !state.settings.showWeather { return "Weather off" }
+        if let failure = state.weather.failureMessage { return failure }
+        return "Getting weather…"
     }
 
     private func metricRow(_ systemImage: String, text: String) -> some View {
@@ -238,29 +256,20 @@ struct HomeDashboardView: View {
             !$0.isAllDay && $0.start > today
         }
 
-        // Month sits beside the strip, as in the reference — not above it.
-        return HStack(alignment: .top, spacing: 12) {
-            Text(monthAbbreviation(Calendar.current.component(.month, from: today)))
-                .font(.system(size: 26, weight: .heavy, design: .rounded))
-                .foregroundStyle(NotchTheme.inkPrimary)
-                .accessibilityHidden(true)
+        // Month beside the strip, with the next-item line spanning the full
+        // column beneath so it has room to read without truncating.
+        return VStack(alignment: .leading, spacing: 8) {
+            monthAndStrip(today: today, strip: strip)
 
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(alignment: .bottom, spacing: 9) {
-                    ForEach(Array(strip.enumerated()), id: \.offset) { _, day in
-                        dayCell(day)
-                    }
-                }
-
-                HStack(spacing: 5) {
-                    Image(systemName: "calendar.badge.checkmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(NotchTheme.inkMuted)
-                    Text(remaining?.title ?? "No more items today")
-                        .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                        .foregroundStyle(NotchTheme.inkMuted)
-                        .lineLimit(1)
-                }
+            HStack(spacing: 5) {
+                Image(systemName: "calendar.badge.checkmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(NotchTheme.inkMuted)
+                Text(remaining?.title ?? "No more items today")
+                    .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(NotchTheme.inkMuted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
         }
         .contentShape(Rectangle())
@@ -269,6 +278,21 @@ struct HomeDashboardView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Calendar")
         .accessibilityValue(remaining?.title ?? "No more items today")
+    }
+
+    private func monthAndStrip(today: Date, strip: [Date]) -> some View {
+        HStack(alignment: .bottom, spacing: 12) {
+            Text(monthAbbreviation(Calendar.current.component(.month, from: today)))
+                .font(.system(size: 26, weight: .heavy, design: .rounded))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .accessibilityHidden(true)
+
+            HStack(alignment: .bottom, spacing: 9) {
+                ForEach(Array(strip.enumerated()), id: \.offset) { _, day in
+                    dayCell(day)
+                }
+            }
+        }
     }
 
     /// Today is set in blue and spelled out ("FRI"); the surrounding days are
@@ -303,18 +327,12 @@ struct HomeDashboardView: View {
         day.formatted(.dateTime.weekday(.abbreviated)).uppercased()
     }
 
-    /// A soft hue per weekday for the calendar letters, echoing the reference's
-    /// varied day colors (Wednesday gray, Thursday cyan, Friday blue, Saturday
-    /// purple, Sunday red).
+    /// Weekdays are neutral; only weekends pick up a warm tint. A colour per
+    /// day read as noise rather than information.
     private func weekdayColor(for day: Date) -> Color {
-        switch Calendar.current.component(.weekday, from: day) {
-        case 1: .red          // Sunday
-        case 2, 4: .gray      // Monday, Wednesday
-        case 3: .blue         // Tuesday
-        case 5: .cyan         // Thursday
-        case 6: .blue         // Friday
-        default: .purple      // Saturday
-        }
+        let weekday = Calendar.current.component(.weekday, from: day)
+        let isWeekend = weekday == 1 || weekday == 7
+        return isWeekend ? .red.opacity(0.75) : NotchTheme.inkSecondary
     }
 
     private func monthAbbreviation(_ month: Int) -> String {

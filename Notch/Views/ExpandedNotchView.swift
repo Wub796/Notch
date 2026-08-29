@@ -12,7 +12,7 @@ struct ExpandedNotchView: View {
             // Tall enough to drop the icons clear of the screen's top edge on
             // every display, not just notched ones.
             header
-                .frame(height: max(state.notchSize.height, 38))
+                .frame(height: state.topBarHeight)
 
             Group {
                 if state.isDropTargeted || state.shelf.isResolvingDrop {
@@ -24,7 +24,9 @@ struct ExpandedNotchView: View {
                     content
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Centred, so any slack is split above and below the content
+            // rather than pooling into dead space at the bottom.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             // One gutter for the whole slab: content lines up with the back
             // chevron and status icons in the header above it.
             .padding(.horizontal, 34)

@@ -32,6 +32,13 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     private(set) var snapshot: Snapshot?
     private(set) var placeName: String?
 
+    /// Set when a fetch fails outright, so the UI can say so instead of
+    /// showing "loading…" forever.
+    private(set) var failureMessage: String?
+
+    /// True while a lookup is genuinely in flight.
+    private(set) var isLoading = false
+
     private let locationManager = CLLocationManager()
     private let geocoder = CLGeocoder()
     private var isFetching = false
@@ -61,24 +68,77 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
             return
         }
         guard !isFetching else { return }
+        isLoading = true
+        failureMessage = nil
 
         switch locationManager.authorizationStatus {
         case .notDetermined:
             requestAuthorization()
+            // Don't let an unanswered prompt strand the UI: if no fix arrives
+            // shortly, fall back to an approximate location.
+            scheduleLocationFallback()
         case .restricted, .denied:
-            break
+            // Location is off for this app — approximate from the network
+            // instead of showing nothing at all.
+            resolveApproximateLocation()
         default:
             locationManager.requestLocation()
+            scheduleLocationFallback()
         }
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         switch manager.authorizationStatus {
-        case .notDetermined, .restricted, .denied:
+        case .notDetermined:
             break
+        case .restricted, .denied:
+            resolveApproximateLocation()
         default:
             if NotchSettings.shared.showWeather {
                 manager.requestLocation()
+            }
+        }
+    }
+
+    /// If CoreLocation hasn't produced a fix in a few seconds — a denied
+    /// prompt, Location Services off, or a slow first fix — fall back.
+    private func scheduleLocationFallback() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            guard let self, self.snapshot == nil, !self.isFetching else { return }
+            self.resolveApproximateLocation()
+        }
+    }
+
+    /// Keyless IP geolocation, used whenever a precise fix isn't available.
+    private func resolveApproximateLocation() {
+        guard snapshot == nil, !isFetching else { return }
+
+        struct IPLocation: Decodable {
+            let latitude: Double?
+            let longitude: Double?
+            let city: String?
+        }
+
+        Task { [weak self] in
+            guard let url = URL(string: "https://ipapi.co/json/"),
+                  let (data, _) = try? await URLSession.shared.data(from: url),
+                  let resolved = try? JSONDecoder().decode(IPLocation.self, from: data),
+                  let latitude = resolved.latitude,
+                  let longitude = resolved.longitude
+            else {
+                await MainActor.run { [weak self] in
+                    self?.isLoading = false
+                    self?.failureMessage = "Weather unavailable"
+                }
+                return
+            }
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                if let city = resolved.city, self.placeName == nil {
+                    self.placeName = city
+                }
+                self.fetch(for: CLLocation(latitude: latitude, longitude: longitude))
             }
         }
     }
@@ -90,7 +150,8 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // Weather is a garnish: fail silently, retry on the next expand.
+        // A failed fix is not fatal — approximate from the network instead.
+        resolveApproximateLocation()
     }
 
     private func reverseGeocode(_ location: CLLocation) {
@@ -204,8 +265,12 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
             }
             await MainActor.run { [weak self] in
                 self?.isFetching = false
+                self?.isLoading = false
                 if let result {
                     self?.snapshot = result
+                    self?.failureMessage = nil
+                } else {
+                    self?.failureMessage = "Couldn't reach the forecast"
                 }
             }
         }

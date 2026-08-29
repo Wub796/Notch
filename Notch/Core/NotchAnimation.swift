@@ -38,9 +38,9 @@ enum NotchAnimations {
     static var expand: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.5, dampingFraction: 0.7)
-        case .bouncy: return .spring(response: 0.55, dampingFraction: 0.6)
-        case .calm: return .spring(response: 0.7, dampingFraction: 0.92)
+        case .snappy: return .spring(response: 0.34, dampingFraction: 0.82)
+        case .bouncy: return .spring(response: 0.38, dampingFraction: 0.62)
+        case .calm: return .spring(response: 0.5, dampingFraction: 0.95)
         }
     }
 
@@ -48,9 +48,9 @@ enum NotchAnimations {
     static var collapse: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.4, dampingFraction: 0.95)
-        case .bouncy: return .spring(response: 0.4, dampingFraction: 0.85)
-        case .calm: return .spring(response: 0.55, dampingFraction: 0.98)
+        case .snappy: return .spring(response: 0.26, dampingFraction: 1.0)
+        case .bouncy: return .spring(response: 0.3, dampingFraction: 0.88)
+        case .calm: return .spring(response: 0.42, dampingFraction: 1.0)
         }
     }
 
@@ -58,9 +58,9 @@ enum NotchAnimations {
     static var hover: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.3, dampingFraction: 0.7)
-        case .bouncy: return .spring(response: 0.3, dampingFraction: 0.6)
-        case .calm: return .spring(response: 0.45, dampingFraction: 0.95)
+        case .snappy: return .spring(response: 0.2, dampingFraction: 0.86)
+        case .bouncy: return .spring(response: 0.22, dampingFraction: 0.66)
+        case .calm: return .spring(response: 0.32, dampingFraction: 1.0)
         }
     }
 
@@ -68,9 +68,9 @@ enum NotchAnimations {
     static var content: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.5, dampingFraction: 0.95)
-        case .bouncy: return .spring(response: 0.6, dampingFraction: 0.85)
-        case .calm: return .spring(response: 0.7, dampingFraction: 0.98)
+        case .snappy: return .spring(response: 0.3, dampingFraction: 0.95)
+        case .bouncy: return .spring(response: 0.36, dampingFraction: 0.86)
+        case .calm: return .spring(response: 0.46, dampingFraction: 0.98)
         }
     }
 

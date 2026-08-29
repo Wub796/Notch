@@ -65,8 +65,8 @@ final class NotchSettings {
 
     var expandOnHover = true { didSet { save(expandOnHover, "expandOnHover") } }
     /// Dwell required before a hover opens the notch.
-    var openDelay = 0.28 { didSet { save(openDelay, "openDelay") } }
-    var closeDelay = 0.35 { didSet { save(closeDelay, "closeDelay") } }
+    var openDelay = 0.22 { didSet { save(openDelay, "openDelay") } }
+    var closeDelay = 0.2 { didSet { save(closeDelay, "closeDelay") } }
 
     /// When on, dropped files go straight to AirDrop; when off they land on
     /// the shelf first.
