@@ -186,7 +186,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
             guard let name = placemarks?.first?.locality
                 ?? placemarks?.first?.administrativeArea
             else { return }
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 self?.placeName = name
             }
         }

@@ -185,7 +185,7 @@ struct CollapsedNotchView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(spacing: 0) {
-            weatherFlank
+            notchRowFlank
                 .frame(height: state.adjustedNotchSize.height)
 
             content()
@@ -239,9 +239,9 @@ struct CollapsedNotchView: View {
         value: Binding<CGFloat>
     ) -> some View {
         VStack(spacing: 0) {
-            // The notch's own row keeps the weather wings so the pill does not
-            // appear to lose them for the second the HUD is up.
-            weatherFlank
+            // The notch's own row keeps whatever it was already wearing, so
+            // the pill does not appear to lose it for the second the HUD is up.
+            notchRowFlank
                 .frame(height: state.adjustedNotchSize.height)
 
             DroppedHUDBar(
@@ -250,6 +250,25 @@ struct CollapsedNotchView: View {
                 showsPercentage: state.settings.showHUDPercentage
             )
             .frame(height: 34)
+        }
+    }
+
+    /// What flanks the hardware notch on its own row while an activity is
+    /// dropped beneath it. Media owns the wings whenever something is
+    /// playing — cover on the left, visualiser on the right, and the weather
+    /// stays out of the way until playback stops.
+    @ViewBuilder
+    private var notchRowFlank: some View {
+        if state.media.hasTrack, state.settings.showMediaWings {
+            musicWings
+        } else if state.settings.showCompactWeather {
+            weatherFlank
+        } else {
+            ActivityWingLayout(
+                notchWidth: state.adjustedNotchSize.width,
+                leading: Color.clear.frame(width: 1, height: 1),
+                trailing: Color.clear.frame(width: 1, height: 1)
+            )
         }
     }
 
@@ -324,7 +343,8 @@ struct CollapsedNotchView: View {
             trailing: MusicVisualizerView(
                 accent: state.media.accent,
                 isPlaying: state.media.isPlaying,
-                level: state.audio.isMuted ? 0 : state.audio.volume
+                level: state.audio.isMuted ? 0 : state.audio.volume,
+                bands: state.visualizerBands
             )
         )
     }

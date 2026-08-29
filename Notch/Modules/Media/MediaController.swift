@@ -17,7 +17,16 @@ final class MediaController {
 
     private(set) var track: Track?
     private(set) var artwork: NSImage?
-    private(set) var isPlaying = false
+    private(set) var isPlaying = false {
+        didSet {
+            guard isPlaying != oldValue else { return }
+            onPlaybackStateChange?(isPlaying)
+        }
+    }
+
+    /// Fired when playback starts or stops, so things that cost something to
+    /// run — the real-time output meter — only run while there is audio.
+    var onPlaybackStateChange: ((Bool) -> Void)?
 
     /// Legible accent derived from the current artwork; tints the scrubber,
     /// play button, lyrics highlight, and the collapsed equalizer.
@@ -94,6 +103,7 @@ final class MediaController {
     private var progressTimer: Timer?
     private var fallbackTimer: Timer?
     private var lyricActivityTimer: Timer?
+    private var pendingClearWork: DispatchWorkItem?
     private var isActive = false
 
     var hasTrack: Bool {
@@ -142,6 +152,24 @@ final class MediaController {
             }
             refreshFromMediaRemote()
         }
+
+        // Read whatever is playing straight away, off the main thread so a
+        // slow-to-answer player cannot hold up launch. Without this the notch
+        // showed nothing until it was first opened: MediaRemote is push-based
+        // and sends nothing until something changes, and where it is gated the
+        // Apple Events path only ran while the notch was expanded.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            // Only when consent is already on file: a probe at launch must not
+            // be what raises the Automation dialog.
+            guard let bundleID = self?.fallbackBundleID,
+                  IntegrationPermissions.isAutomationAllowed(bundleID),
+                  let snapshot = self?.appleScriptSnapshot()
+            else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.track == nil else { return }
+                self.apply(snapshot)
+            }
+        }
     }
 
     // MARK: - Lifecycle
@@ -157,7 +185,21 @@ final class MediaController {
         fallbackTimer?.invalidate()
         fallbackTimer = nil
         defer { updateLyricActivityTimer() }
-        guard active else { return }
+
+        guard active else {
+            // Closed, the wings and the lyric line still need to know when the
+            // song changes. MediaRemote pushes that on its own; the Apple
+            // Events path has to ask, so it keeps a slow poll rather than
+            // going dark until the notch is opened again.
+            if !useMediaRemote, wantsCollapsedMediaUpdates {
+                fallbackTimer = Timer.scheduledTimer(
+                    withTimeInterval: 4.0, repeats: true
+                ) { [weak self] _ in
+                    self?.refreshFromAppleScript()
+                }
+            }
+            return
+        }
 
         if useMediaRemote {
             refreshFromMediaRemote()
@@ -173,6 +215,30 @@ final class MediaController {
         }
         tickProgress()
     }
+
+    /// Whether the closed notch is showing anything that depends on the
+    /// current track. Nothing is polled for a notch that shows neither.
+    private var wantsCollapsedMediaUpdates: Bool {
+        let settings = NotchSettings.shared
+        guard settings.showMediaWings || settings.lyricActivityEnabled else { return false }
+        return automationIsAllowed()
+    }
+
+    /// TCC lookups are cheap but not free, and this is asked on every open and
+    /// close, so the answer is held for half a minute.
+    private func automationIsAllowed() -> Bool {
+        let bundleID = fallbackBundleID
+        if let cached = automationAllowedCache,
+           cached.bundleID == bundleID,
+           Date().timeIntervalSince(cached.checked) < 30 {
+            return cached.allowed
+        }
+        let allowed = IntegrationPermissions.isAutomationAllowed(bundleID)
+        automationAllowedCache = (bundleID, allowed, Date())
+        return allowed
+    }
+
+    private var automationAllowedCache: (bundleID: String, allowed: Bool, checked: Date)?
 
     /// The collapsed lyric activity needs its own tick — it runs only while
     /// a track is actually playing with the setting enabled and the notch
@@ -285,7 +351,7 @@ final class MediaController {
     private func refreshFromMediaRemote() {
         guard useMediaRemote else { return }
         bridge.nowPlayingInfo { [weak self] info in
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 guard self.providerAllowsCurrentSource() else {
                     // A different app is playing than the one selected — show
@@ -297,12 +363,12 @@ final class MediaController {
             }
         }
         bridge.nowPlayingApplicationPID { [weak self] pid in
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 self?.updateSourceApp(pid: pid)
             }
         }
         bridge.isPlaying { [weak self] playing in
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 guard self.providerAllowsCurrentSource() else {
                     if self.isPlaying { self.isPlaying = false }
@@ -322,15 +388,16 @@ final class MediaController {
     private func apply(_ info: [String: Any]) {
         guard !info.isEmpty else {
             noteEmptyMediaRemoteReply()
-            track = nil
-            artwork = nil
-            isPlaying = false
-            sourceAppBundleID = nil
-            updateLyricActivityTimer()
+            // Not cleared on the spot: players go quiet for a moment between
+            // tracks, and blanking the panel there is what made the
+            // "can't see other players" notice flash between songs.
+            clearTrackAfterGrace()
             return
         }
 
         consecutiveEmptyReplies = 0
+        pendingClearWork?.cancel()
+        pendingClearWork = nil
 
         var newTrack = Track()
         newTrack.title = info[MediaRemoteBridge.InfoKey.title] as? String ?? ""
@@ -420,7 +487,7 @@ final class MediaController {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let image = NSImage(data: artworkData) else { return }
             let color = NotchTheme.accent(from: image)
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 guard let self, self.accentSourceHash == hash else { return }
                 withAnimation(.notchSpring) {
                     self.accent = color
@@ -437,7 +504,7 @@ final class MediaController {
 
         Task { [weak self] in
             guard let token = await SpotifyAuth.shared.validAccessToken() else {
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     self?.queue = []
                     self?.followersLabel = nil
                 }
@@ -452,7 +519,7 @@ final class MediaController {
             }
             let followers = await SpotifyClient.followers(forArtist: track.artist, token: token)
 
-            await MainActor.run {
+            await MainActor.run { [weak self] in
                 guard let self, self.lastSpotifyLookup == key else { return }
                 self.queue = items
                 self.followersLabel = followers.map {
@@ -530,34 +597,48 @@ final class MediaController {
         !NSRunningApplication.runningApplications(withBundleIdentifier: fallbackBundleID).isEmpty
     }
 
-    private func refreshFromAppleScript() {
+    /// One reading of the player's state, or nil when it has nothing to say.
+    /// Blocking, so it is only called from a background queue or from the
+    /// fallback timer, which already runs while the notch is open.
+    private struct Snapshot {
+        var track: Track
+        var elapsed: TimeInterval
+        var isPlaying: Bool
+    }
+
+    private func appleScriptSnapshot() -> Snapshot? {
         // Never launch a player just to ask what is playing.
         guard fallbackAppIsRunning,
               let script = NSAppleScript(source: stateScript(for: fallbackAppName))
-        else { return }
+        else { return nil }
+
         var error: NSDictionary?
         let result = script.executeAndReturnError(&error)
-        guard error == nil, let raw = result.stringValue, raw != "stopped" else {
-            track = nil
-            isPlaying = false
-            return
-        }
+        guard error == nil, let raw = result.stringValue, raw != "stopped" else { return nil }
 
         let parts = raw.components(separatedBy: "||")
-        guard parts.count >= 6 else { return }
+        guard parts.count >= 6 else { return nil }
 
         var newTrack = Track()
         newTrack.title = parts[0]
         newTrack.artist = parts[1]
         newTrack.album = parts[2]
-        newTrack.duration = TimeInterval(parts[3].replacingOccurrences(of: ",", with: ".")) ?? 0
+        newTrack.duration = Self.seconds(fromAppleScript: parts[3])
 
-        elapsedAnchor = TimeInterval(parts[4].replacingOccurrences(of: ",", with: ".")) ?? 0
+        return Snapshot(
+            track: newTrack,
+            elapsed: TimeInterval(parts[4].replacingOccurrences(of: ",", with: ".")) ?? 0,
+            isPlaying: parts[5] == "playing"
+        )
+    }
+
+    private func apply(_ snapshot: Snapshot) {
+        elapsedAnchor = snapshot.elapsed
         anchorDate = Date()
-        isPlaying = parts[5] == "playing"
+        isPlaying = snapshot.isPlaying
 
-        let isNewTrack = newTrack != track
-        updateTrackIfChanged(newTrack)
+        let isNewTrack = snapshot.track != track
+        updateTrackIfChanged(snapshot.track)
         updateLyricActivityTimer()
 
         // MediaRemote hands artwork over with the rest of the info; Apple
@@ -567,13 +648,79 @@ final class MediaController {
             loadFallbackArtwork()
         }
 
-        // The AppleScript path only ever talks to the selected provider.
         if sourceAppName == nil,
            let app = NSRunningApplication
                .runningApplications(withBundleIdentifier: fallbackBundleID).first {
             sourceAppName = app.localizedName
             sourceAppIcon = app.icon
         }
+    }
+
+    private func refreshFromAppleScript() {
+        guard let snapshot = appleScriptSnapshot() else {
+            clearTrackAfterGrace()
+            return
+        }
+        pendingClearWork?.cancel()
+        pendingClearWork = nil
+        apply(snapshot)
+    }
+
+    /// Waits a beat before blanking the player.
+    ///
+    /// A player between tracks reports nothing for a moment, and clearing on
+    /// the first empty reading made the panel flash its "nothing playing"
+    /// state — including the MediaRemote explanation — every time a song
+    /// changed. Holding the last track briefly rides that out.
+    private func clearTrackAfterGrace() {
+        guard track != nil, pendingClearWork == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingClearWork = nil
+
+            guard !self.useMediaRemote else {
+                // MediaRemote has already said there is nothing playing, and
+                // it says so again the moment there is. Nothing to re-ask.
+                self.finishClearingTrack()
+                return
+            }
+
+            // Re-ask off the main thread: a player that is slow to answer must
+            // not be able to stall the UI, which is what running the script
+            // inline here did.
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let stillNothing = self?.appleScriptSnapshot() == nil
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, stillNothing else { return }
+                    self.finishClearingTrack()
+                }
+            }
+        }
+        pendingClearWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
+    }
+
+    private func finishClearingTrack() {
+        track = nil
+        artwork = nil
+        isPlaying = false
+        sourceAppBundleID = nil
+        updateTrackIfChanged(Track())
+        updateLyricActivityTimer()
+    }
+
+    /// Track length from an AppleScript reply, in seconds.
+    ///
+    /// Music reports `duration` in seconds and Spotify reports it in
+    /// milliseconds, with nothing in the reply to say which — so a Spotify
+    /// track came through as roughly a thousand times too long, which is why
+    /// the remaining time read like the length of the whole queue. Anything
+    /// longer than six hours is taken as milliseconds; no song is that long,
+    /// and the ambiguity only exists in that range.
+    private static func seconds(fromAppleScript raw: String) -> TimeInterval {
+        let value = TimeInterval(raw.replacingOccurrences(of: ",", with: ".")) ?? 0
+        guard value > 0 else { return 0 }
+        return value > 6 * 60 * 60 ? value / 1_000 : value
     }
 
     /// Pulls cover art from the player itself.
@@ -616,7 +763,7 @@ final class MediaController {
                 }
             }
 
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 guard let self, self.track == expected else { return }
                 self.artwork = image
                 if let data {

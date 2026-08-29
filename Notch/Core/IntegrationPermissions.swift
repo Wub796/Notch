@@ -155,7 +155,7 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Self.automationPermission(for: target.bundleID, askUser: false)
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 switch result {
                 case noErr:
@@ -181,6 +181,13 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     /// which is unreliable while it is launching.
     ///
     /// Blocks. Never call it on the main thread.
+    /// Whether Apple Events to this app are already allowed, asked without
+    /// raising the consent dialog. Used before any speculative script — a
+    /// background probe at launch must never be what puts a prompt on screen.
+    static func isAutomationAllowed(_ bundleID: String) -> Bool {
+        automationPermission(for: bundleID, askUser: false) == noErr
+    }
+
     private static func automationPermission(for bundleID: String, askUser: Bool) -> OSStatus {
         guard let data = bundleID.data(using: .utf8) else { return OSStatus(-50) }
 
@@ -323,7 +330,7 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         NSWorkspace.shared.openApplication(
             at: url, configuration: configuration
         ) { [weak self] _, error in
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 guard error == nil else {
                     self?.notes[.music] = "Couldn't open \(target.title)."
                     self?.pending.remove(.music)

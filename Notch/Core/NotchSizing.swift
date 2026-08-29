@@ -81,7 +81,7 @@ enum NotchSizing {
     private static func baseSize(for tab: NotchTab) -> CGSize {
         switch tab {
         case .home: CGSize(width: 900, height: 182)
-        case .media: CGSize(width: 560, height: 300)
+        case .media: CGSize(width: 560, height: 280)
         case .weather: CGSize(width: 600, height: 290)
         case .calendar: CGSize(width: 620, height: 366)
         case .shelf: CGSize(width: 660, height: 220)

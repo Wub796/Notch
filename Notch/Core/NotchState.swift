@@ -126,6 +126,7 @@ final class NotchState {
     let brightness = BrightnessController()
     let quickActions = QuickActions()
     let audioApps = AudioAppMonitor()
+    let audioMeter = SystemAudioMeter()
 
     /// Which half of the audio screen is showing.
     var audioTab: AudioScreenTab = .devices
@@ -174,6 +175,16 @@ final class NotchState {
             self?.activities.showTrackChange(title: track.title, artist: track.artist)
         }
 
+        // The output meter is a screen-capture stream, so it runs only while
+        // something is actually playing and only if the user asked for it.
+        media.onPlaybackStateChange = { [weak self] _ in
+            self?.syncAudioMeter()
+        }
+        settings.onRealtimeAudioMeterChanged = { [weak self] _ in
+            self?.syncAudioMeter()
+        }
+        syncAudioMeter()
+
         focusMonitor.onChange = { [weak self] mode in
             guard let mode else {
                 self?.activities.showFocusChange(name: "Focus Off", symbol: "moon.zzz")
@@ -210,6 +221,22 @@ final class NotchState {
                 self?.clipboard.stop()
             }
         }
+    }
+
+    /// Starts or stops the real-time meter to match the setting and playback.
+    func syncAudioMeter() {
+        if settings.realtimeAudioMeter, media.isPlaying {
+            audioMeter.start()
+        } else {
+            audioMeter.stop()
+        }
+    }
+
+    /// What the collapsed visualiser should draw: the measured bands when the
+    /// meter is live, and nil when the volume-driven fallback should be used.
+    var visualizerBands: [Float]? {
+        guard settings.realtimeAudioMeter, audioMeter.isLive else { return nil }
+        return audioMeter.bands
     }
 
     // MARK: - HUD sources
@@ -303,7 +330,9 @@ final class NotchState {
         // Cover on one side, visualiser on the other: neither needs the width
         // the old glyph-and-temperature pair did.
         case .music: 112
-        case .lyrics: 150
+        // The lyric line lives under the notch and wants room to read; the
+        // wings only carry the cover and the visualiser.
+        case .lyrics: 190
         // These all drop a bar beneath the notch rather than splitting across
         // the wings, so the wings only carry what stays on the notch's own
         // row — the weather glyph and its temperature.
@@ -334,6 +363,19 @@ final class NotchState {
         size.width += activityWingWidth
         size.height += activityDropHeight
         return size
+    }
+
+    /// The closed notch's hover target: the notch itself, plus the tolerance
+    /// on the sides and below. Fixed geometry, not derived from the animating
+    /// slab — that is what used to make the region balloon after a collapse.
+    var hoverProbeSize: CGSize {
+        let slack = min(max(settings.hoverTolerance, 0), 24)
+        return CGSize(
+            width: adjustedNotchSize.width + slack * 2,
+            // A draggable HUD hangs directly below the notch, so the probe
+            // keeps off its bar while one is up.
+            height: adjustedNotchSize.height + (collapsedActivityIsInteractive ? 0 : slack)
+        )
     }
 
     /// True while the closed notch is showing something you can drag — the

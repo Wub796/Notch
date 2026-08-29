@@ -2,8 +2,12 @@ import AppKit
 import SwiftUI
 
 /// Expanded music module per the reference: large artwork with a soft glow,
-/// track metadata with a monogram artist row, a synced-lyrics panel, the
+/// track metadata with the artist row underneath, the live lyric line, the
 /// seekable progress bar, transport, and the bottom heart/shuffle row.
+///
+/// The reference's chip strip between the lyric and the transport is
+/// deliberately absent — the rows below it moved up into that space rather
+/// than leaving a band of empty panel behind.
 struct MediaPlayerView: View {
     let state: NotchState
     let namespace: Namespace.ID
@@ -14,51 +18,14 @@ struct MediaPlayerView: View {
     @State private var shuffleOn = false
 
     var body: some View {
-        // Budget: `NotchState.moduleContentSize`, about 498 x 250. Metadata
-        // row 72, scrubber 22, lyrics or queue 30, transport 46, actions 28,
-        // with 12pt gaps.
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 14) {
-                artwork
+        // Budget: `NotchState.moduleContentSize`, about 498 x 250. Header 78,
+        // lyric 22, scrubber 16, transport 40, actions 26, with 10pt gaps.
+        VStack(alignment: .leading, spacing: 10) {
+            header
 
-                VStack(alignment: .leading, spacing: 1) {
-                    MarqueeText(
-                        text: media.track?.title ?? "Nothing Playing",
-                        font: .system(size: 20, weight: .bold, design: .rounded),
-                        width: 210
-                    )
-                    .foregroundStyle(NotchTheme.inkPrimary)
-
-                    artistRow
-
-                    if let reason = media.emptyStateReason {
-                        Text(reason)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(NotchTheme.inkMuted)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .lineLimit(2)
-                    } else if let followers = media.followersLabel {
-                        Text(followers)
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundStyle(NotchTheme.inkMuted)
-                            .lineLimit(1)
-                    } else if let album = media.track?.album, !album.isEmpty {
-                        Text(album)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(NotchTheme.inkSecondary)
-                            .lineLimit(1)
-                    }
-                }
-
-                Spacer(minLength: 8)
-
-                upNextCard
-            }
-            .frame(height: 72)
+            lyricLine
 
             progressRow
-
-            secondaryRow
 
             if state.mediaShowsFullLyrics {
                 LyricsView(lyrics: media.lyrics, accent: media.accent) { time in
@@ -68,13 +35,63 @@ struct MediaPlayerView: View {
                 .transition(.opacity)
             }
 
+            Spacer(minLength: 0)
+
             transportRow
-                .frame(maxWidth: .infinity)
 
             bottomActions
-                .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 14) {
+            artwork
+
+            VStack(alignment: .leading, spacing: 3) {
+                MarqueeText(
+                    text: media.track?.title ?? "Nothing Playing",
+                    font: .system(size: 21, weight: .bold, design: .rounded),
+                    width: media.upNext == nil ? 300 : 200
+                )
+                .foregroundStyle(NotchTheme.inkPrimary)
+
+                artistRow
+
+                subtitleLine
+            }
+
+            Spacer(minLength: 8)
+
+            upNextCard
+        }
+        .frame(height: 78)
+    }
+
+    /// The line under the artist: the follower count when Spotify is
+    /// connected, the album otherwise, and the reason nothing is playing when
+    /// that is what there is to say.
+    @ViewBuilder
+    private var subtitleLine: some View {
+        if let reason = media.emptyStateReason {
+            Text(reason)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(NotchTheme.inkMuted)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(2)
+        } else if let followers = media.followersLabel {
+            Text(followers)
+                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(NotchTheme.inkMuted)
+                .lineLimit(1)
+        } else if let album = media.track?.album, !album.isEmpty {
+            Text(album)
+                .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                .foregroundStyle(NotchTheme.inkSecondary)
+                .lineLimit(1)
+        }
     }
 
     /// What plays next, from the connected player's own queue. Absent unless
@@ -91,7 +108,7 @@ struct MediaPlayerView: View {
                             .fill(NotchTheme.surfaceHover)
                     }
                 }
-                .frame(width: 34, height: 34)
+                .frame(width: 32, height: 32)
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 0) {
@@ -100,15 +117,15 @@ struct MediaPlayerView: View {
                         .tracking(0.8)
                         .foregroundStyle(NotchTheme.inkMuted)
                     Text(next.title)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
                         .foregroundStyle(NotchTheme.inkPrimary)
                         .lineLimit(1)
                     Text(next.artist)
-                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
                         .foregroundStyle(NotchTheme.inkSecondary)
                         .lineLimit(1)
                 }
-                .frame(width: 100, alignment: .leading)
+                .frame(width: 96, alignment: .leading)
             }
             .padding(6)
             .background {
@@ -121,85 +138,6 @@ struct MediaPlayerView: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Up next: \(next.title) by \(next.artist)")
-        }
-    }
-
-    /// The row under the scrubber: the lyrics, or the queue.
-    ///
-    /// Lyrics lost their home when the panel narrowed — the side column no
-    /// longer fits at 498pt — and the one-line fallback only appeared when
-    /// Spotify had nothing queued, so with an account connected they never
-    /// showed at all. It is the live line again by default, with the queue
-    /// when there are no lyrics — and the list button in the transport row
-    /// opens the full scrolling panel, which grows the whole player.
-    @ViewBuilder
-    private var secondaryRow: some View {
-        Group {
-            if media.lyrics.isSynced, !media.lyrics.lines.isEmpty {
-                lyricStrip
-            } else if media.queue.count > 1 {
-                queueChips
-            } else {
-                lyricLine
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .frame(height: 30)
-    }
-
-    /// The live line with the one after it trailing behind, so there is a hint
-    /// of where the song is going rather than a single word in isolation.
-    private var lyricStrip: some View {
-        let index = media.lyrics.currentIndex
-        let current = index.map { media.lyrics.lines[$0].text } ?? ""
-        let next = index
-            .map { $0 + 1 }
-            .flatMap { media.lyrics.lines.indices.contains($0) ? media.lyrics.lines[$0].text : nil }
-
-        return HStack(spacing: 10) {
-            Text(current.isEmpty ? "♪" : current)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(media.accent)
-                .lineLimit(1)
-                .contentTransition(.opacity)
-
-            if let next, !next.isEmpty {
-                Text(next)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(NotchTheme.inkMuted)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .animation(.notchSpring, value: media.lyrics.currentIndex)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Lyrics")
-        .accessibilityValue(current)
-    }
-
-    /// The queue as chips: every one is a track that is genuinely coming.
-    private var queueChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(Array(media.queue.dropFirst().prefix(6).enumerated()),
-                        id: \.offset) { _, item in
-                    HStack(spacing: 5) {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(media.accent)
-                        Text(item.title)
-                            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-                            .foregroundStyle(NotchTheme.inkPrimary)
-                            .lineLimit(1)
-                    }
-                    .fixedSize()
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(NotchTheme.surface))
-                }
-            }
-            .padding(.horizontal, 1)
         }
     }
 
@@ -221,10 +159,10 @@ struct MediaPlayerView: View {
                     }
             }
         }
-        .frame(width: 72, height: 72)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .frame(width: 78, height: 78)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
-        .shadow(color: media.accent.opacity(0.5), radius: 16, y: 6)
+        .shadow(color: media.accent.opacity(0.5), radius: 18, y: 7)
     }
 
     private var artistRow: some View {
@@ -237,7 +175,7 @@ struct MediaPlayerView: View {
                 .background(Circle().fill(NotchTheme.surfaceHover))
 
             Text(media.track?.artist ?? "Unknown Artist")
-                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .font(.system(size: 12.5, weight: .bold, design: .rounded))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .lineLimit(1)
 
@@ -267,23 +205,41 @@ struct MediaPlayerView: View {
         }
     }
 
-    /// The reference's centered lyric line — the live synced line, tinted.
+    /// The reference's centered lyric line — the live synced line, tinted with
+    /// the artwork accent, replaced in place as the song moves.
     private var lyricLine: some View {
         Group {
             if let current = media.lyrics.currentLine?.text, !current.isEmpty {
                 Text(current)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(media.accent)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                     .contentTransition(.opacity)
+                    .id(media.lyrics.currentIndex ?? -1)
+                    .transition(.opacity)
+            } else if media.lyrics.isLoading {
+                Text("Finding lyrics…")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(NotchTheme.inkMuted)
+            } else if !media.lyrics.lines.isEmpty {
+                // Unsynced lyrics: show the opening line rather than nothing.
+                Text(media.lyrics.lines[0].text)
+                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .lineLimit(1)
             } else {
-                Text("♪")
+                Text(media.hasTrack ? "♪" : " ")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(NotchTheme.inkMuted.opacity(0.5))
             }
         }
-        .frame(height: 20)
+        .frame(maxWidth: .infinity)
+        .frame(height: 22)
         .animation(.notchSpring, value: media.lyrics.currentIndex)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Lyrics")
+        .accessibilityValue(media.lyrics.currentLine?.text ?? "")
     }
 
     // MARK: - Transport
@@ -367,6 +323,7 @@ struct MediaPlayerView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
     private func transportIcon(

@@ -238,6 +238,14 @@ private struct GeneralSettingsPane: View {
                     )
                 }
 
+                SettingsSliderRow(
+                    title: "Hover Tolerance",
+                    value: $settings.hoverTolerance,
+                    range: 0 ... 24,
+                    step: 1,
+                    format: { String(format: "%.0f pt", $0) }
+                )
+
                 SettingsRow(
                     systemImage: "hand.draw.fill",
                     tint: .orange,
@@ -545,6 +553,8 @@ private struct MediaSettingsPane: View {
                 }
             }
 
+            visualizerCard
+
             SettingsCard(title: "Lyrics") {
                 toggleRow("text.quote", .teal,
                           "Fetch Synchronised Lyrics from LRCLIB", $settings.fetchLyrics)
@@ -556,6 +566,61 @@ private struct MediaSettingsPane: View {
                 ) {
                     Toggle("", isOn: $settings.autoScrollLyrics)
                         .labelsHidden().toggleStyle(.switch)
+                }
+            }
+        }
+    }
+
+    /// The visualiser's source. The measured option is a real capture of the
+    /// output mix, so it costs a Screen Recording permission — the card says
+    /// so plainly rather than raising the prompt out of nowhere.
+    @ViewBuilder
+    private var visualizerCard: some View {
+        SettingsCard(title: "Visualiser") {
+            SettingsRow(
+                systemImage: "waveform",
+                tint: .indigo,
+                title: "Real-Time Audio Meter",
+                subtitle: settings.realtimeAudioMeter
+                    ? "Bars follow the actual output mix."
+                    : "Bars follow the output volume.",
+                showsDivider: settings.realtimeAudioMeter
+            ) {
+                Toggle("", isOn: $settings.realtimeAudioMeter)
+                    .labelsHidden().toggleStyle(.switch)
+                    .onChange(of: settings.realtimeAudioMeter) { _, enabled in
+                        guard enabled, !SystemAudioMeter.hasPermission else { return }
+                        SystemAudioMeter.requestPermission()
+                    }
+            }
+
+            if settings.realtimeAudioMeter {
+                SettingsRow(
+                    systemImage: "record.circle",
+                    tint: .indigo,
+                    title: "Screen Recording Permission",
+                    subtitle: SystemAudioMeter.hasPermission
+                        ? "Granted. Reading the output mix while music plays."
+                        : "macOS only lets an app read other apps' audio with "
+                            + "this permission. Nothing is recorded or stored.",
+                    showsDivider: false
+                ) {
+                    if SystemAudioMeter.hasPermission {
+                        Label("Granted", systemImage: "checkmark.circle.fill")
+                            .labelStyle(.titleAndIcon)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.green)
+                    } else {
+                        Button("Open Settings") {
+                            let path = "x-apple.systempreferences:com.apple.preference"
+                                + ".security?Privacy_ScreenCapture"
+                            if let url = URL(string: path) {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
                 }
             }
         }

@@ -118,7 +118,7 @@ final class ShelfController {
                 cgImage: representation.cgImage,
                 size: NSSize(width: 40, height: 40)
             )
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 guard let self,
                       let index = self.items.firstIndex(where: { $0.id == item.id })
                 else { return }

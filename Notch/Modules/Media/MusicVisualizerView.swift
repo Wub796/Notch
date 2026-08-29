@@ -1,18 +1,18 @@
 import SwiftUI
 
-/// Three bars beside the notch whose height follows the live output level.
+/// Three bars beside the notch that follow the audio.
 ///
-/// What this is and is not. The bars' amplitude is the real system output
-/// volume, read from CoreAudio and updated by its property listeners — turn
-/// the volume down and they shrink, mute and they flatten, immediately. What
-/// they are *not* is a spectrum analyser: their motion is a shaped oscillation,
-/// not the waveform of the track.
+/// Two sources, in order of honesty:
 ///
-/// That distinction is forced. Reading another app's audio samples on macOS
-/// needs either a Core Audio process tap, which is macOS 14.4 SDK only, or
-/// ScreenCaptureKit audio capture, which costs a Screen Recording permission
-/// for a decoration. Neither is available here, so the honest thing is to
-/// drive the one real signal that is — the level — and shape the rest.
+/// 1. **The output mix.** With "Real-time audio meter" on, `bands` carries
+///    the low/mid/high energy of what is actually playing, measured from the
+///    system's own output through `SystemAudioMeter`. The bars are then the
+///    music — they punch on a kick, thin out in a quiet passage, and stop
+///    dead in a gap, because that is what the samples say.
+/// 2. **The output level.** Without that permission the loudest real signal
+///    available is the volume itself, which is genuine but static, so the
+///    motion is a shaped oscillation scaled by it. The bars still shrink when
+///    the volume drops and flatten on mute; they just cannot know the track.
 struct MusicVisualizerView: View {
     let accent: Color
     let isPlaying: Bool
@@ -20,37 +20,65 @@ struct MusicVisualizerView: View {
     /// System output level, 0...1. Zero when muted.
     let level: Float
 
+    /// Measured band energies, 0...1, when the real meter is running.
+    var bands: [Float]?
+
     /// Each bar keeps its own period and reach, so they never march in step.
     private static let periods: [Double] = [0.62, 0.44, 0.53]
     private static let reach: [Double] = [0.78, 1.0, 0.86]
     private static let barWidth: CGFloat = 4
     private static let maxHeight: CGFloat = 15
 
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 24, paused: !isPlaying)) { context in
-            let elapsed = context.date.timeIntervalSinceReferenceDate
+    private var isMetered: Bool {
+        (bands?.count ?? 0) >= 3
+    }
 
-            HStack(alignment: .center, spacing: 3.5) {
-                ForEach(Array(Self.periods.indices), id: \.self) { index in
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [accent, accent.opacity(0.55)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(width: Self.barWidth, height: height(at: elapsed, index: index))
+    var body: some View {
+        Group {
+            if isMetered {
+                // The meter publishes at 30Hz; animating between its values is
+                // all the motion needed, so no timeline is driven here.
+                bars { index in meteredHeight(index) }
+                    .animation(.easeOut(duration: 0.07), value: bands ?? [])
+            } else {
+                TimelineView(.animation(minimumInterval: 1 / 24, paused: !isPlaying)) { context in
+                    let elapsed = context.date.timeIntervalSinceReferenceDate
+                    bars { index in height(at: elapsed, index: index) }
+                        // The level itself changes in steps, so ease between
+                        // them rather than jumping on a volume key press.
+                        .animation(.easeOut(duration: 0.18), value: level)
                 }
             }
-            .frame(height: Self.maxHeight)
-            // The level itself changes in steps, so ease between them rather
-            // than letting the bars jump when a volume key is pressed.
-            .animation(.easeOut(duration: 0.18), value: level)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Output level")
         .accessibilityValue("\(Int((level * 100).rounded())) percent")
+    }
+
+    private func bars(_ height: @escaping (Int) -> CGFloat) -> some View {
+        HStack(alignment: .center, spacing: 3.5) {
+            ForEach(Array(Self.periods.indices), id: \.self) { index in
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [accent, accent.opacity(0.55)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: Self.barWidth, height: height(index))
+            }
+        }
+        .frame(height: Self.maxHeight)
+    }
+
+    /// Measured: the band's own energy, still scaled by the output level so
+    /// turning the volume down visibly quiets the bars.
+    private func meteredHeight(_ index: Int) -> CGFloat {
+        guard let bands, bands.indices.contains(index) else { return Self.barWidth }
+        let volume = CGFloat(min(max(level, 0), 1))
+        let energy = CGFloat(min(max(bands[index], 0), 1))
+        return Self.barWidth + (Self.maxHeight - Self.barWidth) * energy * max(volume, 0.15)
     }
 
     private func height(at elapsed: TimeInterval, index: Int) -> CGFloat {

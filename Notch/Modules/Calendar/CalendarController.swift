@@ -133,7 +133,7 @@ final class CalendarController {
         NSApp.activate(ignoringOtherApps: true)
         if #available(macOS 14.0, *) {
             store.requestFullAccessToEvents { [weak self] granted, _ in
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     self.accessState = granted ? .granted : .denied
                     if granted {
@@ -144,7 +144,7 @@ final class CalendarController {
             }
         } else {
             store.requestAccess(to: .event) { [weak self] granted, _ in
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     self.accessState = granted ? .granted : .denied
                     if granted {

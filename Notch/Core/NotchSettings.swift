@@ -66,6 +66,13 @@ final class NotchSettings {
     var expandOnHover = true { didSet { save(expandOnHover, "expandOnHover") } }
     /// Dwell required before a hover opens the notch.
     var openDelay = 0.22 { didSet { save(openDelay, "openDelay") } }
+
+    /// Points of slack around the hardware notch that still count as hovering
+    /// it. The probe is otherwise exactly the notch, which is precise but
+    /// unforgiving — a pointer arriving from below has to land inside a 32pt
+    /// strip. The slack is added to the sides and the bottom only, never the
+    /// top: above the notch is the screen edge.
+    var hoverTolerance = 8.0 { didSet { save(hoverTolerance, "hoverTolerance") } }
     var closeDelay = 0.2 { didSet { save(closeDelay, "closeDelay") } }
 
     /// When on, dropped files go straight to AirDrop; when off they land on
@@ -170,6 +177,17 @@ final class NotchSettings {
     var onEyeBreakSettingChanged: ((Bool) -> Void)?
 
     var fetchLyrics = true { didSet { save(fetchLyrics, "fetchLyrics") } }
+
+    /// Drive the visualiser from the real output mix rather than the volume.
+    /// Off by default: it costs a Screen Recording permission.
+    var realtimeAudioMeter = false {
+        didSet {
+            save(realtimeAudioMeter, "realtimeAudioMeter")
+            onRealtimeAudioMeterChanged?(realtimeAudioMeter)
+        }
+    }
+    var onRealtimeAudioMeterChanged: ((Bool) -> Void)?
+
     var autoScrollLyrics = true { didSet { save(autoScrollLyrics, "autoScrollLyrics") } }
 
     var hapticsEnabled = true { didSet { save(hapticsEnabled, "hapticsEnabled") } }
@@ -277,6 +295,9 @@ final class NotchSettings {
         if defaults.object(forKey: "expandOnHover") != nil {
             expandOnHover = defaults.bool(forKey: "expandOnHover")
         }
+        if defaults.object(forKey: "hoverTolerance") != nil {
+            hoverTolerance = defaults.double(forKey: "hoverTolerance")
+        }
         if defaults.object(forKey: "openDelay") != nil {
             openDelay = defaults.double(forKey: "openDelay")
         }
@@ -354,6 +375,9 @@ final class NotchSettings {
         }
         if defaults.object(forKey: "fetchLyrics") != nil {
             fetchLyrics = defaults.bool(forKey: "fetchLyrics")
+        }
+        if defaults.object(forKey: "realtimeAudioMeter") != nil {
+            realtimeAudioMeter = defaults.bool(forKey: "realtimeAudioMeter")
         }
         if defaults.object(forKey: "autoScrollLyrics") != nil {
             autoScrollLyrics = defaults.bool(forKey: "autoScrollLyrics")

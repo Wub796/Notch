@@ -118,7 +118,7 @@ final class QuickActions {
             var error: NSDictionary?
             NSAppleScript(source: source)?.executeAndReturnError(&error)
             let failed = error != nil
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 if failed {
                     if let failure {
                         failure()

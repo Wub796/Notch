@@ -47,11 +47,12 @@ struct NotchContainerView: View {
             // frame cannot drift.
             if state.mode != .expanded {
                 Color.clear
-                    // Exactly the hardware notch, which is above the dropped
-                    // HUD bar rather than over it.
+                    // The hardware notch plus the user's slack, which widens
+                    // the sides and the bottom edge only — the top is the
+                    // screen edge, and the dropped HUD bar hangs below this.
                     .frame(
-                        width: state.adjustedNotchSize.width,
-                        height: state.adjustedNotchSize.height
+                        width: state.hoverProbeSize.width,
+                        height: state.hoverProbeSize.height
                     )
                     .contentShape(Rectangle())
                     .onHover { state.hoverChanged($0) }
