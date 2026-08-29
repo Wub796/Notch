@@ -19,7 +19,6 @@ struct CalendarDetailView: View {
                 bodyContent
             }
         }
-        .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.notchSpring, value: state.calendar.isMonthView)
         .onAppear {

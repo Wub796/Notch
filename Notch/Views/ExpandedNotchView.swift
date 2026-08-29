@@ -25,9 +25,11 @@ struct ExpandedNotchView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 42)
-            .padding(.top, 18)
-            .padding(.bottom, 20)
+            // One gutter for the whole slab: content lines up with the back
+            // chevron and status icons in the header above it.
+            .padding(.horizontal, 34)
+            .padding(.top, 14)
+            .padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // Everything stays inside the slab, whatever a module reports.

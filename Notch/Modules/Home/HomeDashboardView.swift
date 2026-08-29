@@ -10,30 +10,34 @@ struct HomeDashboardView: View {
     let namespace: Namespace.ID
 
     var body: some View {
-        HStack(alignment: .top, spacing: 34) {
+        // Music flexes; the two right-hand widgets are fixed to their content
+        // so the row can never overflow the slab, whatever its width.
+        HStack(alignment: .center, spacing: 30) {
             mediaPlayerSection
-                .frame(width: 372, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             weatherWidget
-                .frame(width: 206, alignment: .leading)
+                .frame(width: 208, alignment: .leading)
 
             // Wide enough for the month label plus the five-day strip.
             calendarWidget
-                .frame(width: 214, alignment: .leading)
+                .frame(width: 212, alignment: .leading)
         }
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     // MARK: - Music
 
     private var mediaPlayerSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // The whole art + metadata row drills into the full player. The
-            // transport buttons below sit outside this gesture area.
-            HStack(alignment: .center, spacing: 14) {
-                artwork
+        // Artwork on the left; title, album, artist and the transport row all
+        // share the text column, so the controls sit under the metadata
+        // rather than under the artwork.
+        HStack(alignment: .top, spacing: 14) {
+            artwork
+                .contentShape(Rectangle())
+                .onTapGesture { state.select(.media) }
 
+            VStack(alignment: .leading, spacing: 3) {
                 VStack(alignment: .leading, spacing: 3) {
                     MarqueeText(
                         text: state.media.track?.title ?? "Nothing Playing",
@@ -53,21 +57,24 @@ struct HomeDashboardView: View {
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { state.select(.media) }
-            .help("Open the full player")
+                .contentShape(Rectangle())
+                .onTapGesture { state.select(.media) }
+                .help("Open the full player")
 
-            HStack(spacing: 18) {
-                miniTransport("backward.fill", label: "Previous track") {
-                    state.media.previousTrack()
+                HStack(spacing: 16) {
+                    miniTransport("backward.fill", label: "Previous track") {
+                        state.media.previousTrack()
+                    }
+                    playPauseButton
+                    miniTransport("forward.fill", label: "Next track") {
+                        state.media.nextTrack()
+                    }
                 }
-                playPauseButton
-                miniTransport("forward.fill", label: "Next track") {
-                    state.media.nextTrack()
-                }
+                // Pull the first glyph out to the text's left edge, past the
+                // button's own tap padding.
+                .padding(.leading, -7)
+                .padding(.top, 2)
             }
-            .padding(.leading, 2)
         }
     }
 

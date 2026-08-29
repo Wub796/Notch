@@ -12,7 +12,6 @@ struct WeatherDetailView: View {
                     currentConditions(weather)
                     hourlyForecast(weather)
                 }
-                .padding(.horizontal, 14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             } else {
                 VStack(spacing: 8) {

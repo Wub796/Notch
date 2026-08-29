@@ -54,7 +54,6 @@ struct MediaPlayerView: View {
             bottomActions
                 .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 

@@ -49,21 +49,22 @@ final class NotchState {
     /// Each tab sizes the slab to its own content.
     var expandedSize: CGSize {
         switch tab {
-        // Heights account for the 44 pt top bar plus 34 pt of content padding.
-        case .home: CGSize(width: 960, height: 220)
-        case .media: CGSize(width: 900, height: 350)
-        case .weather: CGSize(width: 800, height: 340)
-        case .calendar: CGSize(width: 760, height: 330)
-        case .shelf: CGSize(width: 780, height: 190)
-        case .clipboard: CGSize(width: 780, height: 190)
-        case .tools: CGSize(width: 780, height: 205)
-        case .notes: CGSize(width: 780, height: 198)
-        case .telemetry: CGSize(width: 780, height: 185)
+        // Each height is the top bar (38) plus content padding (34) plus the
+        // module's own content height, so nothing has to compress to fit.
+        case .home: CGSize(width: 940, height: 174)
+        case .media: CGSize(width: 880, height: 330)
+        case .weather: CGSize(width: 800, height: 320)
+        case .calendar: CGSize(width: 760, height: 322)
+        case .shelf: CGSize(width: 780, height: 238)
+        case .clipboard: CGSize(width: 800, height: 224)
+        case .tools: CGSize(width: 820, height: 240)
+        case .notes: CGSize(width: 720, height: 232)
+        case .telemetry: CGSize(width: 800, height: 210)
         }
     }
 
     /// Largest slab any tab can request; the panel window is sized to this.
-    static let maxExpandedSize = CGSize(width: 960, height: 350)
+    static let maxExpandedSize = CGSize(width: 940, height: 330)
 
     /// Hover is only detected over the physical notch (plus a small margin),
     /// never over the full slab — a wide detection radius made the notch open
