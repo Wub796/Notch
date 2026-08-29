@@ -15,6 +15,14 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         let isDay: Bool
     }
 
+    struct Daily: Equatable {
+        let date: Date
+        let highCelsius: Double
+        let lowCelsius: Double
+        let weatherCode: Int
+        let precipitationChancePercent: Int
+    }
+
     struct Snapshot: Equatable {
         let temperatureCelsius: Double
         let apparentCelsius: Double
@@ -25,7 +33,11 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         let windKmh: Double
         let humidityPercent: Int
         let precipitationChancePercent: Int
+        let sunrise: Date?
+        let sunset: Date?
+        let uvIndex: Double
         let hourly: [Hourly]
+        let daily: [Daily]
         let fetchedAt: Date
     }
 
@@ -42,6 +54,10 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     private let locationManager = CLLocationManager()
     private let geocoder = CLGeocoder()
     private var isFetching = false
+    /// The coordinate the last successful fetch used. A forced refresh goes
+    /// straight back to it, so the button works even when location is denied
+    /// and the IP lookup would otherwise be skipped.
+    private var lastCoordinate: CLLocationCoordinate2D?
     private static let cacheLifetime: TimeInterval = 30 * 60
 
     override init() {
@@ -70,6 +86,17 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         guard !isFetching else { return }
         isLoading = true
         failureMessage = nil
+
+        // A forced refresh with a known coordinate re-fetches immediately.
+        // Routing it back through location resolution made the header's
+        // refresh button a no-op once a snapshot existed.
+        if force, let lastCoordinate {
+            fetch(for: CLLocation(
+                latitude: lastCoordinate.latitude,
+                longitude: lastCoordinate.longitude
+            ))
+            return
+        }
 
         switch locationManager.authorizationStatus {
         case .notDetermined:
@@ -104,14 +131,14 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     /// prompt, Location Services off, or a slow first fix — fall back.
     private func scheduleLocationFallback() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
-            guard let self, self.snapshot == nil, !self.isFetching else { return }
+            guard let self, self.lastCoordinate == nil, !self.isFetching else { return }
             self.resolveApproximateLocation()
         }
     }
 
     /// Keyless IP geolocation, used whenever a precise fix isn't available.
     private func resolveApproximateLocation() {
-        guard snapshot == nil, !isFetching else { return }
+        guard !isFetching else { return }
 
         struct IPLocation: Decodable {
             let latitude: Double?
@@ -201,14 +228,24 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         }
 
         struct Daily: Decodable {
+            let time: [String]?
             let temperature2mMax: [Double]?
             let temperature2mMin: [Double]?
             let precipitationProbabilityMax: [Int?]?
+            let weatherCode: [Int]?
+            let sunrise: [String]?
+            let sunset: [String]?
+            let uvIndexMax: [Double?]?
 
             enum CodingKeys: String, CodingKey {
+                case time
                 case temperature2mMax = "temperature_2m_max"
                 case temperature2mMin = "temperature_2m_min"
                 case precipitationProbabilityMax = "precipitation_probability_max"
+                case weatherCode = "weather_code"
+                case sunrise
+                case sunset
+                case uvIndexMax = "uv_index_max"
             }
         }
 
@@ -220,6 +257,8 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     private func fetch(for location: CLLocation) {
         guard !isFetching else { return }
         isFetching = true
+        isLoading = true
+        lastCoordinate = location.coordinate
 
         var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")!
         components.queryItems = [
@@ -230,9 +269,13 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
                 value: "temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m,relative_humidity_2m"
             ),
             .init(name: "hourly", value: "temperature_2m,weather_code,is_day"),
-            .init(name: "daily", value: "temperature_2m_max,temperature_2m_min,precipitation_probability_max"),
+            .init(
+                name: "daily",
+                value: "weather_code,temperature_2m_max,temperature_2m_min,"
+                    + "precipitation_probability_max,sunrise,sunset,uv_index_max"
+            ),
             .init(name: "forecast_hours", value: "12"),
-            .init(name: "forecast_days", value: "2"),
+            .init(name: "forecast_days", value: "6"),
             .init(name: "temperature_unit", value: "celsius"),
             .init(name: "wind_speed_unit", value: "kmh"),
             .init(name: "timezone", value: "auto"),
@@ -257,7 +300,13 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
                     humidityPercent: response.current.relativeHumidity2m ?? 0,
                     precipitationChancePercent: response.daily?
                         .precipitationProbabilityMax?.first.flatMap { $0 } ?? 0,
+                    sunrise: response.daily?.sunrise?.first
+                        .flatMap { Self.hourFormatter.date(from: $0) },
+                    sunset: response.daily?.sunset?.first
+                        .flatMap { Self.hourFormatter.date(from: $0) },
+                    uvIndex: response.daily?.uvIndexMax?.first.flatMap { $0 } ?? 0,
                     hourly: Self.hourly(from: response.hourly),
+                    daily: Self.daily(from: response.daily),
                     fetchedAt: Date()
                 )
             } else {
@@ -298,6 +347,40 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
             )
         }
     }
+
+    /// Parses Open-Meteo's daily arrays, skipping today (the hero band above
+    /// already carries today's numbers).
+    private static func daily(from response: Response.Daily?) -> [Daily] {
+        guard let response,
+              let times = response.time,
+              let highs = response.temperature2mMax,
+              let lows = response.temperature2mMin,
+              let codes = response.weatherCode
+        else { return [] }
+
+        let count = min(times.count, highs.count, lows.count, codes.count)
+        guard count > 1 else { return [] }
+
+        let chances = response.precipitationProbabilityMax ?? []
+        return (1 ..< count).compactMap { index in
+            guard let date = dayFormatter.date(from: times[index]) else { return nil }
+            let chance = chances.indices.contains(index) ? (chances[index] ?? 0) : 0
+            return Daily(
+                date: date,
+                highCelsius: highs[index],
+                lowCelsius: lows[index],
+                weatherCode: codes[index],
+                precipitationChancePercent: chance
+            )
+        }
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
 
     private static let hourFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -361,6 +444,16 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
             formatter.numberFormatter.maximumFractionDigits = 0
             return formatter.string(from: Measurement(value: celsius, unit: UnitTemperature.celsius))
         }
+    }
+
+    /// "Mon" / "Tue" for a daily forecast column.
+    static func dayLabel(for date: Date) -> String {
+        date.formatted(.dateTime.weekday(.abbreviated))
+    }
+
+    /// "07:12" in the user's locale, for sunrise and sunset.
+    static func timeLabel(for date: Date) -> String {
+        date.formatted(.dateTime.hour().minute())
     }
 
     /// Locale-aware wind speed ("13 km/h" / "8 mph").

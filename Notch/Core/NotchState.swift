@@ -46,29 +46,72 @@ final class NotchState {
     /// Physical notch size, injected by NotchWindowController at launch.
     var notchSize: CGSize = NotchGeometry.fallbackSize
 
-    /// Each tab sizes the slab to its own content, then the user's scale
-    /// preference is applied on top.
-    var expandedSize: CGSize {
-        let base = baseExpandedSize
-        let scale = min(max(settings.expandedScale, 0.8), 1.3)
-        return CGSize(width: base.width * scale, height: base.height * scale)
+    /// The user's panel-size preference, clamped. Applied as a visual scale
+    /// rather than a smaller layout: shrinking the layout squeezed each
+    /// module's fixed content into a slab too short for it and clipped the
+    /// bottom off, which is not what a size slider should do.
+    var expandedScale: CGFloat {
+        min(max(settings.expandedScale, 0.8), 1.3)
     }
 
-    private var baseExpandedSize: CGSize {
+    /// The size the expanded content is laid out at, before the user's scale.
+    var expandedLayoutSize: CGSize {
+        CGSize(
+            width: Self.contentWidth(for: tab),
+            // The top bar tracks the hardware notch and the user's height
+            // trim, so it cannot be assumed to be 38pt: derive the slab from
+            // it instead of hard-coding a total that a taller bar would eat.
+            height: topBarHeight + Self.contentGutters + Self.contentHeight(for: tab)
+        )
+    }
+
+    /// The slab's size on screen.
+    var expandedSize: CGSize {
+        let layout = expandedLayoutSize
+        return CGSize(width: layout.width * expandedScale, height: layout.height * expandedScale)
+    }
+
+    /// `ExpandedNotchView`'s vertical padding: 14 above the module, 18 below.
+    private static let contentGutters: CGFloat = 32
+
+    private static func contentWidth(for tab: NotchTab) -> CGFloat {
         switch tab {
-        // height = top bar (38) + vertical padding (32) + the module's real
-        // content height. These were previously guessed high, which left a
-        // slab of dead black under every screen.
-        case .home: CGSize(width: 940, height: 172)
-        case .media: CGSize(width: 880, height: 296)
-        case .weather: CGSize(width: 800, height: 272)
-        case .calendar: CGSize(width: 760, height: 296)
-        case .shelf: CGSize(width: 780, height: 206)
-        case .clipboard: CGSize(width: 800, height: 190)
-        case .tools: CGSize(width: 1000, height: 210)
-        case .notes: CGSize(width: 720, height: 206)
-        case .telemetry: CGSize(width: 800, height: 172)
+        case .home: 940
+        case .media: 880
+        case .weather: 880
+        case .calendar: 760
+        case .shelf: 780
+        case .clipboard: 800
+        case .tools: 1000
+        case .notes: 720
+        case .telemetry: 800
         }
+    }
+
+    /// The height each module needs for its own content, excluding the top
+    /// bar and gutters. These are budgets the module views are written to and
+    /// document in their own headers — raising one here without widening the
+    /// module, or vice versa, is how content ends up clipped or floating in
+    /// dead black.
+    private static func contentHeight(for tab: NotchTab) -> CGFloat {
+        switch tab {
+        case .home: 128
+        case .media: 226
+        case .weather: 260
+        case .calendar: 226
+        case .shelf: 136
+        case .clipboard: 120
+        case .tools: 148
+        case .notes: 136
+        case .telemetry: 110
+        }
+    }
+
+    /// How much the resting collapsed layout is scaled up in the current mode.
+    /// Peek grows the content by the same factor as the shape, so hovering
+    /// enlarges the notch rather than reflowing its wings into a wider box.
+    var collapsedContentScale: CGFloat {
+        mode == .peek ? min(max(settings.peekScale, 1.0), 1.4) : 1
     }
 
     /// The measured notch, with the user's manual trim applied. Clamped so a
@@ -85,11 +128,13 @@ final class NotchState {
         max(adjustedNotchSize.height, 38)
     }
 
-    /// Largest slab any tab can request; the panel window is sized to this.
-    /// The panel window is sized once at launch, so it has to allow for the
-    /// largest slab at the largest user scale (1.3x) — otherwise turning the
-    /// size slider up would clip the panel against its own window.
-    static let maxExpandedSize = CGSize(width: 980 * 1.3, height: 300 * 1.3)
+    /// Largest slab any tab can request; the panel window is sized to this
+    /// once at launch, so it must allow for the widest tab (tools, 1000), the
+    /// tallest (weather, 260 of content) on top of the tallest possible top
+    /// bar (38 plus the +30 height trim) and gutters, all at the largest user
+    /// scale (1.3x) — otherwise turning the size slider up clips the panel
+    /// against its own window.
+    static let maxExpandedSize = CGSize(width: 1000 * 1.3, height: 380 * 1.3)
 
     /// Hover is only detected over the physical notch (plus a small margin),
     /// never over the full slab — a wide detection radius made the notch open
@@ -134,17 +179,10 @@ final class NotchState {
     private static let minimumDwellForClick: TimeInterval = 0.06
 
     init() {
-        // Personalization: reopen on the tab the user last used — but only a
-        // tab the current UI can still reach; the top bar no longer exposes
-        // every module, so restoring to a hidden one would strand the panel
-        // with no way back home.
+        // Personalization: reopen on the tab the user last used. Every tab is
+        // reachable from the top bar, so any of them is a valid landing spot.
         if let restored = NotchTab(rawValue: settings.lastTab) {
-            switch restored {
-            case .home, .media, .weather, .calendar, .shelf:
-                tab = restored
-            default:
-                tab = .home
-            }
+            tab = restored
         }
         // Event-driven collapsed-notch features. Weather fetches at launch so
         // the collapsed wings have a temperature without the notch opening

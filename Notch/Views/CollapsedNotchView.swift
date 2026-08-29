@@ -7,7 +7,6 @@ import SwiftUI
 /// or an imminent meeting.
 struct CollapsedNotchView: View {
     let state: NotchState
-    let namespace: Namespace.ID
 
     var body: some View {
         ZStack {
@@ -17,7 +16,7 @@ struct CollapsedNotchView: View {
             case let .lyrics(line):
                 VStack(spacing: 0) {
                     musicWings
-                        .frame(height: state.notchSize.height)
+                        .frame(height: state.adjustedNotchSize.height)
                     Text(line)
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundStyle(state.media.accent)
@@ -33,7 +32,7 @@ struct CollapsedNotchView: View {
                 }
             case let .trackChange(title, artist):
                 TrackChangeActivityView(
-                    notchWidth: state.notchSize.width,
+                    notchWidth: state.adjustedNotchSize.width,
                     title: title,
                     artist: artist,
                     artwork: state.media.artwork,
@@ -41,49 +40,49 @@ struct CollapsedNotchView: View {
                 )
             case let .volume(level, muted):
                 VolumeActivityView(
-                    notchWidth: state.notchSize.width,
+                    notchWidth: state.adjustedNotchSize.width,
                     level: level,
                     muted: muted
                 )
             case let .brightness(level):
                 BrightnessActivityView(
-                    notchWidth: state.notchSize.width,
+                    notchWidth: state.adjustedNotchSize.width,
                     level: level
                 )
             case let .battery(percent, charging, low):
                 BatteryActivityView(
-                    notchWidth: state.notchSize.width,
+                    notchWidth: state.adjustedNotchSize.width,
                     percent: percent,
                     charging: charging,
                     low: low
                 )
             case let .screenLock(locked):
                 ScreenLockActivityView(
-                    notchWidth: state.notchSize.width,
+                    notchWidth: state.adjustedNotchSize.width,
                     locked: locked
                 )
             case let .timer(remaining, progress):
                 TimerActivityView(
-                    notchWidth: state.notchSize.width,
+                    notchWidth: state.adjustedNotchSize.width,
                     remaining: remaining,
                     progress: progress
                 )
             case let .focusMode(name, symbol):
                 FocusActivityView(
-                    notchWidth: state.notchSize.width,
+                    notchWidth: state.adjustedNotchSize.width,
                     name: name,
                     symbol: symbol
                 )
             case let .eyeBreak(active):
                 EyeBreakActivityView(
-                    notchWidth: state.notchSize.width,
+                    notchWidth: state.adjustedNotchSize.width,
                     active: active
                 )
             case .desktopChange:
-                DesktopChangeActivityView(notchWidth: state.notchSize.width)
+                DesktopChangeActivityView(notchWidth: state.adjustedNotchSize.width)
             case let .accessoryBattery(name, symbol, percent):
                 AccessoryBatteryActivityView(
-                    notchWidth: state.notchSize.width,
+                    notchWidth: state.adjustedNotchSize.width,
                     name: name,
                     symbol: symbol,
                     percent: percent
@@ -91,7 +90,7 @@ struct CollapsedNotchView: View {
             case let .meetingSoon(title, start):
                 TimelineView(.everyMinute) { context in
                     MeetingActivityView(
-                        notchWidth: state.notchSize.width,
+                        notchWidth: state.adjustedNotchSize.width,
                         title: title,
                         start: start,
                         now: context.date
@@ -110,7 +109,7 @@ struct CollapsedNotchView: View {
 
     private var compactWeatherWing: some View {
         ActivityWingLayout(
-            notchWidth: state.notchSize.width,
+            notchWidth: state.adjustedNotchSize.width,
             leading: weatherIcon,
             trailing: weatherTemperature
         )
@@ -164,21 +163,11 @@ struct CollapsedNotchView: View {
     /// while something is playing.
     private var musicWings: some View {
         ActivityWingLayout(
-            notchWidth: state.notchSize.width,
+            notchWidth: state.adjustedNotchSize.width,
             leading: HStack(spacing: 9) {
                 miniArtwork
                 weatherIcon
             },
-            trailing: weatherTemperature
-        )
-    }
-
-    /// The lyric and sneak-peek states keep the weather readout too, so the
-    /// left and right wings never go empty.
-    private var weatherFlank: some View {
-        ActivityWingLayout(
-            notchWidth: state.notchSize.width,
-            leading: weatherIcon,
             trailing: weatherTemperature
         )
     }
@@ -201,7 +190,6 @@ struct CollapsedNotchView: View {
         }
         .frame(width: 20, height: 20)
         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-        .matchedGeometryEffect(id: "albumArt", in: namespace)
         .accessibilityHidden(true)
     }
 }

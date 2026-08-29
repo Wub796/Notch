@@ -106,6 +106,10 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     /// Extra context shown under a row, e.g. why music can't be verified.
     private(set) var notes: [Integration: String] = [:]
 
+    /// Integrations with a request in flight, so the row can show progress
+    /// instead of looking like the button did nothing.
+    private(set) var pending: Set<Integration> = []
+
     private let locationManager = CLLocationManager()
     private var calendarStore: EKEventStore?
 
@@ -122,6 +126,10 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     // MARK: - Refresh
 
     func refresh() {
+        // Notes describe the most recent attempt, so a fresh read clears them
+        // before anything re-states its own.
+        notes.removeAll()
+
         statuses[.calendar] = calendarStatus()
         statuses[.location] = locationStatus()
 
@@ -171,7 +179,8 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
 
         var target = AEAddressDesc()
         let created = data.withUnsafeBytes { raw -> OSStatus in
-            guard let base = raw.baseAddress else { return OSStatus(-50) // paramErr }
+            // -50 is paramErr: the bundle ID produced no bytes.
+            guard let base = raw.baseAddress else { return OSStatus(-50) }
             return AECreateDesc(DescType(typeApplicationBundleID), base, data.count, &target)
         }
         guard created == noErr else { return (.unknown, nil) }
@@ -196,43 +205,68 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
 
     // MARK: - Requests
 
-    func request(_ integration: Integration, completion: @escaping () -> Void) {
+    /// Asks macOS for access. Every path ends by re-reading the real status
+    /// and, when nothing moved, saying why — a system prompt that cannot be
+    /// shown (already answered once, or the service switched off globally) is
+    /// silent, and silence is what made these buttons look broken.
+    func request(_ integration: Integration, completion: @escaping () -> Void = {}) {
+        guard !pending.contains(integration) else { return }
+        pending.insert(integration)
+        let before = status(for: integration)
+
+        let finish = { [weak self] in
+            guard let self else { return }
+            self.pending.remove(integration)
+            self.refresh()
+            if self.status(for: integration) == before {
+                self.notes[integration] = Self.unchangedNote(for: integration, status: before)
+            }
+            completion()
+        }
+
         switch integration {
         case .calendar:
             let store = EKEventStore()
             calendarStore = store
-            store.requestFullAccessToEvents { [weak self] _, _ in
-                DispatchQueue.main.async {
-                    self?.refresh()
-                    completion()
-                }
+            store.requestFullAccessToEvents { _, _ in
+                DispatchQueue.main.async(execute: finish)
             }
 
         case .location:
             NSApp.activate(ignoringOtherApps: true)
             locationManager.requestWhenInUseAuthorization()
-            // Authorization arrives via the delegate; refresh optimistically
-            // too so the row updates if it resolved immediately.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.refresh()
-                completion()
-            }
+            // Authorization arrives via the delegate, which refreshes on its
+            // own; this settles the row if the prompt never appears.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: finish)
 
         case .music:
-            // Triggering the prompt requires actually addressing the app.
+            // Triggering the prompt requires actually addressing the app, so
+            // this launches it if it isn't already running.
             let provider = NotchSettings.shared.musicProvider
             let appName = provider == .spotify ? "Spotify" : "Music"
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            DispatchQueue.global(qos: .userInitiated).async {
                 let script = NSAppleScript(
                     source: "tell application \"\(appName)\" to return name"
                 )
                 var error: NSDictionary?
                 script?.executeAndReturnError(&error)
-                DispatchQueue.main.async {
-                    self?.refresh()
-                    completion()
-                }
+                DispatchQueue.main.async(execute: finish)
             }
+        }
+    }
+
+    /// What to tell the user when a request produced no change at all.
+    private static func unchangedNote(for integration: Integration, status: Status) -> String {
+        switch integration {
+        case .location:
+            return status == .notDetermined
+                ? "macOS didn't show a prompt. Turn Location Services on in "
+                    + "Privacy & Security, then use Open Settings below."
+                : "No change — grant access in Privacy & Security → Location Services."
+        case .calendar:
+            return "No change — grant access in Privacy & Security → Calendars."
+        case .music:
+            return "No change yet. Start playing something, then re-check."
         }
     }
 

@@ -1,13 +1,22 @@
 import AppKit
 import SwiftUI
 
-/// The home top bar: a settings gear and shelf tray on the left, system status
-/// icons on the right. No tab navigation — the dashboard's music/weather/
-/// calendar sections drill into the detail screens, matching the reference.
+/// The home top bar: the module rail on the left, system status icons on the
+/// right, and an exact dead zone between them for the camera housing. The
+/// dashboard's music/weather/calendar sections still drill into their own
+/// detail screens; the rail is how the modules that have no dashboard card
+/// — shelf, clipboard, notes, tools, stats — are reached at all.
 struct NotchTopBarView: View {
     let state: NotchState
 
-    @Environment(\.openSettings) private var openSettings
+    /// Every module the rail exposes, in order.
+    private static let modules: [(tab: NotchTab, symbol: String, name: String)] = [
+        (.shelf, "archivebox", "Shelf"),
+        (.clipboard, "doc.on.clipboard", "Clipboard"),
+        (.notes, "note.text", "Notes"),
+        (.tools, "wrench.and.screwdriver", "Tools"),
+        (.telemetry, "gauge.with.dots.needle.50percent", "System Stats"),
+    ]
 
     var body: some View {
         HStack(spacing: 0) {
@@ -16,7 +25,7 @@ struct NotchTopBarView: View {
 
             // Reserved dead zone: nothing is drawn behind the camera housing.
             Color.clear
-                .frame(width: state.notchSize.width)
+                .frame(width: state.adjustedNotchSize.width)
 
             trailingControls
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -26,25 +35,29 @@ struct NotchTopBarView: View {
     }
 
     private var leadingControls: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 13) {
             NotchIconButton(
                 systemImage: "gearshape",
                 isActive: false,
                 help: "Settings"
             ) {
-                NSApp.activate(ignoringOtherApps: true)
-                openSettings()
+                // Settings is an ordinary window; leaving the panel expanded
+                // over it would float the notch on top of what you opened.
+                state.collapse()
+                SettingsLauncher.open()
             }
 
-            NotchIconButton(
-                systemImage: "archivebox",
-                isActive: state.tab == .shelf,
-                help: state.tab == .shelf ? "Back to Home" : "Shelf",
-                activeTint: .blue
-            ) {
-                // The tray toggles home ↔ shelf — the only affordance that
-                // reaches the shelf, so it must also be the way back.
-                state.select(state.tab == .shelf ? .home : .shelf)
+            ForEach(Self.modules, id: \.tab) { module in
+                NotchIconButton(
+                    systemImage: module.symbol,
+                    isActive: state.tab == module.tab,
+                    help: state.tab == module.tab ? "Back to Home" : module.name,
+                    activeTint: .blue
+                ) {
+                    // Each rail icon toggles home ↔ module, so the icon you
+                    // arrived by is also the way back.
+                    state.select(state.tab == module.tab ? .home : module.tab)
+                }
             }
         }
     }
@@ -159,7 +172,7 @@ struct DetailHeaderView<Trailing: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Color.clear
-                .frame(width: state.notchSize.width)
+                .frame(width: state.adjustedNotchSize.width)
 
             trailing()
                 .frame(maxWidth: .infinity, alignment: .trailing)

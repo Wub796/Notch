@@ -1,6 +1,38 @@
 import AppKit
 import SwiftUI
 
+/// Opens the Settings scene from anywhere in the app.
+///
+/// `@Environment(\.openSettings)` only works inside the SwiftUI scene graph.
+/// The notch itself is an `NSHostingView` created by hand in an `NSPanel`, so
+/// it sits outside every scene and the environment action there is a no-op —
+/// which is why the gear in the notch looked live and did nothing. AppKit's
+/// settings selector reaches the same scene from outside it.
+enum SettingsLauncher {
+    static func open() {
+        // A window can only take focus once the app has a real activation
+        // policy; see SettingsWindowActivator below for why.
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+
+        // macOS 14 renamed the selector. Try the current one, then the legacy
+        // name, so the gear works across every supported release.
+        let selectors = [
+            Selector(("showSettingsWindow:")),
+            Selector(("showPreferencesWindow:")),
+        ]
+        for selector in selectors {
+            if NSApp.sendAction(selector, to: nil, from: nil) { return }
+        }
+
+        // Nothing responded — surface any settings window that already exists
+        // rather than leaving the click silently unanswered.
+        if let window = NSApp.windows.first(where: { $0.canBecomeKey && !($0 is NotchPanel) }) {
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+}
+
 /// Makes the Settings window actually usable in an agent app.
 ///
 /// Notch runs with `.accessory` activation policy so it has no Dock icon.

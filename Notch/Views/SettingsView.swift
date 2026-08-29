@@ -102,8 +102,6 @@ struct SettingsView: View {
 private struct WeatherSettingsPane: View {
     @Bindable var settings = NotchSettings.shared
 
-    @State private var refreshToken = 0
-
     private var locationStatus: IntegrationPermissions.Status {
         IntegrationPermissions.shared.status(for: .location)
     }
@@ -133,12 +131,28 @@ private struct WeatherSettingsPane: View {
                     }
                 }
 
-                if locationStatus != .granted {
-                    Button("Grant Location Access") {
-                        IntegrationPermissions.shared.request(.location) {
-                            refreshToken += 1
-                        }
+                if IntegrationPermissions.shared.pending.contains(.location) {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Waiting for macOS…").foregroundStyle(.secondary)
                     }
+                } else if locationStatus != .granted {
+                    Button("Grant Location Access") {
+                        IntegrationPermissions.shared.request(.location)
+                    }
+                }
+
+                Button("Open Location Settings") {
+                    if let url = IntegrationPermissions.Integration.location.settingsURL {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(.link)
+
+                if let note = IntegrationPermissions.shared.notes[.location] {
+                    Text(note)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Location")
@@ -147,7 +161,7 @@ private struct WeatherSettingsPane: View {
             }
         }
         .formStyle(.grouped)
-        .id(refreshToken)
+        .onAppear { IntegrationPermissions.shared.refresh() }
     }
 }
 
@@ -394,7 +408,7 @@ private struct MediaSettingsPane: View {
                     // Choosing a player asks for control permission up front
                     // so transport works on the first press.
                     guard newValue != .automatic else { return }
-                    IntegrationPermissions.shared.request(.music) {}
+                    IntegrationPermissions.shared.request(.music)
                 }
             } header: {
                 Label("Integration", systemImage: "music.note")
@@ -544,6 +558,7 @@ private struct PermissionRow: View {
 
     var body: some View {
         let status = permissions.status(for: integration)
+        let isPending = permissions.pending.contains(integration)
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
@@ -571,20 +586,25 @@ private struct PermissionRow: View {
                         .foregroundStyle(status.tint)
                 }
 
-                switch status {
-                case .granted:
-                    EmptyView()
-                case .denied:
-                    Button("Open Settings") {
-                        if let url = integration.settingsURL {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                case .notDetermined, .unknown:
+                if isPending {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 60)
+                } else if status != .granted {
                     Button("Allow") {
-                        permissions.request(integration) {}
+                        permissions.request(integration)
                     }
                 }
+
+                // System Settings is always available, not only once macOS has
+                // recorded a denial: a prompt that never appears leaves the
+                // status at "Not requested" with no other way forward.
+                Button("Open Settings") {
+                    if let url = integration.settingsURL {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(.link)
             }
 
             // Say what still works without it, and why it can't be read.

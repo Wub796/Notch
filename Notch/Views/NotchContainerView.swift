@@ -26,23 +26,40 @@ struct NotchContainerView: View {
 
     private var notchBody: some View {
         ZStack(alignment: .top) {
-            // Both layers stay mounted and cross-fade in place. Insert/remove
-            // transitions made the whole slab appear to fade and pop; keeping
-            // the black shape and both content layers alive means only the
-            // geometry moves, which is what reads as a smooth morph.
-            CollapsedNotchView(state: state, namespace: notchNamespace)
+            // Each layer is laid out ONCE, at the size it will have when it is
+            // the active layer, and never re-laid-out during the morph. The
+            // outer frame below is smaller than the layer for most of an
+            // expansion, so the clip reveals the content as the shape grows
+            // instead of squeezing the content into an intermediate width.
+            // That reflow — text rewrapping and columns collapsing frame by
+            // frame — is what read as the notch fading out and coming back.
+            CollapsedNotchView(state: state)
+                .frame(
+                    width: state.collapsedSize.width,
+                    height: state.collapsedSize.height,
+                    alignment: .top
+                )
+                // Peek is a real scale of the resting layout, so the wings
+                // grow with the shape rather than reflowing inside it.
+                .scaleEffect(state.collapsedContentScale, anchor: .top)
                 .opacity(state.mode == .expanded ? 0 : 1)
                 .allowsHitTesting(state.mode != .expanded)
-                // Swap instantly rather than cross-fading: two half-visible
-                // layers overlapping mid-morph is what read as the notch
-                // fading. The solid black shape covers the switch.
-                .animation(nil, value: state.mode)
 
             ExpandedNotchView(state: state, namespace: notchNamespace)
+                // Laid out at the unscaled size and then scaled, so the panel-
+                // size preference magnifies the slab instead of squeezing each
+                // module's content into a shorter box.
+                .frame(
+                    width: state.expandedLayoutSize.width,
+                    height: state.expandedLayoutSize.height,
+                    alignment: .top
+                )
+                .scaleEffect(state.expandedScale, anchor: .top)
                 .opacity(state.mode == .expanded ? 1 : 0)
                 .allowsHitTesting(state.mode == .expanded)
-                .animation(nil, value: state.mode)
         }
+        // The one animated dimension. Everything above is already at its final
+        // size, so this frame plus the clip below is the entire morph.
         .frame(width: state.currentSize.width, height: state.currentSize.height, alignment: .top)
         // Completely black base in every state — the slab always hides the
         // menu bar behind it and merges with the hardware notch.
@@ -77,9 +94,12 @@ struct NotchContainerView: View {
             of: ShelfController.acceptedTypes,
             delegate: NotchDropDelegate(state: state)
         )
-        // One animation drives geometry and the cross-fade together.
-        .animation(NotchAnimations.forMode(state.mode), value: state.mode)
+        // Geometry only. The layers' opacity is deliberately left out of every
+        // animation below so the swap is a hard cut hidden under the opaque
+        // shape — a cross-fade between two half-visible layers is the one
+        // thing that makes a morph look like a dissolve.
         .animation(NotchAnimations.forMode(state.mode), value: state.currentSize)
+        .animation(NotchAnimations.forMode(state.mode), value: state.cornerRadius)
         .animation(NotchAnimations.content, value: state.tab)
         .animation(NotchAnimations.activity, value: state.collapsedActivity)
     }
