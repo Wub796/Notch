@@ -36,8 +36,44 @@ struct ToolsView: View {
                         }
                     }
                 }
+                volumeRow
             }
         }
+    }
+
+    /// Live output volume for the selected device, with a mute toggle.
+    private var volumeRow: some View {
+        HStack(spacing: 8) {
+            Button {
+                state.audio.toggleMute()
+            } label: {
+                Image(systemName: state.audio.isMuted
+                    ? "speaker.slash.fill"
+                    : "speaker.wave.2.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(
+                        state.audio.isMuted ? .red : NotchTheme.inkSecondary
+                    )
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressableButtonStyle())
+            .accessibilityLabel(state.audio.isMuted ? "Unmute" : "Mute")
+
+            Slider(
+                value: Binding(
+                    get: { Double(state.audio.volume) },
+                    set: { state.audio.setVolume(Float($0)) }
+                ),
+                in: 0 ... 1
+            )
+            .controlSize(.mini)
+            .tint(NotchTheme.inkPrimary)
+            .disabled(state.audio.isMuted)
+            .opacity(state.audio.isMuted ? 0.4 : 1)
+            .accessibilityLabel("Output volume")
+        }
+        .padding(.top, 2)
     }
 
     private func deviceRow(_ device: AudioOutputManager.Device) -> some View {

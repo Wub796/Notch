@@ -10,18 +10,20 @@ struct HomeDashboardView: View {
     let namespace: Namespace.ID
 
     var body: some View {
-        // Music flexes; the two right-hand widgets are fixed to their content
-        // so the row can never overflow the slab, whatever its width.
-        HStack(alignment: .center, spacing: 30) {
+        // Weather and calendar take exactly the width their content needs
+        // (fixedSize), so a wider weekday or temperature can never be forced
+        // past a hard frame and clipped by the slab. Music absorbs the rest.
+        HStack(alignment: .center, spacing: 24) {
             mediaPlayerSection
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             weatherWidget
-                .frame(width: 208, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
 
-            // Wide enough for the month label plus the five-day strip.
             calendarWidget
-                .frame(width: 212, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
@@ -42,7 +44,7 @@ struct HomeDashboardView: View {
                     MarqueeText(
                         text: state.media.track?.title ?? "Nothing Playing",
                         font: .system(size: 15, weight: .black, design: .rounded),
-                        width: 230
+                        width: 200
                     )
                     .foregroundStyle(NotchTheme.inkPrimary)
 
@@ -170,18 +172,24 @@ struct HomeDashboardView: View {
                             .foregroundStyle(NotchTheme.inkPrimary)
                             .contentTransition(.numericText())
 
+                        // Bounded so a long city name can't widen the whole
+                        // column and squeeze the music section.
                         Text(state.weather.placeName ?? "Your Location")
                             .font(.system(size: 12, weight: .heavy, design: .rounded))
                             .foregroundStyle(NotchTheme.inkPrimary.opacity(0.9))
                             .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 116, alignment: .leading)
 
                         Text(WeatherService.condition(for: weather.weatherCode))
                             .font(.system(size: 10, weight: .medium, design: .rounded))
                             .foregroundStyle(NotchTheme.inkSecondary)
                             .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 116, alignment: .leading)
                     }
 
-                    Spacer(minLength: 4)
+                    Spacer(minLength: 8)
 
                     VStack(alignment: .leading, spacing: 4) {
                         metricRow("wind", text: WeatherService.windString(kmh: weather.windKmh))
@@ -281,13 +289,13 @@ struct HomeDashboardView: View {
     }
 
     private func monthAndStrip(today: Date, strip: [Date]) -> some View {
-        HStack(alignment: .bottom, spacing: 12) {
+        HStack(alignment: .bottom, spacing: 10) {
             Text(monthAbbreviation(Calendar.current.component(.month, from: today)))
-                .font(.system(size: 26, weight: .heavy, design: .rounded))
+                .font(.system(size: 22, weight: .heavy, design: .rounded))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .accessibilityHidden(true)
 
-            HStack(alignment: .bottom, spacing: 9) {
+            HStack(alignment: .bottom, spacing: 7) {
                 ForEach(Array(strip.enumerated()), id: \.offset) { _, day in
                     dayCell(day)
                 }
@@ -313,7 +321,7 @@ struct HomeDashboardView: View {
                 ).monospacedDigit())
                 .foregroundStyle(isToday ? .blue : weekdayColor(for: day))
         }
-        .frame(minWidth: isToday ? 30 : 20)
+        .frame(minWidth: isToday ? 27 : 17)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(day.formatted(.dateTime.weekday(.wide).day().month(.wide)))
         .accessibilityAddTraits(isToday ? [.isSelected] : [])

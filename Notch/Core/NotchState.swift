@@ -52,13 +52,13 @@ final class NotchState {
         // height = top bar (38) + vertical padding (32) + the module's real
         // content height. These were previously guessed high, which left a
         // slab of dead black under every screen.
-        case .home: CGSize(width: 940, height: 158)
+        case .home: CGSize(width: 980, height: 158)
         case .media: CGSize(width: 880, height: 296)
         case .weather: CGSize(width: 800, height: 272)
         case .calendar: CGSize(width: 760, height: 296)
         case .shelf: CGSize(width: 780, height: 206)
         case .clipboard: CGSize(width: 800, height: 190)
-        case .tools: CGSize(width: 820, height: 172)
+        case .tools: CGSize(width: 820, height: 198)
         case .notes: CGSize(width: 720, height: 206)
         case .telemetry: CGSize(width: 800, height: 172)
         }
@@ -70,7 +70,7 @@ final class NotchState {
     }
 
     /// Largest slab any tab can request; the panel window is sized to this.
-    static let maxExpandedSize = CGSize(width: 940, height: 300)
+    static let maxExpandedSize = CGSize(width: 980, height: 300)
 
     /// Hover is only detected over the physical notch (plus a small margin),
     /// never over the full slab — a wide detection radius made the notch open
