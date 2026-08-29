@@ -8,6 +8,10 @@ import SwiftUI
 struct CollapsedNotchView: View {
     let state: NotchState
 
+    /// Passed down so the HUD wings ease outward as the pill grows, matching
+    /// the references' hover behaviour.
+    var isHovering: Bool = false
+
     var body: some View {
         ZStack {
             switch state.collapsedActivity {
@@ -39,15 +43,28 @@ struct CollapsedNotchView: View {
                     accent: state.media.accent
                 )
             case let .volume(level, muted):
-                VolumeActivityView(
+                InlineHUD(
+                    kind: .volume(muted: muted),
+                    value: Binding(
+                        get: { CGFloat(muted ? 0 : level) },
+                        set: { state.audio.setVolume(Float($0)) }
+                    ),
+                    isHovering: isHovering,
                     notchWidth: state.adjustedNotchSize.width,
-                    level: level,
-                    muted: muted
+                    notchHeight: state.adjustedNotchSize.height,
+                    showsPercentage: state.settings.showHUDPercentage
                 )
             case let .brightness(level):
-                BrightnessActivityView(
+                InlineHUD(
+                    kind: .brightness,
+                    value: Binding(
+                        get: { CGFloat(level) },
+                        set: { state.brightness.setBrightness(Float($0)) }
+                    ),
+                    isHovering: isHovering,
                     notchWidth: state.adjustedNotchSize.width,
-                    level: level
+                    notchHeight: state.adjustedNotchSize.height,
+                    showsPercentage: state.settings.showHUDPercentage
                 )
             case let .battery(percent, charging, low):
                 BatteryActivityView(

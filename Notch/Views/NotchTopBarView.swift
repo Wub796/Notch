@@ -23,14 +23,16 @@ struct NotchTopBarView: View {
             leadingControls
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Reserved dead zone: nothing is drawn behind the camera housing.
-            Color.clear
+            // Reserved dead zone, masked to the notch silhouette so the
+            // hardware notch appears to continue through the open slab.
+            Rectangle()
+                .fill(.black)
                 .frame(width: state.adjustedNotchSize.width)
+                .mask { NotchShape() }
 
             trailingControls
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.horizontal, 34)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -171,13 +173,14 @@ struct DetailHeaderView<Trailing: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Color.clear
+            Rectangle()
+                .fill(.black)
                 .frame(width: state.adjustedNotchSize.width)
+                .mask { NotchShape() }
 
             trailing()
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.horizontal, 34)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

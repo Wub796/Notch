@@ -8,8 +8,6 @@ struct ShelfView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            cardHeader
-
             if shelf.items.isEmpty {
                 emptyState
             } else {
@@ -25,8 +23,8 @@ struct ShelfView: View {
                     }
                     footer
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
@@ -35,32 +33,6 @@ struct ShelfView: View {
                 .fill(.white.opacity(0.035))
         }
         .animation(.notchSpring, value: shelf.items)
-    }
-
-    /// Titled card header for the File Drops panel.
-    private var cardHeader: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "person.crop.circle.dashed")
-                .font(.system(size: 23, weight: .light))
-                .foregroundStyle(NotchTheme.inkSecondary)
-
-            Text("File Drops")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(NotchTheme.inkPrimary)
-
-            Spacer(minLength: 0)
-
-            Image(systemName: "tray.full")
-                .font(.system(size: 17))
-                .foregroundStyle(NotchTheme.inkSecondary)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.white.opacity(0.05))
-        }
-        .accessibilityAddTraits(.isHeader)
     }
 
     private var emptyState: some View {

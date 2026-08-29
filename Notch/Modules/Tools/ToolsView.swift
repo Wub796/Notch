@@ -7,12 +7,14 @@ struct ToolsView: View {
     let state: NotchState
 
     var body: some View {
-        HStack(alignment: .top, spacing: 18) {
+        // Budget: NotchState.moduleContentSize, about 698 x 160 at the
+        // default panel size — the columns were sized for a 1000pt slab.
+        HStack(alignment: .top, spacing: 14) {
             audioColumn
-                .frame(width: 190, alignment: .leading)
+                .frame(width: 164, alignment: .leading)
 
             accessoriesColumn
-                .frame(width: 168, alignment: .leading)
+                .frame(width: 140, alignment: .leading)
 
             timerColumn
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -337,7 +339,7 @@ struct ToolsView: View {
                         .font(.system(size: 9.5, weight: .medium))
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(width: 148, alignment: .leading)
+                        .frame(width: 132, alignment: .leading)
                 }
             }
         }
@@ -363,7 +365,7 @@ struct ToolsView: View {
             .foregroundStyle(isEnabled ? NotchTheme.inkSecondary : NotchTheme.inkMuted)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
-            .frame(width: 148, alignment: .leading)
+            .frame(width: 132, alignment: .leading)
             .background {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(NotchTheme.surface)

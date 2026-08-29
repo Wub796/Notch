@@ -46,79 +46,23 @@ final class NotchState {
     /// Physical notch size, injected by NotchWindowController at launch.
     var notchSize: CGSize = NotchGeometry.fallbackSize
 
-    /// The user's panel-size preference, clamped. Applied as a visual scale
-    /// rather than a smaller layout: shrinking the layout squeezed each
-    /// module's fixed content into a slab too short for it and clipped the
-    /// bottom off, which is not what a size slider should do.
-    var expandedScale: CGFloat {
-        min(max(settings.expandedScale, 0.8), 1.3)
-    }
-
-    /// The size the expanded content is laid out at, before the user's scale.
-    var expandedLayoutSize: CGSize {
-        CGSize(
-            width: Self.contentWidth(for: tab),
-            // The top bar tracks the hardware notch and the user's height
-            // trim, so it cannot be assumed to be 38pt: derive the slab from
-            // it instead of hard-coding a total that a taller bar would eat.
-            height: topBarHeight + Self.contentGutters + contentHeight
-        )
-    }
-
-    /// The slab's size on screen.
+    /// The open slab. One size for every tab, as in boring.notch and Atoll:
+    /// sizing each screen to its own content made the slab resize on every tab
+    /// switch, and each module now fits this panel instead.
     var expandedSize: CGSize {
-        let layout = expandedLayoutSize
-        return CGSize(width: layout.width * expandedScale, height: layout.height * expandedScale)
+        NotchSizing.openNotchSize
     }
 
-    /// `ExpandedNotchView`'s vertical padding: 14 above the module, 18 below.
-    private static let contentGutters: CGFloat = 32
-
-    private static func contentWidth(for tab: NotchTab) -> CGFloat {
-        switch tab {
-        case .home: 940
-        case .media: 880
-        case .weather: 880
-        case .calendar: 760
-        case .shelf: 780
-        case .clipboard: 800
-        case .tools: 1000
-        case .notes: 720
-        case .telemetry: 800
-        }
-    }
-
-    /// The height the active module needs for its own content, excluding the
-    /// top bar and gutters. These are budgets the module views are written to
-    /// and document in their own headers — raising one here without changing
-    /// the module, or vice versa, is how content ends up clipped or floating
-    /// in dead black.
-    private var contentHeight: CGFloat {
-        switch tab {
-        case .home: 128
-        // artwork 104, progress 14, lyric line 20, transport 34, actions 26,
-        // and four 10pt gaps.
-        case .media: 250
-        // hero 72, hourly 70, five-day 70, two 12pt gaps.
-        case .weather: 260
-        // The month grid is six 24pt rows plus its weekday header, which is
-        // taller than the week strip and the day's events it replaces.
-        case .calendar: calendar.isMonthView ? 262 : 226
-        // card header 52, then a 97pt tray, the footer, and their gutters.
-        case .shelf: 212
-        case .clipboard: 120
-        case .tools: 152
-        // Mostly a text editor, so this is how much room there is to write.
-        case .notes: 170
-        case .telemetry: 112
-        }
-    }
-
-    /// How much the resting collapsed layout is scaled up in the current mode.
-    /// Peek grows the content by the same factor as the shape, so hovering
-    /// enlarges the notch rather than reflowing its wings into a wider box.
-    var collapsedContentScale: CGFloat {
-        mode == .peek ? min(max(settings.peekScale, 1.0), 1.4) : 1
+    /// Room left for a module once the header and the slab's own insets are
+    /// taken out. Module views are written to this budget.
+    var moduleContentSize: CGSize {
+        let open = expandedSize
+        let horizontal = (NotchSizing.cornerRadiusInsets.opened.top
+            + NotchSizing.openContentInset) * 2
+        return CGSize(
+            width: max(0, open.width - horizontal),
+            height: max(0, open.height - topBarHeight - NotchSizing.openContentInset)
+        )
     }
 
     /// The measured notch, with the user's manual trim applied. Clamped so a
@@ -135,19 +79,11 @@ final class NotchState {
         max(adjustedNotchSize.height, 38)
     }
 
-    /// Largest slab any tab can request; the panel window is sized to this
-    /// once at launch, so it must allow for the widest tab (tools, 1000), the
-    /// tallest (weather, 260 of content) on top of the tallest possible top
-    /// bar (38 plus the +30 height trim) and gutters, all at the largest user
-    /// scale (1.3x) — otherwise turning the size slider up clips the panel
-    /// against its own window.
-    static let maxExpandedSize = CGSize(width: 1000 * 1.3, height: 380 * 1.3)
-
     /// Hover is only detected over the physical notch (plus a small margin),
     /// never over the full slab — a wide detection radius made the notch open
     /// when the pointer was merely near the menu bar.
     var hoverProbeSize: CGSize {
-        guard mode != .expanded else { return currentSize }
+        guard mode != .expanded else { return expandedSize }
         let padding = min(max(settings.hoverPadding, 0), 80)
         return CGSize(
             width: adjustedNotchSize.width + padding,
@@ -201,18 +137,20 @@ final class NotchState {
         brightness.onExternalChange = { [weak self] level in
             self?.activities.showBrightness(level: level)
         }
-        if settings.brightnessHUDEnabled {
-            brightness.startHUDMonitoring()
+        settings.onBrightnessHUDSettingChanged = { [weak self] _ in
+            self?.applyHUDSources()
         }
-        settings.onBrightnessHUDSettingChanged = { [weak self] enabled in
-            if enabled {
-                self?.brightness.startHUDMonitoring()
-            } else {
-                self?.brightness.stopHUDMonitoring()
-            }
+        settings.onHUDReplacementChanged = { [weak self] _ in
+            self?.applyHUDSources()
         }
+        installMediaKeyInterceptor()
+        applyHUDSources()
         calendar.bootstrapIfAuthorized()
         weather.refresh()
+        // One CoreAudio query at launch, then property listeners: the HUD has
+        // to know the level before the notch has ever been opened, and this
+        // adds no polling.
+        audio.refresh()
 
         media.onTrackChange = { [weak self] track in
             self?.activities.showTrackChange(title: track.title, artist: track.artist)
@@ -253,6 +191,51 @@ final class NotchState {
             } else {
                 self?.clipboard.stop()
             }
+        }
+    }
+
+    // MARK: - HUD sources
+
+    /// Hands the media-key tap everything it needs to read and write the
+    /// system values, and to raise the notch's HUD — the arrangement
+    /// boring.notch uses, where the key press itself is the event and nothing
+    /// polls.
+    private func installMediaKeyInterceptor() {
+        let interceptor = MediaKeyInterceptor.shared
+        interceptor.volumeSource = { [weak self] in self?.audio.currentVolume() ?? 0 }
+        interceptor.setVolume = { [weak self] level in self?.audio.setVolume(level) }
+        interceptor.isMuted = { [weak self] in self?.audio.isMuted ?? false }
+        interceptor.toggleMute = { [weak self] in self?.audio.toggleMute() }
+        interceptor.brightnessSource = { [weak self] in
+            self?.brightness.refresh()
+            return self?.brightness.brightness ?? 0
+        }
+        interceptor.setBrightness = { [weak self] level in self?.brightness.setBrightness(level) }
+        interceptor.onVolume = { [weak self] level, muted in
+            guard self?.settings.volumeHUDEnabled == true else { return }
+            self?.activities.showVolume(level: level, muted: muted)
+        }
+        interceptor.onBrightness = { [weak self] level in
+            guard self?.settings.brightnessHUDEnabled == true else { return }
+            self?.activities.showBrightness(level: level)
+        }
+    }
+
+    /// Picks how the HUDs are driven: the event tap when the user has enabled
+    /// HUD replacement and granted Accessibility, otherwise the brightness
+    /// sampler. Never both — the tap already reports every key press, so
+    /// leaving the sampler on would raise a second HUD for the same change.
+    func applyHUDSources() {
+        let interceptor = MediaKeyInterceptor.shared
+        let tapping = settings.hudReplacement && interceptor.start()
+
+        if !tapping {
+            interceptor.stop()
+        }
+        if !tapping, settings.brightnessHUDEnabled {
+            brightness.startHUDMonitoring()
+        } else {
+            brightness.stopHUDMonitoring()
         }
     }
 
@@ -317,31 +300,14 @@ final class NotchState {
         return size
     }
 
-    var currentSize: CGSize {
-        switch mode {
-        case .collapsed:
-            return collapsedSize
-        case .peek:
-            let peek = min(max(settings.peekScale, 1.0), 1.4)
-            return CGSize(
-                width: collapsedSize.width * peek,
-                height: collapsedSize.height * peek
-            )
-        case .expanded:
-            return expandedSize
-        }
-    }
-
-    /// Corner radius per state, user-adjustable. Peek sits midway between
-    /// the closed and open radii so the morph reads continuously.
-    var cornerRadius: CGFloat {
-        let closed = min(max(settings.collapsedCornerRadius, 0), 34)
-        let open = min(max(settings.expandedCornerRadius, 8), 52)
-        switch mode {
-        case .collapsed: return closed
-        case .peek: return closed + (open - closed) * 0.4
-        case .expanded: return open
-        }
+    /// The two radii the notch shape is drawn with. Closed and peek keep the
+    /// tight pill radii so the shape stays welded to the hardware notch; only
+    /// the open slab takes the larger pair, and `cornerRadiusScaling` off
+    /// keeps the closed pair throughout, as in the references.
+    var cornerRadii: (top: CGFloat, bottom: CGFloat) {
+        let insets = NotchSizing.cornerRadiusInsets
+        guard mode == .expanded, settings.cornerRadiusScaling else { return insets.closed }
+        return insets.opened
     }
 
     // MARK: - Hover / expansion
@@ -354,9 +320,7 @@ final class NotchState {
         if hovering {
             hoverStartedAt = Date()
             if mode == .collapsed {
-                withAnimation(NotchAnimations.hover) {
-                    mode = .peek
-                }
+                mode = .peek
             }
             // Linger past the open delay to expand fully (when enabled).
             guard settings.expandOnHover, mode == .peek else { return }
@@ -369,9 +333,7 @@ final class NotchState {
             hoverStartedAt = nil
             switch mode {
             case .peek:
-                withAnimation(NotchAnimations.hover) {
-                    mode = .collapsed
-                }
+                mode = .collapsed
             case .expanded:
                 guard !isPinned, settings.autoCollapseOnMouseExit else { return }
                 let work = DispatchWorkItem { [weak self] in
@@ -408,9 +370,9 @@ final class NotchState {
         guard mode != .expanded else { return }
         pendingHoverWork?.cancel()
         NotchTheme.Haptics.alignment()
-        withAnimation(NotchAnimations.expand) {
-            mode = .expanded
-        }
+        // No withAnimation here: NotchContainerView drives the open/close
+        // springs. Two animations on the same transition fight each other.
+        mode = .expanded
         onModeChange?(mode)
         wakeModules()
     }
@@ -418,11 +380,9 @@ final class NotchState {
     func collapse() {
         guard mode == .expanded else { return }
         NotchTheme.Haptics.alignment()
-        withAnimation(NotchAnimations.collapse) {
-            mode = .collapsed
-            isDropTargeted = false
-            isPinned = false
-        }
+        mode = .collapsed
+        isDropTargeted = false
+        isPinned = false
         onModeChange?(mode)
         sleepModules()
     }

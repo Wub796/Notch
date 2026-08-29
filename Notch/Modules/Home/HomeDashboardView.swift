@@ -6,8 +6,10 @@ import SwiftUI
 /// calendar (month, week strip and what's next). Each column drills into its
 /// detail screen on click.
 ///
-/// Height budget: `NotchState.contentHeight(for: .home)` reserves 128pt for
-/// this view. The music column is the tallest at roughly 98pt.
+/// Budget: `NotchState.moduleContentSize`, about 698 x 160 at the default
+/// panel size. The music column is the tallest at roughly 100pt, and weather
+/// and calendar take only the width their content needs so a long city name
+/// or a wide weekday can never be forced past a hard frame.
 struct HomeDashboardView: View {
     let state: NotchState
     let namespace: Namespace.ID
@@ -16,7 +18,7 @@ struct HomeDashboardView: View {
         // Weather and calendar take exactly the width their content needs
         // (fixedSize), so a wider weekday or temperature can never be forced
         // past a hard frame and clipped by the slab. Music absorbs the rest.
-        HStack(alignment: .center, spacing: 26) {
+        HStack(alignment: .center, spacing: 20) {
             mediaPlayerSection
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -37,7 +39,7 @@ struct HomeDashboardView: View {
         // Artwork on the left; title, artist, the transport row and the
         // scrubber all share the text column, so the controls sit under the
         // metadata rather than under the artwork.
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 12) {
             artwork
                 .contentShape(Rectangle())
                 .onTapGesture { state.select(.media) }
@@ -47,8 +49,8 @@ struct HomeDashboardView: View {
                 // competing for the same glance.
                 MarqueeText(
                     text: state.media.track?.title ?? "Nothing Playing",
-                    font: .system(size: 18, weight: .black, design: .rounded),
-                    width: 210
+                    font: .system(size: 17, weight: .black, design: .rounded),
+                    width: 180
                 )
                 .foregroundStyle(NotchTheme.inkPrimary)
 
@@ -143,8 +145,8 @@ struct HomeDashboardView: View {
                     }
             }
         }
-        .frame(width: 72, height: 72)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .frame(width: 64, height: 64)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: state.media.accent.opacity(0.45), radius: 10, y: 4)
         .overlay(alignment: .bottomLeading) {
@@ -208,12 +210,12 @@ struct HomeDashboardView: View {
                         for: weather.weatherCode,
                         isDay: weather.isDay
                     ))
-                    .font(.system(size: 36))
+                    .font(.system(size: 32))
                     .symbolRenderingMode(.multicolor)
 
                     VStack(alignment: .leading, spacing: -1) {
                         Text(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
-                            .font(.system(size: 36, weight: .heavy, design: .rounded).monospacedDigit())
+                            .font(.system(size: 32, weight: .heavy, design: .rounded).monospacedDigit())
                             .foregroundStyle(NotchTheme.inkPrimary)
                             .contentTransition(.numericText())
 
@@ -222,7 +224,7 @@ struct HomeDashboardView: View {
                             .foregroundStyle(NotchTheme.inkSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .frame(maxWidth: 130, alignment: .leading)
+                            .frame(maxWidth: 112, alignment: .leading)
 
                         Text("H " + WeatherService.temperatureString(celsius: weather.highCelsius)
                              + "   L " + WeatherService.temperatureString(celsius: weather.lowCelsius))
@@ -312,7 +314,7 @@ struct HomeDashboardView: View {
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 150, alignment: .leading)
+                    .frame(maxWidth: 128, alignment: .leading)
             }
         } else {
             Text(state.calendar.accessState == .granted
@@ -326,11 +328,11 @@ struct HomeDashboardView: View {
     private func monthAndStrip(today: Date, strip: [Date]) -> some View {
         HStack(alignment: .bottom, spacing: 10) {
             Text(monthAbbreviation(Calendar.current.component(.month, from: today)))
-                .font(.system(size: 26, weight: .heavy, design: .rounded))
+                .font(.system(size: 22, weight: .heavy, design: .rounded))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .accessibilityHidden(true)
 
-            HStack(alignment: .bottom, spacing: 7) {
+            HStack(alignment: .bottom, spacing: 5) {
                 ForEach(Array(strip.enumerated()), id: \.offset) { _, day in
                     dayCell(day)
                 }
@@ -350,13 +352,13 @@ struct HomeDashboardView: View {
                 .foregroundStyle(isToday ? .blue : weekdayColor(for: day).opacity(0.7))
             Text("\(calendar.component(.day, from: day))")
                 .font(.system(
-                    size: isToday ? 22 : 17,
+                    size: isToday ? 20 : 16,
                     weight: isToday ? .heavy : .semibold,
                     design: .rounded
                 ).monospacedDigit())
                 .foregroundStyle(isToday ? .blue : weekdayColor(for: day))
         }
-        .frame(minWidth: isToday ? 32 : 22)
+        .frame(minWidth: isToday ? 30 : 19)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(day.formatted(.dateTime.weekday(.wide).day().month(.wide)))
         .accessibilityAddTraits(isToday ? [.isSelected] : [])

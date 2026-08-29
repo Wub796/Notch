@@ -7,22 +7,18 @@ import SwiftUI
 final class NotchWindowController: NSWindowController {
     private let state: NotchState
 
-    /// Extra transparent margin around the expanded shape so shadows and
-    /// spring overshoot are never clipped by the panel bounds.
-    private static let overshootMargin: CGFloat = 40
-
     init(state: NotchState, screen: NSScreen) {
         self.state = state
 
         let geometry = NotchGeometry(screen: screen)
         state.notchSize = geometry.notchSize
 
-        // Sized for the largest slab any tab can request, so switching tabs
-        // never needs to resize the window mid-animation.
-        let width = max(NotchState.maxExpandedSize.width, geometry.notchSize.width)
-            + Self.overshootMargin * 2
-        let height = NotchState.maxExpandedSize.height + geometry.notchSize.height
-            + Self.overshootMargin
+        // Sized once for the largest slab the size sliders allow, plus the
+        // shadow margin, so neither opening nor widening ever needs to resize
+        // the window mid-animation — the SwiftUI content morphs inside it.
+        let window = NotchSizing.windowSize
+        let width = max(window.width, geometry.notchSize.width)
+        let height = window.height + geometry.notchSize.height
 
         let frame = NSRect(
             x: screen.frame.midX - width / 2,

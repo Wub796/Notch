@@ -1,0 +1,193 @@
+import SwiftUI
+
+/// The volume / brightness bar, ported from boring.notch's
+/// `SystemEventIndicatorModifier.DraggableProgressBar` and Atoll's variant.
+///
+/// Two capsules: a `.tertiary` track and a gradient fill running from the
+/// leading edge, with the gradient itself oriented trailing-to-leading so the
+/// bright end sits at the current value. It thickens while dragged, and it is
+/// draggable — dragging sets the system value through `onChange`, which is why
+/// the reference calls it a *draggable* progress bar rather than a readout.
+struct DraggableProgressBar: View {
+    @Binding var value: CGFloat
+
+    /// Tint for the filled portion; the reference uses the album accent or
+    /// white depending on a preference.
+    var tint: Color = .white
+
+    /// Whether this is the inline (in-notch) HUD, which draws slightly
+    /// thinner than the standalone one.
+    var inline: Bool = true
+
+    var onChange: ((CGFloat) -> Void)?
+
+    @State private var isDragging = false
+
+    private var height: CGFloat {
+        inline ? (isDragging ? 8 : 5) : (isDragging ? 9 : 6)
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(.tertiary)
+
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [tint, tint.opacity(0.2)],
+                            startPoint: .trailing,
+                            endPoint: .leading
+                        )
+                    )
+                    .frame(width: max(0, min(geometry.size.width * value, geometry.size.width)))
+                    .shadow(color: tint.opacity(0.55), radius: 8, x: 3)
+                    // A zero-width capsule still paints a dot; hiding it keeps
+                    // muted and zero-brightness from looking broken.
+                    .opacity(value.isZero ? 0 : 1)
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        withAnimation(NotchAnimations.hudBar) {
+                            isDragging = true
+                            update(to: gesture.location.x, in: geometry)
+                        }
+                    }
+                    .onEnded { _ in
+                        withAnimation(NotchAnimations.hudBar) {
+                            isDragging = false
+                        }
+                    }
+            )
+        }
+        .frame(height: height)
+        .accessibilityElement()
+        .accessibilityValue("\(Int(value * 100)) percent")
+        .accessibilityAdjustableAction { direction in
+            let step: CGFloat = 1.0 / 16.0
+            let target = direction == .increment ? value + step : value - step
+            value = max(0, min(1, target))
+            onChange?(value)
+        }
+    }
+
+    private func update(to x: CGFloat, in geometry: GeometryProxy) {
+        guard geometry.size.width > 0 else { return }
+        value = max(0, min(x / geometry.size.width, 1))
+        onChange?(value)
+    }
+}
+
+/// The closed-notch HUD: a labelled glyph on the left wing, the reserved
+/// camera dead zone, and the bar with its percentage on the right.
+///
+/// Layout is boring.notch's `InlineHUD`: each wing is a fixed 100pt (less 12
+/// when not hovered, so the content eases outward as the pill grows), and the
+/// dead zone is the hardware notch less 20. Fixed wing widths are what keep
+/// the glyph and the bar from sliding around as the value's digits change.
+struct InlineHUD: View {
+    let kind: Kind
+    @Binding var value: CGFloat
+    let isHovering: Bool
+    let notchWidth: CGFloat
+    let notchHeight: CGFloat
+    var showsPercentage: Bool = true
+    var onChange: ((CGFloat) -> Void)?
+
+    enum Kind {
+        case volume(muted: Bool)
+        case brightness
+
+        var title: String {
+            switch self {
+            case .volume: "Volume"
+            case .brightness: "Brightness"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .volume: .white
+            case .brightness: .white
+            }
+        }
+    }
+
+    private var wingWidth: CGFloat {
+        100 - (isHovering ? 0 : 12)
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 5) {
+                glyph
+                    .foregroundStyle(.white)
+                    .symbolVariant(.fill)
+
+                Text(kind.title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .allowsTightening(true)
+                    .contentTransition(.numericText())
+            }
+            .frame(width: wingWidth, height: notchHeight - (isHovering ? 0 : 12), alignment: .leading)
+
+            // Reserved dead zone for the camera housing.
+            Color.clear
+                .frame(width: max(0, notchWidth - 20))
+
+            HStack(spacing: 6) {
+                DraggableProgressBar(value: $value, tint: kind.tint, onChange: onChange)
+
+                if case let .volume(muted) = kind, muted || value.isZero {
+                    Text("muted")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.gray)
+                        .lineLimit(1)
+                } else if showsPercentage {
+                    Text("\(Int(value * 100))%")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.gray)
+                        .lineLimit(1)
+                        .contentTransition(.numericText())
+                }
+            }
+            .padding(.trailing, 4)
+            .frame(width: wingWidth, height: notchHeight - (isHovering ? 0 : 12), alignment: .center)
+        }
+        .frame(height: notchHeight + (isHovering ? 8 : 0), alignment: .center)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(kind.title)
+    }
+
+    @ViewBuilder
+    private var glyph: some View {
+        switch kind {
+        case let .volume(muted):
+            Image(systemName: Self.speakerSymbol(value))
+                .contentTransition(.interpolate)
+                .symbolVariant(muted || value.isZero ? .slash : .none)
+                .frame(width: 20, height: 15, alignment: .leading)
+        case .brightness:
+            Image(systemName: value > 0.6 ? "sun.max" : "sun.min")
+                .contentTransition(.interpolate)
+                .frame(width: 20, height: 15, alignment: .center)
+        }
+    }
+
+    /// The reference's speaker ramp.
+    static func speakerSymbol(_ value: CGFloat) -> String {
+        switch value {
+        case 0: "speaker"
+        case 0 ... 0.3: "speaker.wave.1"
+        case 0.3 ... 0.8: "speaker.wave.2"
+        case 0.8 ... 1: "speaker.wave.3"
+        default: "speaker.wave.2"
+        }
+    }
+}

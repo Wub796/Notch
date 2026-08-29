@@ -1,15 +1,39 @@
 import SwiftUI
 
-/// Root SwiftUI view hosted in the panel. Renders the morphing notch body,
-/// top-anchored so it grows downward out of the hardware notch. Three visual
-/// states: closed pill, hover peek, and the full glass slab.
+/// Root SwiftUI view hosted in the panel: the morphing notch body, top-anchored
+/// so it grows downward out of the hardware notch.
+///
+/// The structure is boring.notch's and Atoll's `ContentView`. Nothing here sets
+/// an explicit width — the body takes its size from whatever the layout is
+/// currently drawing, and the animation is on `state.mode`, so SwiftUI
+/// interpolates from the closed pill's natural size to the open slab's. Height
+/// is the one exception, pinned while open so every tab opens to the same
+/// panel.
 struct NotchContainerView: View {
     let state: NotchState
 
     @Namespace private var notchNamespace
+    @State private var isHovering = false
+
+    // Animation constants taken from the references. Open is slightly quicker
+    // than close and both are critically damped, so the slab settles without
+    // the wobble a lighter spring gives a shape this large.
+    private static let openAnimation = Animation.spring(
+        response: 0.42, dampingFraction: 1.0, blendDuration: 0
+    )
+    private static let closeAnimation = Animation.spring(
+        response: 0.45, dampingFraction: 1.0, blendDuration: 0
+    )
+    private static let hoverAnimation = Animation.bouncy.speed(1.2)
+
+    private var notchAnimation: Animation {
+        guard !NotchAnimations.prefersReducedMotion else { return NotchAnimations.reduced }
+        return state.mode == .expanded ? Self.openAnimation : Self.closeAnimation
+    }
 
     private var shape: NotchShape {
-        NotchShape(cornerRadius: state.cornerRadius)
+        let radii = state.cornerRadii
+        return NotchShape(topCornerRadius: radii.top, bottomCornerRadius: radii.bottom)
     }
 
     var body: some View {
@@ -18,90 +42,63 @@ struct NotchContainerView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .top)
-        // Every label in the notch inherits the rounded face; individual
-        // views only choose size and weight.
         .fontDesign(.rounded)
         .preferredColorScheme(.dark)
     }
 
     private var notchBody: some View {
-        ZStack(alignment: .top) {
-            // Each layer is laid out ONCE, at the size it will have when it is
-            // the active layer, and never re-laid-out during the morph. The
-            // outer frame below is smaller than the layer for most of an
-            // expansion, so the clip reveals the content as the shape grows
-            // instead of squeezing the content into an intermediate width.
-            // That reflow — text rewrapping and columns collapsing frame by
-            // frame — is what read as the notch fading out and coming back.
-            CollapsedNotchView(state: state)
-                .frame(
-                    width: state.collapsedSize.width,
-                    height: state.collapsedSize.height,
-                    alignment: .top
-                )
-                // Peek is a real scale of the resting layout, so the wings
-                // grow with the shape rather than reflowing inside it.
-                .scaleEffect(state.collapsedContentScale, anchor: .top)
-                .opacity(state.mode == .expanded ? 0 : 1)
-                .allowsHitTesting(state.mode != .expanded)
-
-            ExpandedNotchView(state: state, namespace: notchNamespace)
-                // Laid out at the unscaled size and then scaled, so the panel-
-                // size preference magnifies the slab instead of squeezing each
-                // module's content into a shorter box.
-                .frame(
-                    width: state.expandedLayoutSize.width,
-                    height: state.expandedLayoutSize.height,
-                    alignment: .top
-                )
-                .scaleEffect(state.expandedScale, anchor: .top)
-                .opacity(state.mode == .expanded ? 1 : 0)
-                .allowsHitTesting(state.mode == .expanded)
-        }
-        // The one animated dimension. Everything above is already at its final
-        // size, so this frame plus the clip below is the entire morph.
-        .frame(width: state.currentSize.width, height: state.currentSize.height, alignment: .top)
-        // Completely black base in every state — the slab always hides the
-        // menu bar behind it and merges with the hardware notch.
-        .background {
-            shape.fill(.black)
-        }
-        .clipShape(shape)
-        // A single fixed shadow: animating radius and opacity alongside the
-        // geometry made the edge look like it was dissolving.
-        .shadow(color: .black.opacity(0.45), radius: 14, y: 6)
-        // Hit testing — and therefore hover — is limited to the physical
-        // notch while closed, so the pointer must actually be on the notch
-        // rather than merely near it. Expanded, the whole slab stays live so
-        // hovering anywhere in it keeps it open.
-        .contentShape(
-            HoverRegionShape(
-                probe: state.mode == .expanded ? nil : state.hoverProbeSize
-            )
-        )
-        .onHover { hovering in
-            state.hoverChanged(hovering)
-        }
-        // Click-to-expand only matters while closed. macOS gives a parent
-        // `.onTapGesture` priority over child `Button`s, so leaving it live in
-        // expanded mode swallows the top bar's clicks.
-        .modifier(
-            ConditionalTapModifier(active: state.mode != .expanded) {
-                state.handleTap()
+        NotchLayoutView(state: state, namespace: notchNamespace, isHovering: isHovering)
+            // Horizontal inset clears the top flare; the extra 12 on the sides
+            // and bottom is the references' open-slab padding.
+            .padding(.horizontal, state.mode == .expanded
+                ? NotchSizing.cornerRadiusInsets.opened.top
+                : NotchSizing.cornerRadiusInsets.closed.bottom)
+            .padding([.horizontal, .bottom], state.mode == .expanded
+                ? NotchSizing.openContentInset
+                : 0)
+            .background(.black)
+            .clipShape(shape)
+            // A hairline of black across the top, inside the flare, so no
+            // sliver of desktop shows between the slab and the screen edge.
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(.black)
+                    .frame(height: 1)
+                    .padding(.horizontal, state.cornerRadii.top)
             }
-        )
-        .onDrop(
-            of: ShelfController.acceptedTypes,
-            delegate: NotchDropDelegate(state: state)
-        )
-        // Geometry only. The layers' opacity is deliberately left out of every
-        // animation below so the swap is a hard cut hidden under the opaque
-        // shape — a cross-fade between two half-visible layers is the one
-        // thing that makes a morph look like a dissolve.
-        .animation(NotchAnimations.forMode(state.mode), value: state.currentSize)
-        .animation(NotchAnimations.forMode(state.mode), value: state.cornerRadius)
-        .animation(NotchAnimations.content, value: state.tab)
-        .animation(NotchAnimations.activity, value: state.collapsedActivity)
+            // Only the open slab and the hovered pill cast a shadow; a closed
+            // pill sitting on the black notch does not need one.
+            .shadow(
+                color: (state.mode == .expanded || isHovering) ? .black.opacity(0.7) : .clear,
+                radius: state.settings.cornerRadiusScaling ? 6 : 4
+            )
+            .frame(height: state.mode == .expanded ? state.expandedSize.height : nil)
+            .animation(notchAnimation, value: state.mode)
+            .animation(Self.hoverAnimation, value: isHovering)
+            .animation(notchAnimation, value: state.collapsedActivity)
+            .contentShape(
+                HoverRegionShape(
+                    probe: state.mode == .expanded ? nil : state.hoverProbeSize
+                )
+            )
+            .onHover { hovering in
+                isHovering = hovering
+                state.hoverChanged(hovering)
+            }
+            .modifier(
+                ConditionalTapModifier(active: state.mode != .expanded) {
+                    state.handleTap()
+                }
+            )
+            .onDrop(
+                of: ShelfController.acceptedTypes,
+                delegate: NotchDropDelegate(state: state)
+            )
+            .onChange(of: state.mode) { _, newMode in
+                if newMode != .expanded, isHovering {
+                    isHovering = false
+                }
+            }
     }
 }
 

@@ -1,73 +1,69 @@
 import SwiftUI
 
-/// The notch silhouette, drawn Sapphire-style: quad-curve flares at the top
-/// (radius derived from the corner radius) and true circular arcs at the
-/// bottom, all clamped so the shape stays valid at any size mid-animation.
+/// The notch silhouette, with independent top and bottom radii.
+///
+/// Geometry follows boring.notch and Atoll (both from DynamicNotchKit): the
+/// top corners flare *outward* into the menu bar with a quad curve, and the
+/// bottom corners round inward with another. Driving the two radii separately
+/// is what lets the closed pill sit tight against the hardware notch (6/14)
+/// while the open slab reads as a soft panel (19/24) — a single radius cannot
+/// express both.
 struct NotchShape: Shape {
-    /// Single driving radius; the top flare derives from it.
-    var cornerRadius: CGFloat
+    private var topCornerRadius: CGFloat
+    private var bottomCornerRadius: CGFloat
 
-    init(cornerRadius: CGFloat = 10) {
-        self.cornerRadius = cornerRadius
+    init(topCornerRadius: CGFloat? = nil, bottomCornerRadius: CGFloat? = nil) {
+        self.topCornerRadius = topCornerRadius ?? NotchSizing.cornerRadiusInsets.closed.top
+        self.bottomCornerRadius = bottomCornerRadius ?? NotchSizing.cornerRadiusInsets.closed.bottom
     }
 
-    var animatableData: CGFloat {
-        get { cornerRadius }
-        set { cornerRadius = newValue }
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { .init(topCornerRadius, bottomCornerRadius) }
+        set {
+            topCornerRadius = newValue.first
+            bottomCornerRadius = newValue.second
+        }
     }
 
     func path(in rect: CGRect) -> Path {
-        guard rect.width.isFinite, rect.height.isFinite,
-              rect.width > 0, rect.height > 0
-        else { return Path() }
+        guard rect.width.isFinite, rect.height.isFinite, rect.width > 0, rect.height > 0 else {
+            return Path()
+        }
 
-        let topRadiusBase: CGFloat = cornerRadius > 15 ? cornerRadius - 5 : 8
-        let topRadius = max(0, min(topRadiusBase, rect.height / 2, rect.width / 2))
-
-        let bottomRadius = max(0, min(
-            cornerRadius,
-            (rect.width - 2 * topRadius) / 2,
-            rect.height - topRadius
+        // Clamped so the shape stays valid at any size mid-animation; the
+        // references assume the slab is always wider than the two radii, which
+        // is not true while the notch is still growing out of the pill.
+        let top = max(0, min(topCornerRadius, rect.width / 2, rect.height))
+        let bottom = max(0, min(
+            bottomCornerRadius,
+            max(0, rect.width / 2 - top),
+            max(0, rect.height - top)
         ))
 
         var path = Path()
         path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+
         path.addQuadCurve(
-            to: CGPoint(x: rect.minX + topRadius, y: rect.minY + topRadius),
-            control: CGPoint(x: rect.minX + topRadius, y: rect.minY)
+            to: CGPoint(x: rect.minX + top, y: rect.minY + top),
+            control: CGPoint(x: rect.minX + top, y: rect.minY)
         )
-        path.addLine(to: CGPoint(x: rect.minX + topRadius, y: rect.maxY - bottomRadius))
-        if bottomRadius > 0 {
-            path.addArc(
-                center: CGPoint(
-                    x: rect.minX + topRadius + bottomRadius,
-                    y: rect.maxY - bottomRadius
-                ),
-                radius: bottomRadius,
-                startAngle: Angle(degrees: 180),
-                endAngle: Angle(degrees: 90),
-                clockwise: true
-            )
-        }
-        path.addLine(to: CGPoint(x: rect.maxX - topRadius - bottomRadius, y: rect.maxY))
-        if bottomRadius > 0 {
-            path.addArc(
-                center: CGPoint(
-                    x: rect.maxX - topRadius - bottomRadius,
-                    y: rect.maxY - bottomRadius
-                ),
-                radius: bottomRadius,
-                startAngle: Angle(degrees: 90),
-                endAngle: Angle(degrees: 0),
-                clockwise: true
-            )
-        }
-        path.addLine(to: CGPoint(x: rect.maxX - topRadius, y: rect.minY + topRadius))
+        path.addLine(to: CGPoint(x: rect.minX + top, y: rect.maxY - bottom))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + top + bottom, y: rect.maxY),
+            control: CGPoint(x: rect.minX + top, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX - top - bottom, y: rect.maxY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX - top, y: rect.maxY - bottom),
+            control: CGPoint(x: rect.maxX - top, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX - top, y: rect.minY + top))
         path.addQuadCurve(
             to: CGPoint(x: rect.maxX, y: rect.minY),
-            control: CGPoint(x: rect.maxX - topRadius, y: rect.minY)
+            control: CGPoint(x: rect.maxX - top, y: rect.minY)
         )
-        path.closeSubpath()
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
+
         return path
     }
 }

@@ -1,41 +1,17 @@
 import SwiftUI
 
-/// The expanded slab. A single black surface: a strip of borderless icons
-/// flanking the hardware notch along the top, and the active module beneath
-/// it. No dividers, no centered controls.
+/// The open slab's header: a strip of borderless icons flanking the hardware
+/// notch, or a detail screen's back button and its own trailing controls. The
+/// module below it is drawn by `NotchLayoutView`, so the header and the closed
+/// notch's live-activity strip are siblings that swap in place — that is what
+/// lets the two states share one animating layout.
 struct ExpandedNotchView: View {
     let state: NotchState
     let namespace: Namespace.ID
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Tall enough to drop the icons clear of the screen's top edge on
-            // every display, not just notched ones.
-            header
-                .frame(height: state.topBarHeight)
-
-            Group {
-                if state.isDropTargeted || state.shelf.isResolvingDrop {
-                    DropZoneView(
-                        isResolving: state.shelf.isResolvingDrop,
-                        instantAirDrop: state.settings.instantAirDrop
-                    )
-                } else {
-                    content
-                }
-            }
-            // Centred, so any slack is split above and below the content
-            // rather than pooling into dead space at the bottom.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            // One gutter for the whole slab: content lines up with the back
-            // chevron and status icons in the header above it.
-            .padding(.horizontal, 34)
-            .padding(.top, 14)
-            .padding(.bottom, 18)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        // Everything stays inside the slab, whatever a module reports.
-        .clipped()
+        header
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -55,39 +31,6 @@ struct ExpandedNotchView: View {
             }
         default:
             NotchTopBarView(state: state)
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch state.tab {
-        case .home:
-            HomeDashboardView(state: state, namespace: namespace)
-                .transition(.opacity)
-        case .media:
-            MediaPlayerView(state: state, namespace: namespace)
-                .transition(.opacity)
-        case .weather:
-            WeatherDetailView(state: state)
-                .transition(.opacity)
-        case .calendar:
-            CalendarDetailView(state: state)
-                .transition(.opacity)
-        case .shelf:
-            ShelfView(shelf: state.shelf)
-                .transition(.opacity)
-        case .clipboard:
-            ClipboardView(clipboard: state.clipboard)
-                .transition(.opacity)
-        case .tools:
-            ToolsView(state: state)
-                .transition(.opacity)
-        case .notes:
-            NotesView(notes: state.notes)
-                .transition(.opacity)
-        case .telemetry:
-            TelemetryView(telemetry: state.telemetry)
-                .transition(.opacity)
         }
     }
 

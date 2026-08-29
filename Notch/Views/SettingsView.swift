@@ -316,13 +316,6 @@ private struct DimensionSliders: View {
                 format: { String(format: "%+.0f pt", $0) }
             )
             slider(
-                "Panel size",
-                value: $settings.expandedScale,
-                range: 0.8 ... 1.3,
-                step: 0.05,
-                format: { String(format: "%.0f%%", $0 * 100) }
-            )
-            slider(
                 "Hover grow",
                 value: $settings.peekScale,
                 range: 1.0 ... 1.4,
@@ -330,26 +323,29 @@ private struct DimensionSliders: View {
                 format: { String(format: "%.0f%%", $0 * 100) }
             )
         } header: {
-            Label("Dimensions", systemImage: "ruler")
+            Label("Closed Notch", systemImage: "ruler")
         } footer: {
-            Text("Width and height trim the notch the app measured from your display — useful if the drawn pill doesn't quite cover the hardware. Panel size scales every expanded screen.")
+            Text("Width and height trim the notch the app measured from your display — useful if the drawn pill doesn't quite cover the hardware.")
         }
 
         Section {
             slider(
-                "Closed corners",
-                value: $settings.collapsedCornerRadius,
-                range: 0 ... 34,
-                step: 1,
+                "Open width",
+                value: $settings.openNotchWidth,
+                range: NotchSizing.minimumOpenWidth ... NotchSizing.maxAllowedOpenWidth(),
+                step: 10,
                 format: { String(format: "%.0f pt", $0) }
             )
             slider(
-                "Open corners",
-                value: $settings.expandedCornerRadius,
-                range: 8 ... 52,
-                step: 1,
+                "Open height",
+                value: $settings.openNotchHeight,
+                range: NotchSizing.minimumOpenHeight ... NotchSizing.maximumOpenHeight,
+                step: 5,
                 format: { String(format: "%.0f pt", $0) }
             )
+
+            Toggle("Round the open corners further", isOn: $settings.cornerRadiusScaling)
+
             slider(
                 "Hover target",
                 value: $settings.hoverPadding,
@@ -362,9 +358,9 @@ private struct DimensionSliders: View {
                 settings.resetNotchDimensions()
             }
         } header: {
-            Label("Shape & Targeting", systemImage: "square.on.circle")
+            Label("Open Panel", systemImage: "square.on.circle")
         } footer: {
-            Text("Hover target widens the area around the notch that responds to the pointer. Larger values open it more eagerly; smaller values require aiming at the notch itself.")
+            Text("Every screen opens to this one panel, so switching tabs never resizes the notch. Width is capped to your display. Hover target widens the area around the notch that responds to the pointer; larger values open it more eagerly.")
         }
     }
 
@@ -459,6 +455,36 @@ private struct ActivitiesSettingsPane: View {
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Replace the system volume & brightness overlay",
+                       isOn: $settings.hudReplacement)
+                Toggle("Show the percentage beside the HUD bar",
+                       isOn: $settings.showHUDPercentage)
+
+                if settings.hudReplacement, !MediaKeyInterceptor.isAccessibilityTrusted {
+                    LabeledContent("Accessibility access") {
+                        HStack(spacing: 8) {
+                            Circle().fill(.orange).frame(width: 7, height: 7)
+                            Text("Required").foregroundStyle(.secondary)
+                        }
+                    }
+                    Button("Grant Accessibility Access") {
+                        MediaKeyInterceptor.requestAccessibility()
+                    }
+                    Button("Open Accessibility Settings") {
+                        if let url = URL(string: "x-apple.systempreferences:"
+                            + "com.apple.preference.security?Privacy_Accessibility") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(.link)
+                }
+            } header: {
+                Label("System HUD", systemImage: "slider.horizontal.below.rectangle")
+            } footer: {
+                Text("Intercepting the volume and brightness keys is the only way to show the level in the notch instead of the system's own overlay, and an event tap needs Accessibility access. Left off, the notch still shows a brightness HUD by sampling, and macOS keeps drawing its overlay too.")
+            }
+
             Section {
                 Toggle("Battery charging and power events", isOn: $settings.liveActivitiesEnabled)
                 Toggle("Volume change HUD", isOn: $settings.volumeHUDEnabled)

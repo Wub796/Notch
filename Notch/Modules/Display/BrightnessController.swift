@@ -53,9 +53,11 @@ final class BrightnessController {
     var onExternalChange: ((Float) -> Void)?
     private var isSelfSetting = false
 
-    /// macOS posts no brightness-change notification, so detecting a key
-    /// press means sampling. This is a single framework read at 4 Hz; it is
-    /// the one background task the app runs, and Settings can turn it off.
+    /// macOS posts no brightness-change notification, so without an event tap
+    /// the only way to notice a key press is to sample. This is a single
+    /// framework read at 4 Hz, and it is only used when HUD replacement is
+    /// off — with the media-key interceptor running, the key press itself
+    /// drives the HUD and nothing polls at all.
     func startHUDMonitoring() {
         guard isAvailable, hudTimer == nil else { return }
         refresh()

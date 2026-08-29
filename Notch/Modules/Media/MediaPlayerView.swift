@@ -15,8 +15,13 @@ struct MediaPlayerView: View {
     @State private var shuffleOn = false
 
     var body: some View {
+        // Budget: NotchState.moduleContentSize, about 160pt tall at the
+        // default panel size. Artwork 90 (the references' opened size) plus
+        // the progress and transport rows and their gaps fills it exactly, so
+        // the lyric line and the extra action row moved into the lyrics
+        // column beside the artwork rather than stacking below it.
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 28) {
+            HStack(alignment: .top, spacing: 22) {
                 artwork
 
                 VStack(alignment: .leading, spacing: 5) {
@@ -52,18 +57,22 @@ struct MediaPlayerView: View {
                         media.seek(to: time + 0.05)
                     }
                     .frame(width: 200)
+                } else {
+                    // Without the lyrics column the current line and the
+                    // secondary actions take its place, so the panel keeps the
+                    // same shape either way.
+                    VStack(alignment: .leading, spacing: 8) {
+                        lyricLine
+                        bottomActions
+                        Spacer(minLength: 0)
+                    }
+                    .frame(width: 200, alignment: .leading)
                 }
             }
 
             progressRow
 
-            lyricLine
-                .frame(maxWidth: .infinity)
-
             transportRow
-
-            bottomActions
-                .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
@@ -86,7 +95,7 @@ struct MediaPlayerView: View {
                     }
             }
         }
-        .frame(width: 104, height: 104)
+        .frame(width: 90, height: 90)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: media.accent.opacity(0.5), radius: 16, y: 6)

@@ -10,11 +10,15 @@ struct CalendarDetailView: View {
     private var calendar: Calendar { Calendar.current }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            dateHeader
+        // Budget: NotchState.moduleContentSize, about 160pt tall. The month
+        // grid alone is six rows plus its weekday strip, so it takes the whole
+        // panel and the large date header is week-view only — the header bar
+        // above already carries the day controls.
+        VStack(alignment: .leading, spacing: 12) {
             if state.calendar.isMonthView {
                 monthGrid
             } else {
+                dateHeader
                 weekStrip
                 bodyContent
             }
@@ -33,7 +37,7 @@ struct CalendarDetailView: View {
 
         return HStack(alignment: .center, spacing: 10) {
             Text("\(calendar.component(.day, from: selected))")
-                .font(.system(size: 44, weight: .heavy, design: .rounded).monospacedDigit())
+                .font(.system(size: 34, weight: .heavy, design: .rounded).monospacedDigit())
                 .foregroundStyle(.blue)
 
             VStack(alignment: .leading, spacing: 1) {

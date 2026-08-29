@@ -3,21 +3,27 @@ import SwiftUI
 /// Full weather detail: a hero band (illustration, temperature, place and a
 /// six-cell metric grid), then hourly and five-day forecast strips.
 ///
-/// The slab is a fixed height, so every block here is sized to a budget:
-/// hero 72 + hourly 70 + daily 70 plus two 12pt gaps fits the 260pt that
-/// `NotchState.contentHeight(for: .weather)` reserves. Adding a row means
-/// raising that budget to match — the previous layout overran its slab by
-/// about 40pt and was silently clipped at the bottom.
+/// Every tab now shares one open panel (as in boring.notch and Atoll), which
+/// at the default size leaves about 160pt for a module. Hero 72 + one 70pt
+/// strip + a 12pt gap fits that, so the hourly and five-day forecasts share
+/// the strip and a segmented control swaps between them rather than stacking
+/// and overrunning the slab.
 struct WeatherDetailView: View {
     let state: NotchState
+
+    @State private var showsDaily = false
 
     var body: some View {
         Group {
             if let weather = state.weather.snapshot {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     hero(weather)
-                    hourlyStrip(weather)
-                    dailyStrip(weather)
+                    forecastSwitcher
+                    if showsDaily {
+                        dailyStrip(weather)
+                    } else {
+                        hourlyStrip(weather)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
@@ -60,6 +66,35 @@ struct WeatherDetailView: View {
         return state.weather.failureMessage ?? "Weather unavailable"
     }
 
+    /// Two flat chips rather than a segmented picker: the picker's chrome
+    /// reads as a form control in a panel that has none.
+    private var forecastSwitcher: some View {
+        HStack(spacing: 6) {
+            forecastTab("Hourly", isActive: !showsDaily) { showsDaily = false }
+            forecastTab("5 Days", isActive: showsDaily) { showsDaily = true }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func forecastTab(
+        _ title: String,
+        isActive: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 10, weight: .heavy, design: .rounded))
+                .tracking(0.6)
+                .foregroundStyle(isActive ? NotchTheme.inkPrimary : NotchTheme.inkMuted)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(.white.opacity(isActive ? 0.14 : 0)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .accessibilityAddTraits(isActive ? [.isSelected] : [])
+    }
+
     // MARK: - Hero
 
     private func hero(_ weather: WeatherService.Snapshot) -> some View {
@@ -68,7 +103,7 @@ struct WeatherDetailView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 Text(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
-                    .font(.system(size: 46, weight: .heavy, design: .rounded).monospacedDigit())
+                    .font(.system(size: 40, weight: .heavy, design: .rounded).monospacedDigit())
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .contentTransition(.numericText())
 
@@ -85,7 +120,7 @@ struct WeatherDetailView: View {
 
             metrics(weather)
         }
-        .frame(height: 72)
+        .frame(height: 66)
         .accessibilityElement(children: .combine)
     }
 
@@ -147,24 +182,24 @@ struct WeatherDetailView: View {
         case 1, 2:
             ZStack {
                 Image(systemName: "sun.max.fill")
-                    .font(.system(size: 44))
+                    .font(.system(size: 38))
                     .foregroundStyle(.yellow)
                 Image(systemName: "cloud.fill")
-                    .font(.system(size: 48))
+                    .font(.system(size: 42))
                     .foregroundStyle(.white)
                     .offset(x: 12, y: 9)
             }
             .symbolRenderingMode(.multicolor)
-            .frame(width: 66)
+            .frame(width: 58)
             .accessibilityHidden(true)
         default:
             Image(systemName: WeatherService.symbol(
                 for: weather.weatherCode,
                 isDay: weather.isDay
             ))
-            .font(.system(size: 48))
+            .font(.system(size: 42))
             .symbolRenderingMode(.multicolor)
-            .frame(width: 66)
+            .frame(width: 58)
             .accessibilityHidden(true)
         }
     }
@@ -210,7 +245,7 @@ struct WeatherDetailView: View {
         HStack(alignment: .center, spacing: 0) {
             content()
         }
-        .frame(height: 70)
+        .frame(height: 66)
         .frame(maxWidth: .infinity)
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous)

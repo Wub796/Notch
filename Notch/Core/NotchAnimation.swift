@@ -1,8 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Animation personality, selectable in Settings (profile tables adapted from
-/// Sapphire's NotchConfiguration).
+/// Animation personality, selectable in Settings.
 enum AnimationProfile: String, CaseIterable, Identifiable, Hashable, Sendable {
     case snappy
     case bouncy
@@ -19,85 +18,72 @@ enum AnimationProfile: String, CaseIterable, Identifiable, Hashable, Sendable {
     }
 }
 
-/// Per-gesture springs: longer response and heavier damping than classic
-/// springs so the notch glides instead of snapping, with only a gentle
-/// overshoot on expansion. All collapse to a short ease under Reduce Motion.
+/// Shared animation curves.
+///
+/// The notch's own open/close springs live in `NotchContainerView`, matching
+/// boring.notch and Atoll exactly: `.spring(response: 0.42, dampingFraction: 1)`
+/// opening and `0.45` closing, both critically damped. What lives here is
+/// everything else — content swaps, gauges, live-activity changes — which both
+/// references drive with `.smooth` and `.bouncy` rather than a tuned spring per
+/// gesture.
 enum NotchAnimations {
-    private static var reduceMotion: Bool {
+    static var prefersReducedMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
+
+    /// What every animation collapses to under Reduce Motion.
+    static let reduced = Animation.easeOut(duration: 0.15)
 
     private static var profile: AnimationProfile {
         NotchSettings.shared.animationProfile
     }
 
-    private static let reduced = Animation.easeOut(duration: 0.15)
-
-    /// Opening into the full panel. Timing curves rather than springs: a
-    /// spring accelerates and settles at a varying rate, which reads as the
-    /// notch speeding up and easing off. These hold an even pace so the
-    /// shape simply grows.
-    static var expand: Animation {
-        guard !reduceMotion else { return reduced }
-        switch profile {
-        case .snappy: return .easeInOut(duration: 0.30)
-        case .bouncy: return .spring(response: 0.36, dampingFraction: 0.66)
-        case .calm: return .easeInOut(duration: 0.45)
-        }
-    }
-
-    /// Closing back into the hardware notch — the same pace, in reverse.
-    static var collapse: Animation {
-        guard !reduceMotion else { return reduced }
-        switch profile {
-        case .snappy: return .easeInOut(duration: 0.28)
-        case .bouncy: return .spring(response: 0.3, dampingFraction: 0.85)
-        case .calm: return .easeInOut(duration: 0.42)
-        }
-    }
-
-    /// The hover "peek" scale.
-    static var hover: Animation {
-        guard !reduceMotion else { return reduced }
-        switch profile {
-        case .snappy: return .easeInOut(duration: 0.18)
-        case .bouncy: return .spring(response: 0.22, dampingFraction: 0.66)
-        case .calm: return .easeInOut(duration: 0.28)
-        }
-    }
-
-    /// Tab switches, gauge fills, lyric moves — fully damped, no wobble.
+    /// Tab switches, gauge fills, lyric moves.
     static var content: Animation {
-        guard !reduceMotion else { return reduced }
+        guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .easeInOut(duration: 0.26)
-        case .bouncy: return .spring(response: 0.36, dampingFraction: 0.86)
-        case .calm: return .easeInOut(duration: 0.4)
+        case .snappy: return .smooth(duration: 0.25)
+        case .bouncy: return .bouncy(duration: 0.35)
+        case .calm: return .smooth(duration: 0.4)
         }
     }
 
-    /// Live-activity wing swaps in the collapsed notch.
+    /// Live-activity swaps in the closed notch.
     static var activity: Animation {
-        guard !reduceMotion else { return reduced }
+        guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .easeInOut(duration: 0.32)
-        case .bouncy: return .spring(response: 0.45, dampingFraction: 0.8)
-        case .calm: return .easeInOut(duration: 0.45)
+        case .snappy: return .smooth(duration: 0.3)
+        case .bouncy: return .bouncy(duration: 0.42)
+        case .calm: return .smooth(duration: 0.45)
         }
     }
 
-    /// The animation that should drive a change into the given mode.
-    static func forMode(_ mode: NotchMode) -> Animation {
-        switch mode {
-        case .expanded: expand
-        case .peek: hover
-        case .collapsed: collapse
-        }
+    /// Hovering the closed pill.
+    static var hover: Animation {
+        guard !prefersReducedMotion else { return reduced }
+        return .bouncy.speed(1.2)
+    }
+
+    /// The HUD bar's own settle, matching `DraggableProgressBar`.
+    static let hudBar = Animation.smooth(duration: 0.3)
+
+    /// Closed-notch activity swap, from Atoll: a small scale in and a slightly
+    /// deeper scale out, so one activity replacing another reads as a
+    /// substitution rather than a flicker.
+    static var activitySwap: AnyTransition {
+        .asymmetric(
+            insertion: .opacity
+                .combined(with: .scale(scale: 0.965, anchor: .center))
+                .animation(.spring(response: 0.34, dampingFraction: 0.88)),
+            removal: .opacity
+                .combined(with: .scale(scale: 0.92, anchor: .center))
+                .animation(.smooth(duration: 0.22))
+        )
     }
 }
 
 extension Animation {
-    /// Shared micro-interaction spring used across module views.
+    /// Shared micro-interaction curve used across module views.
     static var notchSpring: Animation {
         NotchAnimations.content
     }

@@ -94,6 +94,10 @@ final class NotchSettings {
     }
     var onBrightnessHUDSettingChanged: ((Bool) -> Void)?
 
+    /// Fired when HUD replacement is switched, so the state can start or stop
+    /// the media-key tap.
+    var onHUDReplacementChanged: ((Bool) -> Void)?
+
     /// Current conditions in the dashboard (Open-Meteo).
     var showWeather = true { didSet { save(showWeather, "showWeather") } }
 
@@ -197,6 +201,20 @@ final class NotchSettings {
     }
     var onScreenPreferenceChanged: (() -> Void)?
 
+    /// Percentage beside the volume / brightness HUD bar
+    /// (`showClosedNotchHUDPercentage` in the references).
+    var showHUDPercentage = true { didSet { save(showHUDPercentage, "showHUDPercentage") } }
+
+    /// Replace the system's volume and brightness overlay with the notch's
+    /// own. Needs Accessibility access to intercept the media keys, which is
+    /// how both references do it — hence opt-in.
+    var hudReplacement = false {
+        didSet {
+            save(hudReplacement, "hudReplacement")
+            onHUDReplacementChanged?(hudReplacement)
+        }
+    }
+
     /// Quick action row on the Tools screen.
     var showQuickActions = true { didSet { save(showQuickActions, "showQuickActions") } }
 
@@ -209,15 +227,25 @@ final class NotchSettings {
     /// Trims or extends the detected notch height, in points.
     var notchHeightAdjustment = 0.0 { didSet { save(notchHeightAdjustment, "notchHeightAdjustment") } }
 
-    /// Scales every expanded slab, 0.8...1.3.
-    var expandedScale = 1.0 { didSet { save(expandedScale, "expandedScale") } }
+    /// The open slab, shared by every tab (boring.notch and Atoll both open
+    /// to one fixed panel rather than resizing per screen). Clamped in
+    /// `NotchSizing`, so a slider can never produce a slab wider than the
+    /// display or shorter than its content.
+    var openNotchWidth = NotchSizing.defaultOpenWidth {
+        didSet { save(openNotchWidth, "openNotchWidth") }
+    }
+    var openNotchHeight = NotchSizing.defaultOpenHeight {
+        didSet { save(openNotchHeight, "openNotchHeight") }
+    }
 
     /// How much the closed pill grows on hover.
     var peekScale = 1.10 { didSet { save(peekScale, "peekScale") } }
 
-    /// Corner radius of the closed pill and the open slab.
-    var collapsedCornerRadius = 14.0 { didSet { save(collapsedCornerRadius, "collapsedCornerRadius") } }
-    var expandedCornerRadius = 34.0 { didSet { save(expandedCornerRadius, "expandedCornerRadius") } }
+    /// Scales the open corner radii; off gives the closed radii in both
+    /// states, which is the references' `cornerRadiusScaling` switch.
+    var cornerRadiusScaling = true {
+        didSet { save(cornerRadiusScaling, "cornerRadiusScaling") }
+    }
 
     /// Extra margin around the notch that still counts as hovering it.
     var hoverPadding = 16.0 { didSet { save(hoverPadding, "hoverPadding") } }
@@ -226,10 +254,10 @@ final class NotchSettings {
     func resetNotchDimensions() {
         notchWidthAdjustment = 0
         notchHeightAdjustment = 0
-        expandedScale = 1.0
+        openNotchWidth = NotchSizing.defaultOpenWidth
+        openNotchHeight = NotchSizing.defaultOpenHeight
         peekScale = 1.10
-        collapsedCornerRadius = 10
-        expandedCornerRadius = 26
+        cornerRadiusScaling = true
         hoverPadding = 16
     }
 
@@ -350,16 +378,24 @@ final class NotchSettings {
         for (key, apply) in [
             ("notchWidthAdjustment", { (v: Double) in self.notchWidthAdjustment = v }),
             ("notchHeightAdjustment", { v in self.notchHeightAdjustment = v }),
-            ("expandedScale", { v in self.expandedScale = v }),
+            ("openNotchWidth", { v in self.openNotchWidth = v }),
+            ("openNotchHeight", { v in self.openNotchHeight = v }),
             ("peekScale", { v in self.peekScale = v }),
-            ("collapsedCornerRadius", { v in self.collapsedCornerRadius = v }),
-            ("expandedCornerRadius", { v in self.expandedCornerRadius = v }),
             ("hoverPadding", { v in self.hoverPadding = v }),
         ] where defaults.object(forKey: key) != nil {
             apply(defaults.double(forKey: key))
         }
         hotKey = defaults.string(forKey: "hotKey")
             ?? HotKeyManager.Shortcut.optionCommandN.rawValue
+        if defaults.object(forKey: "showHUDPercentage") != nil {
+            showHUDPercentage = defaults.bool(forKey: "showHUDPercentage")
+        }
+        if defaults.object(forKey: "hudReplacement") != nil {
+            hudReplacement = defaults.bool(forKey: "hudReplacement")
+        }
+        if defaults.object(forKey: "cornerRadiusScaling") != nil {
+            cornerRadiusScaling = defaults.bool(forKey: "cornerRadiusScaling")
+        }
         if defaults.object(forKey: "brightnessHUDEnabled") != nil {
             brightnessHUDEnabled = defaults.bool(forKey: "brightnessHUDEnabled")
         }
