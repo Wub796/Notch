@@ -54,19 +54,38 @@ struct SettingsView: View {
     }
 
     @State private var selection: Pane = .general
+    @State private var search = ""
+
+    /// The sidebar filters as you type, which is what the reference's search
+    /// field is for.
+    private var visiblePanes: [Pane] {
+        let query = search.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return Pane.allCases }
+        return Pane.allCases.filter {
+            $0.title.localizedCaseInsensitiveContains(query)
+        }
+    }
 
     var body: some View {
         NavigationSplitView {
-            List(Pane.allCases, selection: $selection) { section in
-                Label {
-                    Text(section.title)
-                } icon: {
+            List(visiblePanes, selection: $selection) { section in
+                HStack(spacing: 10) {
                     Image(systemName: section.systemImage)
-                        .foregroundStyle(section.tint)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(section.tint)
+                        }
+                    Text(section.title)
+                        .font(.system(size: 13, weight: .medium))
                 }
+                .padding(.vertical, 2)
                 .tag(section)
             }
-            .navigationSplitViewColumnWidth(178)
+            .navigationSplitViewColumnWidth(196)
+            .searchable(text: $search, placement: .sidebar, prompt: "Search settings")
         } detail: {
             detail
                 .navigationTitle(selection.title)
@@ -168,43 +187,108 @@ private struct GeneralSettingsPane: View {
     @Bindable var settings = NotchSettings.shared
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Launch at login", isOn: $settings.launchAtLogin)
-                Toggle("Haptic feedback", isOn: $settings.hapticsEnabled)
-                Toggle("Auto-collapse when mouse leaves", isOn: $settings.autoCollapseOnMouseExit)
-            } header: {
-                Label("Startup & Interaction", systemImage: "power")
-            } footer: {
-                Text("Haptics play on the trackpad when the notch opens, closes, or receives a file drop.")
+        SettingsPane {
+            SettingsCard(title: "Behavior") {
+                SettingsRow(
+                    systemImage: "cursorarrow.click.2",
+                    tint: .cyan,
+                    title: "Expand on Hover"
+                ) {
+                    Toggle("", isOn: $settings.expandOnHover)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                if settings.expandOnHover {
+                    SettingsSliderRow(
+                        title: "Hover Delay",
+                        value: $settings.openDelay,
+                        range: 0 ... 0.5,
+                        step: 0.01,
+                        format: { String(format: "%.2fs", $0) }
+                    )
+                    SettingsSliderRow(
+                        title: "Close Delay",
+                        value: $settings.closeDelay,
+                        range: 0.2 ... 1.0,
+                        step: 0.01,
+                        format: { String(format: "%.2fs", $0) }
+                    )
+                }
+
+                SettingsRow(
+                    systemImage: "hand.draw.fill",
+                    tint: .orange,
+                    title: "Scroll to Open and Close"
+                ) {
+                    Toggle("", isOn: $settings.scrollToExpand)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                SettingsRow(
+                    systemImage: "arrow.up.left.and.arrow.down.right",
+                    tint: .blue,
+                    title: "Auto-Collapse when Mouse Leaves",
+                    showsDivider: false
+                ) {
+                    Toggle("", isOn: $settings.autoCollapseOnMouseExit)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
             }
 
-            Section {
-                Picker("Animation style", selection: $settings.animationProfile) {
-                    ForEach(AnimationProfile.allCases) { profile in
-                        Text(profile.title).tag(profile)
+            SettingsCard(title: "Motion") {
+                SettingsRow(
+                    systemImage: "wand.and.stars",
+                    tint: .purple,
+                    title: "Animation Style",
+                    subtitle: animationDescription,
+                    showsDivider: false
+                ) {
+                    Picker("", selection: $settings.animationProfile) {
+                        ForEach(AnimationProfile.allCases) { profile in
+                            Text(profile.title).tag(profile)
+                        }
                     }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 220)
                 }
-                .pickerStyle(.segmented)
+            }
 
-                Text(animationDescription)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Label("Animation Personality", systemImage: "wand.and.stars")
+            SettingsCard(title: "System") {
+                SettingsRow(
+                    systemImage: "power",
+                    tint: .green,
+                    title: "Launch at Login",
+                    subtitle: "Start Notch automatically when you log in to your Mac."
+                ) {
+                    Toggle("", isOn: $settings.launchAtLogin)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                SettingsRow(
+                    systemImage: "hand.tap.fill",
+                    tint: .pink,
+                    title: "Enable Haptic Feedback",
+                    subtitle: "Provide tactile feedback for certain interactions.",
+                    showsDivider: false
+                ) {
+                    Toggle("", isOn: $settings.hapticsEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
             }
         }
-        .formStyle(.grouped)
     }
 
     private var animationDescription: String {
         switch settings.animationProfile {
-        case .snappy:
-            "Snappy is quick and responsive with an energetic micro-spring."
-        case .bouncy:
-            "Bouncy playfully overshoots on expansion for a fluid, lively feel."
-        case .calm:
-            "Calm smoothly glides open with gentle, fully-damped transitions."
+        case .snappy: "Quick and responsive, fully damped."
+        case .bouncy: "Overshoots a little on the way open."
+        case .calm: "The slowest and softest of the three."
         }
     }
 }
@@ -443,87 +527,133 @@ private struct ActivitiesSettingsPane: View {
     @Bindable var settings = NotchSettings.shared
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Replace the system volume & brightness overlay",
-                       isOn: $settings.hudReplacement)
-                Toggle("Show the percentage beside the HUD bar",
-                       isOn: $settings.showHUDPercentage)
+        SettingsPane {
+            SettingsCard(title: "System HUD") {
+                SettingsRow(
+                    systemImage: "slider.horizontal.below.rectangle",
+                    tint: .indigo,
+                    title: "Replace the System Overlay",
+                    subtitle: "Show volume and brightness in the notch instead."
+                ) {
+                    Toggle("", isOn: $settings.hudReplacement)
+                        .labelsHidden().toggleStyle(.switch)
+                }
+                SettingsRow(
+                    systemImage: "percent",
+                    tint: .teal,
+                    title: "Show the Percentage",
+                    showsDivider: !needsAccessibility
+                ) {
+                    Toggle("", isOn: $settings.showHUDPercentage)
+                        .labelsHidden().toggleStyle(.switch)
+                }
 
-                if settings.hudReplacement, !MediaKeyInterceptor.isAccessibilityTrusted {
-                    LabeledContent("Accessibility access") {
+                if needsAccessibility {
+                    SettingsRow(
+                        systemImage: "hand.raised.fill",
+                        tint: .orange,
+                        title: "Accessibility Access Required",
+                        subtitle: "Intercepting the media keys needs it.",
+                        showsDivider: false
+                    ) {
                         HStack(spacing: 8) {
-                            Circle().fill(.orange).frame(width: 7, height: 7)
-                            Text("Required").foregroundStyle(.secondary)
+                            Button("Grant") { MediaKeyInterceptor.requestAccessibility() }
+                            Button("Open Settings") {
+                                if let url = URL(string: "x-apple.systempreferences:"
+                                    + "com.apple.preference.security?Privacy_Accessibility") {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                            .buttonStyle(.link)
                         }
                     }
-                    Button("Grant Accessibility Access") {
-                        MediaKeyInterceptor.requestAccessibility()
-                    }
-                    Button("Open Accessibility Settings") {
-                        if let url = URL(string: "x-apple.systempreferences:"
-                            + "com.apple.preference.security?Privacy_Accessibility") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    .buttonStyle(.link)
                 }
-            } header: {
-                Label("System HUD", systemImage: "slider.horizontal.below.rectangle")
-            } footer: {
-                Text("Intercepting the volume and brightness keys is the only way to show the level in the notch instead of the system's own overlay, and an event tap needs Accessibility access. Left off, the notch still shows a brightness HUD by sampling, and macOS keeps drawing its overlay too.")
             }
 
-            Section {
-                Toggle("Battery charging and power events", isOn: $settings.liveActivitiesEnabled)
-                Toggle("Volume change HUD", isOn: $settings.volumeHUDEnabled)
-                Toggle("Brightness changes", isOn: $settings.brightnessHUDEnabled)
-                Toggle("Desktop & Spaces switches", isOn: $settings.desktopChangeEnabled)
-                Toggle("Bluetooth accessories battery levels", isOn: $settings.showAccessoryBattery)
-                Toggle("Quick actions in Tools", isOn: $settings.showQuickActions)
-                Toggle("Eye break reminders (20-20-20)", isOn: $settings.eyeBreakEnabled)
-                Toggle("Battery percentage beside the battery glyph", isOn: $settings.showBatteryPercentage)
+            SettingsCallout(
+                text: "The notch can only draw the volume and brightness levels "
+                    + "if it sees the key presses first, and an event tap needs "
+                    + "Accessibility access. Left off, macOS keeps drawing its "
+                    + "own overlay and the notch shows brightness by sampling."
+            )
 
-                Picker("Low battery warning threshold", selection: $settings.lowBatteryThreshold) {
-                    Text("10%").tag(10)
-                    Text("15%").tag(15)
-                    Text("20%").tag(20)
-                    Text("25%").tag(25)
+            SettingsCard(title: "Live Activities") {
+                toggleRow("bolt.badge.clock", .yellow, "Battery and Power Events",
+                          $settings.liveActivitiesEnabled)
+                toggleRow("speaker.wave.2.fill", .blue, "Volume Changes",
+                          $settings.volumeHUDEnabled)
+                toggleRow("sun.max.fill", .orange, "Brightness Changes",
+                          $settings.brightnessHUDEnabled)
+                toggleRow("macwindow.on.rectangle", .purple, "Desktop and Spaces Switches",
+                          $settings.desktopChangeEnabled)
+                toggleRow("airpodspro", .cyan, "Accessory Battery Levels",
+                          $settings.showAccessoryBattery)
+                toggleRow("eye.fill", .green, "Eye Break Reminders",
+                          $settings.eyeBreakEnabled)
+                toggleRow("wrench.and.screwdriver.fill", .gray, "Quick Actions in Tools",
+                          $settings.showQuickActions)
+                toggleRow("battery.75percent", .green, "Battery Percentage in the Notch",
+                          $settings.showBatteryPercentage)
+                SettingsRow(
+                    systemImage: "exclamationmark.triangle.fill",
+                    tint: .red,
+                    title: "Low Battery Warning",
+                    showsDivider: false
+                ) {
+                    Picker("", selection: $settings.lowBatteryThreshold) {
+                        ForEach([10, 15, 20, 25], id: \.self) { Text("\($0)%").tag($0) }
+                    }
+                    .labelsHidden()
+                    .frame(width: 90)
                 }
-            } header: {
-                Label("Live Activities & Alerts", systemImage: "bolt.badge.clock")
-            } footer: {
-                Text("Live activities are event-driven and zero-polling. Monitor changes apply immediately.")
             }
 
-            Section {
-                Toggle("Clipboard history", isOn: $settings.clipboardHistoryEnabled)
+            SettingsCard(title: "Clipboard and Shelf") {
+                toggleRow("doc.on.clipboard.fill", .pink, "Clipboard History",
+                          $settings.clipboardHistoryEnabled)
                 if settings.clipboardHistoryEnabled {
-                    Picker("Maximum history entries", selection: $settings.clipboardMaxCapacity) {
-                        Text("10 items").tag(10)
-                        Text("25 items").tag(25)
-                        Text("50 items").tag(50)
-                        Text("100 items").tag(100)
+                    SettingsRow(
+                        systemImage: "number",
+                        tint: .pink,
+                        title: "History Size"
+                    ) {
+                        Picker("", selection: $settings.clipboardMaxCapacity) {
+                            ForEach([10, 25, 50, 100], id: \.self) {
+                                Text("\($0) items").tag($0)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 110)
                     }
                 }
-            } header: {
-                Label("Clipboard", systemImage: "doc.on.clipboard")
-            } footer: {
-                Text("Concealed entries from password managers are excluded. Pinned entries persist across launches.")
-            }
-
-            Section {
-                Toggle("AirDrop dropped files immediately", isOn: $settings.instantAirDrop)
-                Toggle("Clear items from shelf after dragging out", isOn: $settings.autoClearShelf)
-            } header: {
-                Label("Shelf", systemImage: "tray.full")
-            } footer: {
-                Text(settings.instantAirDrop
-                    ? "Files dropped on the notch immediately trigger the system AirDrop share picker."
-                    : "Files dropped on the notch remain on the shelf for dragging, previewing, or AirDropping.")
+                toggleRow("airplane.circle.fill", .blue, "AirDrop Dropped Files Immediately",
+                          $settings.instantAirDrop)
+                SettingsRow(
+                    systemImage: "tray.full.fill",
+                    tint: .indigo,
+                    title: "Clear the Shelf After Dragging Out",
+                    showsDivider: false
+                ) {
+                    Toggle("", isOn: $settings.autoClearShelf)
+                        .labelsHidden().toggleStyle(.switch)
+                }
             }
         }
-        .formStyle(.grouped)
+    }
+
+    private var needsAccessibility: Bool {
+        settings.hudReplacement && !MediaKeyInterceptor.isAccessibilityTrusted
+    }
+
+    private func toggleRow(
+        _ symbol: String,
+        _ tint: Color,
+        _ title: String,
+        _ binding: Binding<Bool>
+    ) -> some View {
+        SettingsRow(systemImage: symbol, tint: tint, title: title) {
+            Toggle("", isOn: binding).labelsHidden().toggleStyle(.switch)
+        }
     }
 }
 

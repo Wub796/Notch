@@ -44,9 +44,9 @@ enum NotchSizing {
     /// Atoll clamps the width to the screen so the slab can never overhang a
     /// scaled display; `maxAllowedOpenWidth` is that rule.
     static let minimumOpenWidth: Double = 520
-    static let defaultOpenWidth: Double = 800
+    static let defaultOpenWidth: Double = 880
     static let minimumOpenHeight: Double = 150
-    static let defaultOpenHeight: Double = 186
+    static let defaultOpenHeight: Double = 194
     static let maximumOpenHeight: Double = 340
 
     static func maxAllowedOpenWidth(for screen: NSScreen? = NSScreen.main) -> Double {

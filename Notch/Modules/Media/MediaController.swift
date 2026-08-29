@@ -47,7 +47,7 @@ final class MediaController {
     private(set) var sourceAppName: String?
     private(set) var sourceAppIcon: NSImage?
     private var sourceAppPID: Int32 = 0
-    private var sourceAppBundleID: String?
+    private(set) var sourceAppBundleID: String?
 
     private var selectedProvider: MusicProvider {
         NotchSettings.shared.musicProvider

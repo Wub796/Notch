@@ -24,6 +24,8 @@ enum NotchTab: String {
     case tools
     case notes
     case telemetry
+    /// Output devices and the apps playing through them.
+    case audio
 }
 
 /// Root observable state for the notch UI. Owns every feature module and
@@ -112,6 +114,10 @@ final class NotchState {
     let bluetooth = BluetoothBatteryMonitor()
     let brightness = BrightnessController()
     let quickActions = QuickActions()
+    let audioApps = AudioAppMonitor()
+
+    /// Which half of the audio screen is showing.
+    var audioTab: AudioDevicesView.Tab = .devices
 
     private let focusMonitor = FocusModeMonitor()
     private let desktopMonitor = DesktopChangeMonitor()
@@ -424,6 +430,10 @@ final class NotchState {
         telemetry.start()
         weather.refresh()
         audio.refresh()
+        audioApps.refresh(
+            nowPlayingBundleID: media.sourceAppBundleID,
+            isPlaying: media.isPlaying
+        )
         bluetooth.start()
         shortcuts.refresh()
     }
