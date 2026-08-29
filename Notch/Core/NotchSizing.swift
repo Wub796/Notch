@@ -72,18 +72,24 @@ enum NotchSizing {
     }
 
     /// Each screen's natural size at the default width.
+    ///
+    /// Taken from the reference screenshots' own proportions rather than
+    /// invented: weather is 2.07 wide to tall, the calendar 1.69, the player
+    /// 1.59. They are much narrower and taller than a single shared panel
+    /// allowed, which is why the detail screens had blank bands down the
+    /// sides. Home stays a wide strip because it is a glance, not a screen.
     private static func baseSize(for tab: NotchTab) -> CGSize {
         switch tab {
         case .home: CGSize(width: 900, height: 182)
-        case .media: CGSize(width: 880, height: 290)
-        case .weather: CGSize(width: 980, height: 300)
-        case .calendar: CGSize(width: 940, height: 340)
-        case .shelf: CGSize(width: 820, height: 220)
-        case .clipboard: CGSize(width: 840, height: 200)
-        case .tools: CGSize(width: 940, height: 210)
-        case .notes: CGSize(width: 760, height: 240)
-        case .telemetry: CGSize(width: 840, height: 190)
-        case .audio: CGSize(width: 860, height: 300)
+        case .media: CGSize(width: 560, height: 300)
+        case .weather: CGSize(width: 600, height: 290)
+        case .calendar: CGSize(width: 620, height: 366)
+        case .shelf: CGSize(width: 660, height: 220)
+        case .clipboard: CGSize(width: 700, height: 200)
+        case .tools: CGSize(width: 880, height: 210)
+        case .notes: CGSize(width: 560, height: 260)
+        case .telemetry: CGSize(width: 760, height: 190)
+        case .audio: CGSize(width: 700, height: 300)
         }
     }
 

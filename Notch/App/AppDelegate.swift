@@ -34,6 +34,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    /// Spotify's consent page redirects the browser to notch://spotify-callback;
+    /// the scheme is registered in Info.plist, so the OS delivers it here.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme == "notch" {
+            SpotifyAuth.shared.handleCallback(url)
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         if let scrollMonitor {
             NSEvent.removeMonitor(scrollMonitor)

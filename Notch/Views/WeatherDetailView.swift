@@ -4,8 +4,8 @@ import SwiftUI
 /// six-cell metric grid), then hourly and five-day forecast strips.
 ///
 /// Every tab shares one open panel (as in boring.notch and Atoll), which at
-/// Budget: `NotchState.moduleContentSize`, about 918 x 250. Hero 130 + label
-/// 18 + strip 86 with 14 and 8pt gaps. The hourly and five-day forecasts share
+/// Budget: `NotchState.moduleContentSize`, about 538 x 240. Hero 104 + label
+/// 16 + strip 74 with 10 and 8pt gaps. The hourly and five-day forecasts share
 /// the strip; the chips that swap between them live in the header.
 struct WeatherDetailView: View {
     let state: NotchState
@@ -13,13 +13,13 @@ struct WeatherDetailView: View {
     var body: some View {
         Group {
             if let weather = state.weather.snapshot {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 10) {
                     hero(weather)
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text(state.showsDailyForecast ? "5-DAY FORECAST" : "HOURLY FORECAST")
-                            .font(.system(size: 12, weight: .heavy, design: .rounded))
-                            .tracking(1.2)
+                            .font(.system(size: 11, weight: .heavy, design: .rounded))
+                            .tracking(1.1)
                             .foregroundStyle(NotchTheme.inkSecondary)
 
                         if state.showsDailyForecast {
@@ -73,35 +73,35 @@ struct WeatherDetailView: View {
     // MARK: - Hero
 
     private func hero(_ weather: WeatherService.Snapshot) -> some View {
-        HStack(alignment: .center, spacing: 28) {
+        HStack(alignment: .center, spacing: 20) {
             illustration(for: weather)
 
             VStack(alignment: .leading, spacing: 0) {
                 Text(state.weather.placeName ?? "Your Location")
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .lineLimit(1)
 
                 Text(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
-                    .font(.system(size: 58, weight: .heavy, design: .rounded).monospacedDigit())
+                    .font(.system(size: 46, weight: .heavy, design: .rounded).monospacedDigit())
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .contentTransition(.numericText())
                     .fixedSize()
 
                 Text(WeatherService.condition(for: weather.weatherCode))
-                    .font(.system(size: 21, weight: .bold, design: .rounded))
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .lineLimit(1)
                     .padding(.top, 2)
 
                 Text("H: \(WeatherService.temperatureString(celsius: weather.highCelsius))  "
                      + "L: \(WeatherService.temperatureString(celsius: weather.lowCelsius))")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit())
+                    .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .fixedSize()
-                    .padding(.top, 8)
+                    .padding(.top, 6)
 
-                HStack(spacing: 22) {
+                HStack(spacing: 16) {
                     metric("thermometer.medium",
                            "Feels: " + WeatherService.temperatureString(celsius: weather.apparentCelsius))
                     metric("wind", "Wind: " + WeatherService.windString(kmh: weather.windKmh))
@@ -116,10 +116,10 @@ struct WeatherDetailView: View {
     private func metric(_ systemImage: String, _ text: String) -> some View {
         HStack(spacing: 7) {
             Image(systemName: systemImage)
-                .font(.system(size: 14))
+                .font(.system(size: 12))
                 .symbolRenderingMode(.multicolor)
             Text(text)
-                .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
+                .font(.system(size: 12.5, weight: .semibold, design: .rounded).monospacedDigit())
                 .foregroundStyle(NotchTheme.inkSecondary)
                 .fixedSize()
         }
@@ -134,9 +134,9 @@ struct WeatherDetailView: View {
             for: weather.weatherCode,
             isDay: weather.isDay
         ))
-        .font(.system(size: 96))
+        .font(.system(size: 74))
         .symbolRenderingMode(.multicolor)
-        .frame(width: 150, height: 130)
+        .frame(width: 112, height: 104)
         .accessibilityHidden(true)
     }
 
@@ -181,7 +181,7 @@ struct WeatherDetailView: View {
         HStack(alignment: .top, spacing: 0) {
             content()
         }
-        .frame(height: 86)
+        .frame(height: 74)
         .frame(maxWidth: .infinity)
     }
 
@@ -191,25 +191,25 @@ struct WeatherDetailView: View {
         value: String,
         secondary: String?
     ) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Text(caption)
-                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .fixedSize()
 
             Image(systemName: symbol)
-                .font(.system(size: 24))
+                .font(.system(size: 21))
                 .symbolRenderingMode(.multicolor)
-                .frame(height: 28)
+                .frame(height: 24)
 
             HStack(spacing: 5) {
                 Text(value)
-                    .font(.system(size: 16, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: 14, weight: .bold, design: .rounded).monospacedDigit())
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .fixedSize()
                 if let secondary {
                     Text(secondary)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
+                        .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
                         .foregroundStyle(NotchTheme.inkMuted)
                         .fixedSize()
                 }

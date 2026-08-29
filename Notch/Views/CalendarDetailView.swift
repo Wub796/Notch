@@ -45,7 +45,7 @@ struct CalendarDetailView: View {
 
         return VStack(alignment: .leading, spacing: -2) {
             Text("\(calendar.component(.day, from: selected))")
-                .font(.system(size: 46, weight: .heavy, design: .rounded).monospacedDigit())
+                .font(.system(size: 40, weight: .heavy, design: .rounded).monospacedDigit())
                 .foregroundStyle(.blue)
 
             Text(weekdayName(of: selected).uppercased())

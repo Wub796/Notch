@@ -201,6 +201,11 @@ final class NotchSettings {
     }
     var onScreenPreferenceChanged: (() -> Void)?
 
+    /// The user's own Spotify app client ID. Notch cannot ship one: a public
+    /// client ID in an open repository gets rate-limited and revoked, and the
+    /// app registration belongs to whoever runs it.
+    var spotifyClientID = "" { didSet { save(spotifyClientID, "spotifyClientID") } }
+
     /// Percentage beside the volume / brightness HUD bar
     /// (`showClosedNotchHUDPercentage` in the references).
     var showHUDPercentage = true { didSet { save(showHUDPercentage, "showHUDPercentage") } }
@@ -380,6 +385,7 @@ final class NotchSettings {
         ] where defaults.object(forKey: key) != nil {
             apply(defaults.double(forKey: key))
         }
+        spotifyClientID = defaults.string(forKey: "spotifyClientID") ?? ""
         hotKey = defaults.string(forKey: "hotKey")
             ?? HotKeyManager.Shortcut.optionCommandN.rawValue
         if defaults.object(forKey: "showHUDPercentage") != nil {

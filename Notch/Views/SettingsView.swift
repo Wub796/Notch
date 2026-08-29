@@ -486,60 +486,152 @@ private struct DimensionSliders: View {
 private struct MediaSettingsPane: View {
     @Bindable var settings = NotchSettings.shared
 
+    private var auth = SpotifyAuth.shared
+
     var body: some View {
-        Form {
-            Section {
-                Picker("Music source", selection: $settings.musicProvider) {
-                    ForEach(MusicProvider.allCases) { provider in
-                        Text(provider.title).tag(provider)
+        SettingsPane {
+            SettingsCard(title: "Player") {
+                SettingsRow(
+                    systemImage: "music.note",
+                    tint: .pink,
+                    title: "Music Source",
+                    subtitle: "The notch follows and controls this player.",
+                    showsDivider: false
+                ) {
+                    Picker("", selection: $settings.musicProvider) {
+                        ForEach(MusicProvider.allCases) { provider in
+                            Text(provider.title).tag(provider)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
+                    .onChange(of: settings.musicProvider) { _, newValue in
+                        guard newValue != .automatic else { return }
+                        IntegrationPermissions.shared.request(.music)
                     }
                 }
-                .pickerStyle(.segmented)
-                .onChange(of: settings.musicProvider) { _, newValue in
-                    // Choosing a player asks for control permission up front
-                    // so transport works on the first press.
-                    guard newValue != .automatic else { return }
-                    IntegrationPermissions.shared.request(.music)
-                }
-            } header: {
-                Label("Integration", systemImage: "music.note")
-            } footer: {
-                Text("The notch follows and controls this player. Choosing one asks for control permission; denied access can be re-enabled in the Privacy tab.")
             }
 
-            Section {
-                Toggle("Artwork and weather wings while playing", isOn: $settings.showMediaWings)
-                Toggle("Live lyric line under the notch", isOn: $settings.lyricActivityEnabled)
-                Toggle("Announce new tracks (sneak peek)", isOn: $settings.sneakPeekEnabled)
+            spotifyCard
+
+            SettingsCard(title: "Closed Notch") {
+                toggleRow("rectangle.on.rectangle", .blue,
+                          "Cover and Visualiser While Playing", $settings.showMediaWings)
+                toggleRow("quote.bubble.fill", .purple,
+                          "Live Lyric Line", $settings.lyricActivityEnabled)
+                SettingsRow(
+                    systemImage: "sparkles",
+                    tint: .orange,
+                    title: "Announce New Tracks",
+                    showsDivider: settings.sneakPeekEnabled
+                ) {
+                    Toggle("", isOn: $settings.sneakPeekEnabled)
+                        .labelsHidden().toggleStyle(.switch)
+                }
 
                 if settings.sneakPeekEnabled {
-                    HStack {
-                        Text("Sneak peek duration")
-                        Spacer()
-                        Slider(value: $settings.sneakPeekDuration, in: 2.0 ... 8.0, step: 0.5)
-                            .frame(width: 170)
-                        Text(String(format: "%.1f s", settings.sneakPeekDuration))
-                            .font(.callout.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 52, alignment: .trailing)
-                    }
+                    SettingsSliderRow(
+                        title: "Announcement Duration",
+                        value: $settings.sneakPeekDuration,
+                        range: 2 ... 8,
+                        step: 0.5,
+                        format: { String(format: "%.1fs", $0) },
+                        showsDivider: false
+                    )
                 }
-            } header: {
-                Label("Collapsed Notch", systemImage: "music.note")
-            } footer: {
-                Text("New tracks briefly display the song title and artist in the closed notch wings.")
             }
 
-            Section {
-                Toggle("Fetch synchronized lyrics from LRCLIB", isOn: $settings.fetchLyrics)
-                Toggle("Auto-scroll lyrics during playback", isOn: $settings.autoScrollLyrics)
-            } header: {
-                Label("Lyrics & Playback", systemImage: "quote.bubble")
-            } footer: {
-                Text("Lyrics are matched via track title and artist. Tap any line in the lyrics view to seek playback directly.")
+            SettingsCard(title: "Lyrics") {
+                toggleRow("text.quote", .teal,
+                          "Fetch Synchronised Lyrics from LRCLIB", $settings.fetchLyrics)
+                SettingsRow(
+                    systemImage: "arrow.down.circle",
+                    tint: .teal,
+                    title: "Auto-Scroll During Playback",
+                    showsDivider: false
+                ) {
+                    Toggle("", isOn: $settings.autoScrollLyrics)
+                        .labelsHidden().toggleStyle(.switch)
+                }
             }
         }
-        .formStyle(.grouped)
+    }
+
+    /// Connecting Spotify is a real OAuth sign-in, and it needs the user's own
+    /// app registration — so the card walks through that rather than pretending
+    /// a single button can do it.
+    private var spotifyCard: some View {
+        SettingsCard(title: "Spotify Account") {
+            SettingsRow(
+                systemImage: "person.crop.circle",
+                tint: .green,
+                title: "Connection",
+                subtitle: statusSubtitle
+            ) {
+                switch auth.state {
+                case .signedIn:
+                    Button("Disconnect") { auth.signOut() }
+                case .authorizing:
+                    ProgressView().controlSize(.small)
+                case .needsClientID:
+                    Button("Connect") {}.disabled(true)
+                case .signedOut, .failed:
+                    Button("Connect") { auth.signIn() }
+                }
+            }
+
+            SettingsRow(
+                systemImage: "key.fill",
+                tint: .gray,
+                title: "Client ID",
+                showsDivider: false
+            ) {
+                HStack(spacing: 8) {
+                    TextField("Paste your client ID", text: Binding(
+                        get: { settings.spotifyClientID },
+                        set: { auth.clientID = $0 }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11).monospaced())
+                    .frame(width: 240)
+
+                    Button("Get One") {
+                        NSWorkspace.shared.open(
+                            URL(string: "https://developer.spotify.com/dashboard")!
+                        )
+                    }
+                    .buttonStyle(.link)
+                }
+            }
+        }
+
+        SettingsCallout(
+            text: "Create an app on Spotify's developer dashboard, add "
+                + "\(SpotifyAuth.redirectURI) as a redirect URI, and paste its "
+                + "client ID above. Notch can't ship one of its own — a public "
+                + "client ID in an open repository gets revoked, and the "
+                + "registration belongs to whoever runs the app. Connecting "
+                + "adds the up-next queue and follower counts; playback itself "
+                + "works without it."
+        )
+    }
+
+    private var statusSubtitle: String {
+        switch auth.state {
+        case .needsClientID: "Add a client ID below to connect."
+        case .signedOut: "Not connected."
+        case .authorizing: "Waiting for the browser…"
+        case .signedIn: "Connected."
+        case let .failed(reason): reason
+        }
+    }
+
+    private func toggleRow(
+        _ symbol: String, _ tint: Color, _ title: String, _ binding: Binding<Bool>
+    ) -> some View {
+        SettingsRow(systemImage: symbol, tint: tint, title: title) {
+            Toggle("", isOn: binding).labelsHidden().toggleStyle(.switch)
+        }
     }
 }
 

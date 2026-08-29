@@ -35,6 +35,16 @@ final class MediaController {
 
     let lyrics = LyricsEngine()
 
+    /// Queue and artist detail from Spotify, when it is connected. Empty
+    /// otherwise — nothing else on macOS exposes a playback queue.
+    private(set) var queue: [SpotifyClient.QueueItem] = []
+    private(set) var followersLabel: String?
+
+    /// The next track, for the player's Up Next card.
+    var upNext: SpotifyClient.QueueItem? { queue.first }
+
+    private var lastSpotifyLookup: String?
+
     /// Fired when a genuinely new track replaces a previous one — drives the
     /// collapsed-notch sneak peek.
     var onTrackChange: ((Track) -> Void)?
@@ -419,6 +429,48 @@ final class MediaController {
         }
     }
 
+    /// Pulls the queue and the artist's follower count once per track.
+    private func refreshSpotifyDetail(for track: Track) {
+        let key = track.title + "\u{1}" + track.artist
+        guard key != lastSpotifyLookup else { return }
+        lastSpotifyLookup = key
+
+        Task { [weak self] in
+            guard let token = await SpotifyAuth.shared.validAccessToken() else {
+                await MainActor.run {
+                    self?.queue = []
+                    self?.followersLabel = nil
+                }
+                return
+            }
+
+            var items = await SpotifyClient.queue(token: token)
+            if let first = items.first {
+                var withArt = first
+                withArt.artwork = await SpotifyClient.artwork(for: first)
+                items[0] = withArt
+            }
+            let followers = await SpotifyClient.followers(forArtist: track.artist, token: token)
+
+            await MainActor.run {
+                guard let self, self.lastSpotifyLookup == key else { return }
+                self.queue = items
+                self.followersLabel = followers.map {
+                    "Followers: " + Self.compactCount($0)
+                }
+            }
+        }
+    }
+
+    /// "245.3K", the way the reference renders its counts.
+    private static func compactCount(_ value: Int) -> String {
+        switch value {
+        case ..<1_000: return "\(value)"
+        case ..<1_000_000: return String(format: "%.1fK", Double(value) / 1_000)
+        default: return String(format: "%.1fM", Double(value) / 1_000_000)
+        }
+    }
+
     private func updateTrackIfChanged(_ newTrack: Track) {
         let previous = track
         guard newTrack != previous else { return }
@@ -439,11 +491,15 @@ final class MediaController {
             } else {
                 lyrics.clear()
             }
+            refreshSpotifyDetail(for: track)
         } else {
             lyrics.clear()
             artwork = nil
             accent = .white
             accentSourceHash = nil
+            queue = []
+            followersLabel = nil
+            lastSpotifyLookup = nil
         }
     }
 
