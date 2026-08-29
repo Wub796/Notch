@@ -323,7 +323,8 @@ struct CollapsedNotchView: View {
             leading: miniArtwork,
             trailing: MusicVisualizerView(
                 accent: state.media.accent,
-                isPlaying: state.media.isPlaying
+                isPlaying: state.media.isPlaying,
+                level: state.audio.isMuted ? 0 : state.audio.volume
             )
         )
     }
