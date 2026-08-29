@@ -402,6 +402,10 @@ private struct NotchSettingsPane: View {
 private struct DimensionSliders: View {
     @Bindable var settings = NotchSettings.shared
 
+    /// Two sibling sections, so this needs the builder for the same reason
+    /// `spotifyCard` does: without it the first is discarded and the property
+    /// returns nothing.
+    @ViewBuilder
     var body: some View {
         Section {
             slider(
@@ -560,6 +564,11 @@ private struct MediaSettingsPane: View {
     /// Connecting Spotify is a real OAuth sign-in, and it needs the user's own
     /// app registration — so the card walks through that rather than pretending
     /// a single button can do it.
+    ///
+    /// `@ViewBuilder` because this is a card *and* the callout beneath it: two
+    /// siblings, which a plain `some View` body treats as two statements —
+    /// discarding the first and returning nothing.
+    @ViewBuilder
     private var spotifyCard: some View {
         SettingsCard(title: "Spotify Account") {
             SettingsRow(
