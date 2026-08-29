@@ -111,6 +111,17 @@ final class LiveActivityManager {
         )
     }
 
+    /// Volume HUD, raised when the media-key tap changes the level itself.
+    ///
+    /// The CoreAudio listener in `VolumeMonitor` also reports that change, so
+    /// this is belt-and-braces — but the tap is the earlier signal, and it is
+    /// the only one that fires when the tap has swallowed the key before
+    /// anything else saw it.
+    func showVolume(level: Float, muted: Bool) {
+        guard NotchSettings.shared.volumeHUDEnabled else { return }
+        show(.volume(level: level, muted: muted), for: Self.volumeHUDDuration)
+    }
+
     /// Brightness HUD, raised when a brightness key changes the level.
     func showBrightness(level: Float) {
         guard NotchSettings.shared.brightnessHUDEnabled else { return }
