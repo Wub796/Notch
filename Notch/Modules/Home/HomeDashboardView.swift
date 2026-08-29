@@ -19,7 +19,7 @@ struct HomeDashboardView: View {
         // row is centred as a whole. Giving music maxWidth: .infinity instead
         // made it absorb every spare point, which is what opened the gap
         // between the player and the weather.
-        HStack(alignment: .center, spacing: 26) {
+        HStack(alignment: .center, spacing: 28) {
             mediaPlayerSection
             weatherWidget
             calendarWidget
@@ -62,6 +62,8 @@ struct HomeDashboardView: View {
                     miniTransport("forward.fill", label: "Next track") {
                         state.media.nextTrack()
                     }
+
+                    outputDevice
                 }
                 // Pull the first glyph out to the text's left edge, past the
                 // button's own tap padding.
@@ -69,7 +71,7 @@ struct HomeDashboardView: View {
 
                 scrubber
             }
-            .frame(width: 190, alignment: .leading)
+            .fixedSize(horizontal: true, vertical: false)
             .contentShape(Rectangle())
             .onTapGesture { state.select(.media) }
             .help("Open the full player")
@@ -122,6 +124,34 @@ struct HomeDashboardView: View {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         let total = Int(seconds.rounded())
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    /// Where the audio is actually going. Click to cycle outputs — the same
+    /// action the Tools screen's list performs, one click away from the music
+    /// it applies to.
+    private var outputDevice: some View {
+        Button {
+            state.audio.cycleToNextDevice()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: state.audio.currentSymbol)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(state.audio.currentDeviceName)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 96, alignment: .leading)
+            }
+            .foregroundStyle(NotchTheme.inkSecondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(NotchTheme.surface))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .help("Audio output — click to switch device")
+        .accessibilityLabel("Audio output")
+        .accessibilityValue(state.audio.currentDeviceName)
     }
 
     private var artwork: some View {
@@ -219,7 +249,7 @@ struct HomeDashboardView: View {
                             .foregroundStyle(NotchTheme.inkSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .frame(maxWidth: 112, alignment: .leading)
+                            .frame(maxWidth: 130, alignment: .leading)
 
                         Text("H " + WeatherService.temperatureString(celsius: weather.highCelsius)
                              + "   L " + WeatherService.temperatureString(celsius: weather.lowCelsius))
@@ -278,7 +308,11 @@ struct HomeDashboardView: View {
         let strip = (-2 ... 2).compactMap { offset in
             Calendar.current.date(byAdding: .day, value: offset, to: today)
         }
-        let next = state.calendar.items.first { !$0.isAllDay && $0.start > today }
+        // Today only: the controller's window spans a month now, so without a
+        // bound this would happily announce something three weeks out.
+        let next = state.calendar.items.first {
+            !$0.isAllDay && $0.start > today && Calendar.current.isDateInToday($0.start)
+        }
 
         return VStack(alignment: .leading, spacing: 4) {
             monthAndStrip(today: today, strip: strip)

@@ -567,6 +567,8 @@ private struct PermissionRow: View {
 
     private var permissions = IntegrationPermissions.shared
 
+    @State private var isChoosingPlayer = false
+
     init(integration: IntegrationPermissions.Integration) {
         self.integration = integration
     }
@@ -607,7 +609,14 @@ private struct PermissionRow: View {
                         .frame(width: 60)
                 } else if status != .granted {
                     Button("Allow") {
-                        permissions.request(integration)
+                        // Music needs to know which player before it can ask
+                        // for anything: the Automation prompt is per target
+                        // app, so "allow music" is not a single permission.
+                        if integration == .music {
+                            isChoosingPlayer = true
+                        } else {
+                            permissions.request(integration)
+                        }
                     }
                 }
 
@@ -627,8 +636,51 @@ private struct PermissionRow: View {
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 32)
+
+            if isChoosingPlayer {
+                playerChooser
+                    .padding(.leading, 32)
+                    .padding(.top, 2)
+            }
         }
         .padding(.vertical, 2)
+    }
+
+    /// Picks the player, then hands off to the permission request, which
+    /// launches it and addresses it so macOS raises the Automation prompt.
+    private var playerChooser: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Which player should Notch control?")
+                .font(.system(size: 11, weight: .semibold))
+
+            HStack(spacing: 8) {
+                ForEach([MusicProvider.appleMusic, .spotify]) { provider in
+                    playerButton(provider)
+                }
+                Button("Cancel") { isChoosingPlayer = false }
+                    .buttonStyle(.link)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func playerButton(_ provider: MusicProvider) -> some View {
+        let installed = IntegrationPermissions.isInstalled(provider)
+
+        Button(installed ? provider.title : "Get \(provider.title)") {
+            isChoosingPlayer = false
+            guard installed else {
+                if let url = IntegrationPermissions.downloadURL(for: provider) {
+                    NSWorkspace.shared.open(url)
+                }
+                return
+            }
+            NotchSettings.shared.musicProvider = provider
+            permissions.request(.music)
+        }
+        .help(installed
+              ? "Open \(provider.title) and ask for permission to control it"
+              : "\(provider.title) isn't installed")
     }
 }
 

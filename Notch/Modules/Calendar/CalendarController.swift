@@ -27,8 +27,17 @@ final class CalendarController {
     private(set) var accessState: AccessState = .undetermined
     private(set) var items: [ScheduleItem] = []
 
-    /// The day highlighted in the calendar detail view.
-    var selectedDate = Date()
+    /// The day highlighted in the calendar detail view. Moving it outside the
+    /// range currently loaded triggers a refetch, which is what makes any day
+    /// but today show anything at all.
+    var selectedDate = Date() {
+        didSet {
+            guard accessState == .granted,
+                  !Calendar.current.isDate(selectedDate, equalTo: oldValue, toGranularity: .month)
+            else { return }
+            loadEvents()
+        }
+    }
 
     /// Whether the calendar detail shows the month grid instead of the week.
     var isMonthView = false
@@ -147,11 +156,29 @@ final class CalendarController {
         }
     }
 
+    /// Loads the whole month around `selectedDate`, unioned with the next 24
+    /// hours.
+    ///
+    /// This used to fetch only the next 24 hours, which meant the calendar
+    /// screen was empty for every day except today — the events were never
+    /// requested, so no amount of navigating could show them. The 24-hour part
+    /// is still needed on its own because the meeting-soon activity has to
+    /// work when the selected month is somewhere else entirely.
     private func loadEvents() {
         let now = Date()
+        let calendar = Calendar.current
+        let month = calendar.dateInterval(of: .month, for: selectedDate)
+
+        // The month grid draws leading and trailing days from the neighbouring
+        // months, so pad a week either side or those cells look empty.
+        let padding: TimeInterval = 7 * 24 * 60 * 60
+        let start = min(now, (month?.start ?? now).addingTimeInterval(-padding))
+        let end = max(now.addingTimeInterval(24 * 60 * 60),
+                      (month?.end ?? now).addingTimeInterval(padding))
+
         let predicate = store.predicateForEvents(
-            withStart: now,
-            end: now.addingTimeInterval(24 * 60 * 60),
+            withStart: start,
+            end: end,
             calendars: nil
         )
 
@@ -188,8 +215,12 @@ final class CalendarController {
         upcomingWork.removeAll()
 
         let now = Date()
+        // The window now spans a month, so this has to exclude everything
+        // before now rather than relying on the fetch range to do it.
         let candidate = items.first {
-            !$0.isAllDay && $0.start.timeIntervalSince(now) > -Self.upcomingGrace
+            !$0.isAllDay
+                && $0.start.timeIntervalSince(now) > -Self.upcomingGrace
+                && $0.start.timeIntervalSince(now) < 24 * 60 * 60
         }
 
         guard let event = candidate else {

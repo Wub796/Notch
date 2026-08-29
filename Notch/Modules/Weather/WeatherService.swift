@@ -439,8 +439,13 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
             let fahrenheit = (celsius * 9 / 5) + 32
             return "\(Int(round(fahrenheit)))°"
         case .automatic:
+            // .temperatureWithoutUnit only drops the degree symbol's unit
+            // letter; on its own it leaves the value in whatever unit it was
+            // given, so this always showed Celsius. .naturalScale is what
+            // actually converts to the locale's preferred temperature unit.
             let formatter = MeasurementFormatter()
-            formatter.unitOptions = .temperatureWithoutUnit
+            formatter.locale = .current
+            formatter.unitOptions = [.naturalScale, .temperatureWithoutUnit]
             formatter.numberFormatter.maximumFractionDigits = 0
             return formatter.string(from: Measurement(value: celsius, unit: UnitTemperature.celsius))
         }

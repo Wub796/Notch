@@ -313,6 +313,11 @@ final class AudioOutputManager {
         NotchTheme.Haptics.generic()
     }
 
+    /// The current output device's name, for the dashboard chip.
+    var currentDeviceName: String {
+        devices.first { $0.id == currentDeviceID }?.name ?? "Output"
+    }
+
     /// The glyph for the current output device, or a generic speaker.
     var currentSymbol: String {
         devices.first { $0.id == currentDeviceID }?.symbolName ?? "speaker.wave.2.fill"

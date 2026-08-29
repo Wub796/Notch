@@ -142,7 +142,7 @@ struct CalendarDetailView: View {
                     .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundStyle(NotchTheme.inkPrimary)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -206,7 +206,11 @@ private struct WeekDayCell: View {
                     .font(.system(size: 8.5, weight: .semibold, design: .rounded))
                     .foregroundStyle(isSelected ? .white : NotchTheme.inkSecondary)
                 Text("\(Calendar.current.component(.day, from: day))")
-                    .font(.system(size: 15, weight: isSelected ? .heavy : .bold, design: .rounded))
+                    .font(.system(
+                        size: 15,
+                        weight: isSelected ? .heavy : .bold,
+                        design: .rounded
+                    ).monospacedDigit())
                     .foregroundStyle(isSelected ? .white : NotchTheme.inkPrimary)
             }
             .frame(maxWidth: .infinity)
@@ -249,7 +253,11 @@ private struct MonthDayCell: View {
     var body: some View {
         Button(action: action) {
             Text("\(Calendar.current.component(.day, from: day))")
-                .font(.system(size: 10.5, weight: isSelected ? .heavy : .medium, design: .rounded))
+                .font(.system(
+                    size: 11,
+                    weight: isSelected ? .heavy : .medium,
+                    design: .rounded
+                ).monospacedDigit())
                 .foregroundStyle(
                     isInMonth ? (isSelected ? .white : NotchTheme.inkPrimary) : NotchTheme.inkMuted
                 )
@@ -261,8 +269,11 @@ private struct MonthDayCell: View {
                 }
                 .overlay {
                     if isToday && !isSelected {
+                        // Sized, not stretched: a Circle filling a cell that is
+                        // wider than it is tall draws as an ellipse.
                         Circle()
                             .strokeBorder(NotchTheme.battery, lineWidth: 1)
+                            .frame(width: 17, height: 17)
                             .padding(1)
                     }
                 }

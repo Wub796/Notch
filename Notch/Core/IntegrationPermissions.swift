@@ -245,17 +245,62 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: finish)
 
         case .music:
-            // Triggering the prompt requires actually addressing the app, so
-            // this launches it if it isn't already running.
-            let provider = NotchSettings.shared.musicProvider
-            let appName = provider == .spotify ? "Spotify" : "Music"
-            DispatchQueue.global(qos: .userInitiated).async {
-                let script = NSAppleScript(
-                    source: "tell application \"\(appName)\" to return name"
-                )
-                var error: NSDictionary?
-                script?.executeAndReturnError(&error)
-                DispatchQueue.main.async(execute: finish)
+            grantMusicAccess(finish: finish)
+        }
+    }
+
+    /// Whether a player is installed at all, so the UI can offer to install it
+    /// rather than asking for permission to automate something absent.
+    static func isInstalled(_ provider: MusicProvider) -> Bool {
+        guard !provider.bundleID.isEmpty else { return true }
+        return NSWorkspace.shared
+            .urlForApplication(withBundleIdentifier: provider.bundleID) != nil
+    }
+
+    /// Where to get a player that isn't installed.
+    static func downloadURL(for provider: MusicProvider) -> URL? {
+        switch provider {
+        case .spotify: URL(string: "https://www.spotify.com/download/mac/")
+        case .appleMusic, .automatic: nil
+        }
+    }
+
+    /// Launches the chosen player, waits for it to be ready, then addresses it
+    /// over Apple Events — which is the only thing that makes macOS show the
+    /// Automation prompt.
+    ///
+    /// The old version fired the Apple Event immediately. If the app was not
+    /// already running that call had to launch it and talk to it in one step,
+    /// and the event usually timed out against a still-starting app: no
+    /// prompt, no error the user could see, and a button that looked dead.
+    private func grantMusicAccess(finish: @escaping () -> Void) {
+        let provider = NotchSettings.shared.musicProvider
+        let target: MusicProvider = provider == .automatic ? .appleMusic : provider
+
+        guard Self.isInstalled(target),
+              let url = NSWorkspace.shared
+                  .urlForApplication(withBundleIdentifier: target.bundleID)
+        else {
+            notes[.music] = "\(target.title) isn't installed."
+            pending.remove(.music)
+            return
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in
+            // Give the app a moment to register with Apple Events; asking a
+            // process that is still launching is what produced the silence.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                NSApp.activate(ignoringOtherApps: true)
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let script = NSAppleScript(
+                        source: "tell application id \"\(target.bundleID)\" to return name"
+                    )
+                    var error: NSDictionary?
+                    script?.executeAndReturnError(&error)
+                    DispatchQueue.main.async(execute: finish)
+                }
             }
         }
     }
@@ -265,13 +310,16 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         switch integration {
         case .location:
             return status == .notDetermined
-                ? "macOS didn't show a prompt. Turn Location Services on in "
-                    + "Privacy & Security, then use Open Settings below."
+                ? "macOS showed no prompt. It only ever offers one per app, and "
+                    + "only for a signed build with Location Services switched "
+                    + "on — add Notch by hand under Privacy & Security → "
+                    + "Location Services."
                 : "No change — grant access in Privacy & Security → Location Services."
         case .calendar:
             return "No change — grant access in Privacy & Security → Calendars."
         case .music:
-            return "No change yet. Start playing something, then re-check."
+            return "No change yet. If macOS showed no prompt, allow Notch for "
+                + "your player under Privacy & Security → Automation."
         }
     }
 

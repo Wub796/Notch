@@ -20,10 +20,10 @@ enum AnimationProfile: String, CaseIterable, Identifiable, Hashable, Sendable {
 
 /// Shared animation curves.
 ///
-/// The open and close springs are the references' shape — critically damped,
-/// close a touch slower than open — but much longer than their 0.42/0.45.
-/// Theirs snap shut; a slab this size reads as premium only when it takes its
-/// time, so these are roughly a third of a second longer.
+/// The open and close springs are the references' shape — critically damped —
+/// but much longer than their 0.42/0.45, which snap. Opening is the slower of
+/// the two here: a panel unfolding wants to be savoured, where closing wants
+/// to get out of the way.
 /// They live here rather than in the view so the Animation Style picker
 /// actually reaches the expansion, which is the motion it most obviously
 /// describes.
@@ -43,9 +43,9 @@ enum NotchAnimations {
     static var open: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.68, dampingFraction: 1, blendDuration: 0)
-        case .bouncy: return .spring(response: 0.7, dampingFraction: 0.8, blendDuration: 0)
-        case .calm: return .spring(response: 0.92, dampingFraction: 1, blendDuration: 0)
+        case .snappy: return .spring(response: 0.88, dampingFraction: 1, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.9, dampingFraction: 0.82, blendDuration: 0)
+        case .calm: return .spring(response: 1.15, dampingFraction: 1, blendDuration: 0)
         }
     }
 
