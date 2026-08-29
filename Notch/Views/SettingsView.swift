@@ -85,12 +85,34 @@ struct SettingsView: View {
                 .tag(section)
             }
             .navigationSplitViewColumnWidth(196)
-            .searchable(text: $search, placement: .sidebar, prompt: "Search settings")
+            .safeAreaInset(edge: .top) {
+                // A field in the sidebar's own content, not .searchable: that
+                // modifier places its field in the toolbar area, and this
+                // window has no toolbar, so it landed on the split view's top
+                // edge and across the first rows.
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    TextField("Search", text: $search)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(.quaternary.opacity(0.5))
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 8)
+                .background(.bar)
+            }
         } detail: {
             detail
                 .navigationTitle(selection.title)
         }
-        .frame(width: 760, height: 560)
+        .frame(minWidth: 780, idealWidth: 820, minHeight: 560, idealHeight: 620)
         // Match the notch's dark aesthetic.
         .preferredColorScheme(.dark)
     }

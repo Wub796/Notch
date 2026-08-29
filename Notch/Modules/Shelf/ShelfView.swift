@@ -11,7 +11,7 @@ struct ShelfView: View {
             if shelf.items.isEmpty {
                 emptyState
             } else {
-                VStack(spacing: 10) {
+                VStack(spacing: 8) {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
                             ForEach(shelf.items) { item in
@@ -24,7 +24,7 @@ struct ShelfView: View {
                     footer
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+                .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }

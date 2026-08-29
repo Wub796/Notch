@@ -5,14 +5,17 @@ import SwiftUI
 /// player on the left, weather in the middle with its metric column, calendar
 /// on the right over a single "what's next" line.
 ///
-/// Budget: `NotchState.moduleContentSize`, about 818 x 140 at the default
-/// panel size. The artwork column is the tallest at 104.
+/// Budget: `NotchState.moduleContentSize`, about 838 x 122 at the default
+/// panel size, and it has to be respected: the three columns are `fixedSize`,
+/// so asking for more than the panel has does not clip, it *compresses* — and
+/// a Text squeezed below its natural width wraps, which is what stacked the
+/// calendar's day numbers one digit above another.
 struct HomeDashboardView: View {
     let state: NotchState
     let namespace: Namespace.ID
 
     var body: some View {
-        HStack(alignment: .center, spacing: 30) {
+        HStack(alignment: .center, spacing: 26) {
             musicSection
             weatherSection
             calendarSection
@@ -24,7 +27,7 @@ struct HomeDashboardView: View {
     // MARK: - Music
 
     private var musicSection: some View {
-        HStack(alignment: .center, spacing: 20) {
+        HStack(alignment: .center, spacing: 16) {
             artwork
                 .contentShape(Rectangle())
                 .onTapGesture { state.select(.media) }
@@ -33,12 +36,12 @@ struct HomeDashboardView: View {
                 // Uppercase and letterspaced, as in the reference: the title is
                 // the loudest thing on the panel.
                 Text((state.media.track?.title ?? "Nothing Playing").uppercased())
-                    .font(.system(size: 22, weight: .heavy, design: .rounded))
-                    .tracking(3.5)
+                    .font(.system(size: 19, weight: .heavy, design: .rounded))
+                    .tracking(2.5)
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 260, alignment: .leading)
+                    .frame(width: 196, alignment: .leading)
 
                 Text(state.media.track?.artist ?? "Nothing is playing")
                     .font(.system(size: 14, weight: .medium, design: .rounded))
@@ -47,23 +50,23 @@ struct HomeDashboardView: View {
 
                 // Transport sits centred under the text block rather than
                 // flush left, which is what makes the column read as one unit.
-                HStack(spacing: 22) {
-                    transportButton("backward.fill", size: 16, label: "Previous track") {
+                HStack(spacing: 18) {
+                    transportButton("backward.fill", size: 15, label: "Previous track") {
                         state.media.previousTrack()
                     }
                     transportButton(
                         state.media.isPlaying ? "pause.fill" : "play.fill",
-                        size: 20,
+                        size: 18,
                         label: state.media.isPlaying ? "Pause" : "Play"
                     ) {
                         state.media.togglePlayPause()
                     }
-                    transportButton("forward.fill", size: 16, label: "Next track") {
+                    transportButton("forward.fill", size: 15, label: "Next track") {
                         state.media.nextTrack()
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 8)
+                .padding(.top, 4)
             }
             .fixedSize(horizontal: true, vertical: false)
             .contentShape(Rectangle())
@@ -79,22 +82,22 @@ struct HomeDashboardView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(NotchTheme.surface)
                     .overlay {
                         Image(systemName: "music.note")
-                            .font(.system(size: 30, weight: .medium))
+                            .font(.system(size: 26, weight: .medium))
                             .foregroundStyle(NotchTheme.inkMuted)
                     }
             }
         }
-        .frame(width: 104, height: 104)
-        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .frame(width: 88, height: 88)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         // The reference rings the art in its own accent rather than dropping a
         // shadow behind it, which is what gives it the lit-from-within look.
         .overlay {
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(state.media.accent.opacity(0.55), lineWidth: 2.5)
         }
         .shadow(color: state.media.accent.opacity(0.5), radius: 14)
@@ -137,24 +140,25 @@ struct HomeDashboardView: View {
     @ViewBuilder
     private var weatherSection: some View {
         if let weather = state.weather.snapshot {
-            HStack(alignment: .center, spacing: 18) {
+            HStack(alignment: .center, spacing: 14) {
                 Image(systemName: WeatherService.symbol(
                     for: weather.weatherCode,
                     isDay: weather.isDay
                 ))
-                .font(.system(size: 42))
+                .font(.system(size: 36))
                 .symbolRenderingMode(.multicolor)
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
-                        .font(.system(size: 44, weight: .heavy, design: .rounded).monospacedDigit())
+                        .font(.system(size: 38, weight: .heavy, design: .rounded).monospacedDigit())
                         .foregroundStyle(NotchTheme.inkPrimary)
                         .contentTransition(.numericText())
 
                     Text(state.weather.placeName ?? "Your Location")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(NotchTheme.inkPrimary)
                         .lineLimit(1)
+                        .frame(width: 96, alignment: .leading)
 
                     Text(WeatherService.condition(for: weather.weatherCode))
                         .font(.system(size: 14, weight: .medium, design: .rounded))
@@ -162,7 +166,7 @@ struct HomeDashboardView: View {
                         .lineLimit(1)
                 }
 
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 5) {
                     metric("wind", WeatherService.windString(kmh: weather.windKmh))
                     metric("drop.fill", "\(weather.precipitationChancePercent)%")
                     metric("humidity.fill", "\(weather.humidityPercent)%")
@@ -238,14 +242,15 @@ struct HomeDashboardView: View {
             !$0.isAllDay && $0.start > today && Calendar.current.isDateInToday($0.start)
         }
 
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 16) {
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
                 Text(today.formatted(.dateTime.month(.abbreviated)))
-                    .font(.system(size: 32, weight: .heavy, design: .rounded))
+                    .font(.system(size: 27, weight: .heavy, design: .rounded))
+                    .fixedSize()
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .accessibilityHidden(true)
 
-                HStack(alignment: .center, spacing: 8) {
+                HStack(alignment: .center, spacing: 6) {
                     ForEach(Array(strip.enumerated()), id: \.offset) { _, day in
                         dayCell(day)
                     }
@@ -275,18 +280,21 @@ struct HomeDashboardView: View {
             Text(isToday
                  ? day.formatted(.dateTime.weekday(.abbreviated)).uppercased()
                  : String(day.formatted(.dateTime.weekday(.narrow)).prefix(1)).uppercased())
-                .font(.system(size: isToday ? 13 : 11, weight: .heavy, design: .rounded))
+                .font(.system(size: isToday ? 12 : 10, weight: .heavy, design: .rounded))
+                .fixedSize()
                 .foregroundStyle(isToday ? .blue : NotchTheme.inkSecondary.opacity(fade))
 
             Text("\(calendar.component(.day, from: day))")
                 .font(.system(
-                    size: isToday ? 26 : 19,
+                    size: isToday ? 22 : 17,
                     weight: isToday ? .heavy : .bold,
                     design: .rounded
                 ).monospacedDigit())
+                // Without this a squeezed column wraps "27" into a 2 above a 7.
+                .fixedSize()
                 .foregroundStyle(isToday ? .blue : NotchTheme.inkPrimary.opacity(fade))
         }
-        .frame(minWidth: isToday ? 38 : 24)
+        .frame(minWidth: isToday ? 32 : 20)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(day.formatted(.dateTime.weekday(.wide).day().month(.wide)))
         .accessibilityAddTraits(isToday ? [.isSelected] : [])
@@ -296,24 +304,26 @@ struct HomeDashboardView: View {
     private func nextEventLine(_ event: CalendarController.ScheduleItem?) -> some View {
         HStack(spacing: 8) {
             Image(systemName: event == nil ? "calendar.badge.checkmark" : "calendar")
-                .font(.system(size: 14))
+                .font(.system(size: 13))
                 .foregroundStyle(NotchTheme.inkSecondary)
 
             if let event {
                 Text(event.start.formatted(date: .omitted, time: .shortened))
-                    .font(.system(size: 14, weight: .heavy, design: .rounded).monospacedDigit())
+                    .font(.system(size: 13, weight: .heavy, design: .rounded).monospacedDigit())
                     .foregroundStyle(NotchTheme.inkPrimary)
+                    .fixedSize()
                 Text(event.title)
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 190, alignment: .leading)
+                    .frame(maxWidth: 150, alignment: .leading)
             } else {
                 Text(state.calendar.accessState == .granted
                      ? "No more items today"
                      : "Calendar access off")
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .fixedSize()
                     .foregroundStyle(NotchTheme.inkSecondary)
             }
         }

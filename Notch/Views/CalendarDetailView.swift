@@ -10,7 +10,7 @@ struct CalendarDetailView: View {
     private var calendar: Calendar { Calendar.current }
 
     var body: some View {
-        // Budget: NotchState.moduleContentSize, about 136pt tall. Stacking the
+        // Budget: NotchState.moduleContentSize, about 132pt tall. Stacking the
         // date header, week strip and agenda vertically needed roughly 200 and
         // silently clipped everything under the strip, so the week view is
         // laid out across instead: the date on the left, the strip and the

@@ -4,7 +4,7 @@ import SwiftUI
 /// six-cell metric grid), then hourly and five-day forecast strips.
 ///
 /// Every tab shares one open panel (as in boring.notch and Atoll), which at
-/// the default size leaves about 136pt for a module. Hero 62 + one 62pt strip
+/// the default size leaves about 132pt for a module. Hero 58 + one 60pt strip
 /// + an 8pt gap fits that, so the hourly and five-day forecasts share the
 /// strip; the chips that swap between them live in the header, where there is
 /// room the panel body does not have.
@@ -88,7 +88,7 @@ struct WeatherDetailView: View {
 
             metrics(weather)
         }
-        .frame(height: 62)
+        .frame(height: 58)
         .accessibilityElement(children: .combine)
     }
 
@@ -213,7 +213,7 @@ struct WeatherDetailView: View {
         HStack(alignment: .center, spacing: 0) {
             content()
         }
-        .frame(height: 62)
+        .frame(height: 60)
         .frame(maxWidth: .infinity)
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous)

@@ -15,13 +15,13 @@ struct MediaPlayerView: View {
     @State private var shuffleOn = false
 
     var body: some View {
-        // Budget: NotchState.moduleContentSize, about 136pt tall at the
-        // default panel size. Artwork 72 plus the progress and transport rows
-        // and their 8pt gaps fills it exactly, so the lyric line and the extra
+        // Budget: NotchState.moduleContentSize, about 132pt tall at the
+        // default panel size. Artwork 64 plus the progress and transport rows
+        // and their 6pt gaps fills it, so the lyric line and the extra
         // action row live in the lyrics column beside the artwork rather than
         // stacking below it.
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 22) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 20) {
                 artwork
 
                 VStack(alignment: .leading, spacing: 5) {
@@ -95,7 +95,7 @@ struct MediaPlayerView: View {
                     }
             }
         }
-        .frame(width: 72, height: 72)
+        .frame(width: 64, height: 64)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: media.accent.opacity(0.5), radius: 16, y: 6)

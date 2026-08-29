@@ -23,11 +23,11 @@ struct NotchLayoutView: View {
     /// notch-sized window is the flash before the expansion. Without an
     /// animation the transition inherits the spring and the two move as one.
     ///
-    /// The scale is gentler than their 0.8 for the same reason: over a longer
-    /// spring, a deep scale reads as a second, competing motion.
-    private static let moduleTransition = AnyTransition
-        .scale(scale: 0.94, anchor: .top)
-        .combined(with: .opacity)
+    /// The references' scale is gone with it. Over a curve this long the
+    /// module growing while the panel is also growing is two motions doing the
+    /// same job, and the pair reads as busier than either alone. The panel's
+    /// own geometry carries the movement; the content only fades in.
+    private static let moduleTransition = AnyTransition.opacity
 
     var body: some View {
         VStack(alignment: .center, spacing: 0) {

@@ -10,6 +10,9 @@ struct TelemetryView: View {
     let telemetry: TelemetryController
 
     var body: some View {
+        // Every column is a fixed width: the gauges are already fixed, and the
+        // tiles beside them are pinned above, so nothing here reflows as the
+        // numbers change.
         HStack(alignment: .center, spacing: 22) {
             VStack(spacing: 6) {
                 CircularGaugeView(
@@ -56,6 +59,7 @@ struct TelemetryView: View {
                         tint: NotchTheme.battery
                     )
                 }
+                .frame(width: 130, alignment: .leading)
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -72,6 +76,7 @@ struct TelemetryView: View {
                     tint: NotchTheme.network
                 )
             }
+            .frame(width: 130, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -93,10 +98,16 @@ struct TelemetryView: View {
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .contentTransition(.numericText())
                     .animation(.notchSpring, value: value)
+                    .lineLimit(1)
                 Text(label)
                     .font(.system(size: 10))
                     .foregroundStyle(NotchTheme.inkSecondary)
+                    .lineLimit(1)
             }
+            // Fixed width, because these strings change width as they change
+            // value — "9.8 W" to "10.1 W", "980 KB/s" to "1.2 MB/s" — and a
+            // row that re-lays-out on every sample is the twitch.
+            .frame(width: 96, alignment: .leading)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
@@ -107,14 +118,21 @@ struct TelemetryView: View {
         "\(Int((fraction * 100).rounded()))%"
     }
 
-    private static let byteFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .binary
-        return formatter
-    }()
-
+    /// Always one decimal and a two-letter unit, so the string's width is
+    /// stable across the whole range. ByteCountFormatter drops decimals and
+    /// switches between "bytes"/"KB"/"MB", which makes it jump.
     static func speedString(_ bytesPerSecond: Double) -> String {
-        byteFormatter.string(fromByteCount: Int64(max(bytesPerSecond, 0))) + "/s"
+        let rate = max(bytesPerSecond, 0)
+        switch rate {
+        case ..<1_024:
+            return String(format: "%.1f KB/s", rate / 1_024)
+        case ..<(1_024 * 1_024):
+            return String(format: "%.1f KB/s", rate / 1_024)
+        case ..<(1_024 * 1_024 * 1_024):
+            return String(format: "%.1f MB/s", rate / (1_024 * 1_024))
+        default:
+            return String(format: "%.1f GB/s", rate / (1_024 * 1_024 * 1_024))
+        }
     }
 }
 

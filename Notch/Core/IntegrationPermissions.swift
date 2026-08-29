@@ -132,10 +132,73 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
 
         statuses[.calendar] = calendarStatus()
         statuses[.location] = locationStatus()
+        refreshMusicStatus()
+    }
 
-        let music = musicStatus()
-        statuses[.music] = music.status
-        notes[.music] = music.note
+    /// Apple Events authorization is read off the main thread.
+    ///
+    /// `AEDeterminePermissionToAutomateTarget` blocks, and against an app that
+    /// is still launching it can block for many seconds. Calling it from
+    /// `refresh()` — which runs on every activation and every time the pane
+    /// appears — is what froze the app right after it opened Music.
+    private func refreshMusicStatus() {
+        let provider = NotchSettings.shared.musicProvider
+        let target: MusicProvider = provider == .automatic ? .appleMusic : provider
+
+        guard !NSRunningApplication
+            .runningApplications(withBundleIdentifier: target.bundleID).isEmpty
+        else {
+            statuses[.music] = .unknown
+            notes[.music] = "\(target.title) isn't running — open it to check access."
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Self.automationPermission(for: target.bundleID, askUser: false)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                switch result {
+                case noErr:
+                    self.statuses[.music] = .granted
+                case OSStatus(-1743): // errAEEventNotPermitted
+                    self.statuses[.music] = .denied
+                    self.notes[.music] = "Enable Notch under Privacy & Security → Automation."
+                case OSStatus(-600): // procNotFound
+                    self.statuses[.music] = .unknown
+                    self.notes[.music] = "\(target.title) isn't running — open it to check access."
+                default:
+                    self.statuses[.music] = .notDetermined
+                }
+            }
+        }
+    }
+
+    /// Asks macOS whether this app may automate `bundleID`.
+    ///
+    /// With `askUser` true this is also what *raises* the Automation prompt —
+    /// it is the API designed for it. Sending a real Apple Event to provoke
+    /// the prompt instead means waiting on the target app's own event loop,
+    /// which is unreliable while it is launching.
+    ///
+    /// Blocks. Never call it on the main thread.
+    private static func automationPermission(for bundleID: String, askUser: Bool) -> OSStatus {
+        guard let data = bundleID.data(using: .utf8) else { return OSStatus(-50) }
+
+        var target = AEAddressDesc()
+        // AECreateDesc is one of the older Apple Event calls and still returns
+        // OSErr (Int16), where the call below returns OSStatus (Int32).
+        let created = data.withUnsafeBytes { raw -> OSStatus in
+            guard let base = raw.baseAddress else { return OSStatus(-50) }
+            return OSStatus(
+                AECreateDesc(DescType(typeApplicationBundleID), base, data.count, &target)
+            )
+        }
+        guard created == noErr else { return created }
+        defer { AEDisposeDesc(&target) }
+
+        return AEDeterminePermissionToAutomateTarget(
+            &target, DescType(typeWildCard), DescType(typeWildCard), askUser
+        )
     }
 
     private func calendarStatus() -> Status {
@@ -156,55 +219,6 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         case .denied, .restricted: .denied
         case .notDetermined: .notDetermined
         @unknown default: .unknown
-        }
-    }
-
-    /// Apple Events authorization is only answerable while the target app is
-    /// running. When it isn't, say so rather than guessing from a cached flag
-    /// — the old code reported "Granted" having verified nothing.
-    private func musicStatus() -> (status: Status, note: String?) {
-        let provider = NotchSettings.shared.musicProvider
-        let bundleID = provider == .spotify ? "com.spotify.client" : "com.apple.Music"
-        let appName = provider == .spotify ? "Spotify" : "Music"
-
-        guard !NSRunningApplication
-            .runningApplications(withBundleIdentifier: bundleID).isEmpty
-        else {
-            return (.unknown, "\(appName) isn't running — open it to check access.")
-        }
-
-        guard let data = bundleID.data(using: .utf8) else {
-            return (.unknown, nil)
-        }
-
-        var target = AEAddressDesc()
-        // AECreateDesc is one of the older Apple Event calls and still returns
-        // OSErr (Int16); AEDeterminePermissionToAutomateTarget below returns
-        // OSStatus (Int32). Widening here keeps both comparable to noErr.
-        let created = data.withUnsafeBytes { raw -> OSStatus in
-            // -50 is paramErr: the bundle ID produced no bytes.
-            guard let base = raw.baseAddress else { return OSStatus(-50) }
-            return OSStatus(
-                AECreateDesc(DescType(typeApplicationBundleID), base, data.count, &target)
-            )
-        }
-        guard created == noErr else { return (.unknown, nil) }
-        defer { AEDisposeDesc(&target) }
-
-        // askUserIfNeeded: false — this is a status probe, not a request.
-        let result = AEDeterminePermissionToAutomateTarget(
-            &target, DescType(typeWildCard), DescType(typeWildCard), false
-        )
-
-        switch result {
-        case noErr:
-            return (.granted, nil)
-        case OSStatus(-1743): // errAEEventNotPermitted
-            return (.denied, "Enable Notch under Privacy & Security → Automation.")
-        case OSStatus(-600): // procNotFound
-            return (.unknown, "\(appName) isn't running — open it to check access.")
-        default:
-            return (.notDetermined, nil)
         }
     }
 
@@ -286,21 +300,38 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
             return
         }
 
+        let ask = { [weak self] in
+            DispatchQueue.global(qos: .userInitiated).async {
+                // askUser: true is what raises the Automation prompt. This
+                // blocks until the user answers it, which is exactly why it is
+                // here and not on the main thread.
+                _ = Self.automationPermission(for: target.bundleID, askUser: true)
+                DispatchQueue.main.async {
+                    _ = self
+                    finish()
+                }
+            }
+        }
+
+        // Already running: ask straight away.
+        guard NSRunningApplication
+            .runningApplications(withBundleIdentifier: target.bundleID).isEmpty
+        else {
+            ask()
+            return
+        }
+
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in
-            // Give the app a moment to register with Apple Events; asking a
-            // process that is still launching is what produced the silence.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                NSApp.activate(ignoringOtherApps: true)
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let script = NSAppleScript(
-                        source: "tell application id \"\(target.bundleID)\" to return name"
-                    )
-                    var error: NSDictionary?
-                    script?.executeAndReturnError(&error)
-                    DispatchQueue.main.async(execute: finish)
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
+            DispatchQueue.main.async { [weak self] in
+                guard error == nil else {
+                    self?.notes[.music] = "Couldn't open \(target.title)."
+                    self?.pending.remove(.music)
+                    return
                 }
+                // A moment for the app to start answering Apple Events.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: ask)
             }
         }
     }
