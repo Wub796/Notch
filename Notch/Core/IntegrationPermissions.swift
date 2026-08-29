@@ -178,10 +178,15 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         }
 
         var target = AEAddressDesc()
+        // AECreateDesc is one of the older Apple Event calls and still returns
+        // OSErr (Int16); AEDeterminePermissionToAutomateTarget below returns
+        // OSStatus (Int32). Widening here keeps both comparable to noErr.
         let created = data.withUnsafeBytes { raw -> OSStatus in
             // -50 is paramErr: the bundle ID produced no bytes.
             guard let base = raw.baseAddress else { return OSStatus(-50) }
-            return AECreateDesc(DescType(typeApplicationBundleID), base, data.count, &target)
+            return OSStatus(
+                AECreateDesc(DescType(typeApplicationBundleID), base, data.count, &target)
+            )
         }
         guard created == noErr else { return (.unknown, nil) }
         defer { AEDisposeDesc(&target) }
