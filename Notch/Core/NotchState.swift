@@ -145,11 +145,6 @@ final class NotchState {
         // first; refresh() is a no-op while the 30-minute cache is fresh.
         activities.start()
 
-        // Brightness has no system notification, so the controller samples
-        // while enabled and reports only changes it did not make itself.
-        brightness.onExternalChange = { [weak self] level in
-            self?.activities.showBrightness(level: level)
-        }
         settings.onBrightnessHUDSettingChanged = { [weak self] _ in
             self?.applyHUDSources()
         }
@@ -234,22 +229,20 @@ final class NotchState {
         }
     }
 
-    /// Picks how the HUDs are driven: the event tap when the user has enabled
-    /// HUD replacement and granted Accessibility, otherwise the brightness
-    /// sampler. Never both — the tap already reports every key press, so
-    /// leaving the sampler on would raise a second HUD for the same change.
+    /// Starts or stops the media-key tap, which is the only thing that raises
+    /// the brightness HUD.
+    ///
+    /// There used to be a sampler as a fallback, polling the level and showing
+    /// the HUD on any change it had not made itself. It could not tell a key
+    /// press from ambient auto-brightness, so the notch lit up every time you
+    /// walked past a window. Only a key press is a user action, and only the
+    /// tap can see one.
     func applyHUDSources() {
         let interceptor = MediaKeyInterceptor.shared
-        let tapping = settings.hudReplacement && interceptor.start()
-
-        if !tapping {
-            interceptor.stop()
+        if settings.hudReplacement, interceptor.start() {
+            return
         }
-        if !tapping, settings.brightnessHUDEnabled {
-            brightness.startHUDMonitoring()
-        } else {
-            brightness.stopHUDMonitoring()
-        }
+        interceptor.stop()
     }
 
     /// Re-reads which apps are putting audio out. Cheap — one CoreAudio
@@ -295,15 +288,6 @@ final class NotchState {
 
     /// Extra width added around the hardware notch for the active activity —
     /// split evenly into two wings, so each side must fit half of this.
-    /// Extra room the charging badge needs on the trailing wing. Without it
-    /// the badge would push the temperature or the visualiser into the notch.
-    private var chargingBadgeWidth: CGFloat {
-        guard settings.showChargingIndicator,
-              activities.power?.onACPower == true
-        else { return 0 }
-        return 54
-    }
-
     private var activityWingWidth: CGFloat {
         switch collapsedActivity {
         // Cover on one side, visualiser on the other: neither needs the width
@@ -313,9 +297,11 @@ final class NotchState {
         // These all drop a bar beneath the notch rather than splitting across
         // the wings, so the wings only carry what stays on the notch's own
         // row — the weather glyph and its temperature.
-        case .timer, .trackChange, .volume, .brightness, .battery,
+        case .timer, .trackChange, .volume, .brightness,
              .screenLock, .focusMode, .eyeBreak, .accessoryBattery, .meetingSoon:
             132
+        // Stays in the wings, so it needs room for the label and the readout.
+        case .battery: 210
         case .desktopChange: 150
         case nil: settings.showCompactWeather ? 120 : 0
         }
@@ -335,9 +321,20 @@ final class NotchState {
 
     var collapsedSize: CGSize {
         var size = adjustedNotchSize
-        size.width += activityWingWidth + chargingBadgeWidth
+        size.width += activityWingWidth
         size.height += activityDropHeight
         return size
+    }
+
+    /// True while the closed notch is showing something you can drag — the
+    /// volume and brightness bars. The closed slab is otherwise inert so the
+    /// wings are not a hover target; these need it back, and they sit below
+    /// the notch where the hover probe is not, so the two do not collide.
+    var collapsedActivityIsInteractive: Bool {
+        switch collapsedActivity {
+        case .volume, .brightness: true
+        default: false
+        }
     }
 
     /// The two radii the notch shape is drawn with. Closed and peek keep the

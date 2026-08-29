@@ -79,14 +79,31 @@ final class QuickActions {
         }
     }
 
+    /// How many items are in the Trash.
+    ///
+    /// `url(for: .trashDirectory,)` throws with `appropriateFor: nil` on some
+    /// systems, and `try?` turned that into a silent zero — so the button read
+    /// "Trash Empty" and disabled itself no matter what was in there. The home
+    /// directory path is the fallback, and `.skipsHiddenFiles` keeps the
+    /// .DS_Store the Finder leaves behind from counting as an item.
     private static func countTrashItems() -> Int {
-        guard let trash = try? FileManager.default.url(
-            for: .trashDirectory, in: .userDomainMask, appropriateFor: nil, create: false
-        ) else { return 0 }
-        let contents = try? FileManager.default.contentsOfDirectory(
-            at: trash, includingPropertiesForKeys: nil
-        )
-        return contents?.count ?? 0
+        let manager = FileManager.default
+        let candidates = [
+            try? manager.url(
+                for: .trashDirectory, in: .userDomainMask, appropriateFor: nil, create: false
+            ),
+            manager.homeDirectoryForCurrentUser.appendingPathComponent(".Trash"),
+        ].compactMap { $0 }
+
+        for trash in candidates {
+            guard let contents = try? manager.contentsOfDirectory(
+                at: trash,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+            return contents.count
+        }
+        return 0
     }
 
     // MARK: - Helpers

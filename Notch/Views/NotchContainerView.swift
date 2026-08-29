@@ -47,6 +47,8 @@ struct NotchContainerView: View {
             // frame cannot drift.
             if state.mode != .expanded {
                 Color.clear
+                    // Exactly the hardware notch, which is above the dropped
+                    // HUD bar rather than over it.
                     .frame(
                         width: state.adjustedNotchSize.width,
                         height: state.adjustedNotchSize.height
@@ -107,10 +109,19 @@ struct NotchContainerView: View {
                 value: state.isHovering
             )
             .animation(notchAnimation, value: state.collapsedActivity)
-            // Closed, the slab is purely visual — the probe above owns hover
-            // and clicks, so the wings beside the notch are not a target.
-            .allowsHitTesting(state.mode == .expanded)
-            .onHover { state.hoverChanged($0) }
+            // Closed, the slab is otherwise inert: the probe above owns hover
+            // and clicks, so the wings beside the notch are not a target. The
+            // exception is a draggable HUD, which needs its bar to receive the
+            // drag — it hangs below the notch, clear of the probe.
+            .allowsHitTesting(
+                state.mode == .expanded || state.collapsedActivityIsInteractive
+            )
+            // Hover is the probe's job whenever the notch is closed; letting
+            // the slab report it too is what made the region grow.
+            .onHover { hovering in
+                guard state.mode == .expanded else { return }
+                state.hoverChanged(hovering)
+            }
             .onDrop(
                 of: ShelfController.acceptedTypes,
                 delegate: NotchDropDelegate(state: state)

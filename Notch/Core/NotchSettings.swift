@@ -201,11 +201,6 @@ final class NotchSettings {
     }
     var onScreenPreferenceChanged: (() -> Void)?
 
-    /// A bolt in the closed notch's wing whenever the Mac is plugged in.
-    var showChargingIndicator = true {
-        didSet { save(showChargingIndicator, "showChargingIndicator") }
-    }
-
     /// Percentage beside the volume / brightness HUD bar
     /// (`showClosedNotchHUDPercentage` in the references).
     var showHUDPercentage = true { didSet { save(showHUDPercentage, "showHUDPercentage") } }
@@ -387,9 +382,6 @@ final class NotchSettings {
         }
         hotKey = defaults.string(forKey: "hotKey")
             ?? HotKeyManager.Shortcut.optionCommandN.rawValue
-        if defaults.object(forKey: "showChargingIndicator") != nil {
-            showChargingIndicator = defaults.bool(forKey: "showChargingIndicator")
-        }
         if defaults.object(forKey: "showHUDPercentage") != nil {
             showHUDPercentage = defaults.bool(forKey: "showHUDPercentage")
         }

@@ -49,7 +49,15 @@ struct CollapsedNotchView: View {
                     kind: .volume(muted: muted),
                     value: Binding(
                         get: { CGFloat(muted ? 0 : level) },
-                        set: { state.audio.setVolume(Float($0)) }
+                        set: { newValue in
+                            let level = Float(newValue)
+                            state.audio.setVolume(level)
+                            // Re-raise the activity so the bar shows where the
+                            // drag put it, and so the dismiss timer restarts —
+                            // otherwise the HUD reads the value from before the
+                            // drag and snaps back under the finger.
+                            state.activities.showVolume(level: level, muted: level == 0)
+                        }
                     )
                 )
             case let .brightness(level):
@@ -57,19 +65,41 @@ struct CollapsedNotchView: View {
                     kind: .brightness,
                     value: Binding(
                         get: { CGFloat(level) },
-                        set: { state.brightness.setBrightness(Float($0)) }
+                        set: { newValue in
+                            let level = Float(newValue)
+                            state.brightness.setBrightness(level)
+                            state.activities.showBrightness(level: level)
+                        }
                     )
                 )
             case let .battery(percent, charging, low):
-                dropped {
-                    droppedRow(
-                        symbol: charging ? "battery.100percent.bolt"
-                            : (low ? "battery.25percent" : "battery.75percent"),
-                        tint: low ? .red : NotchTheme.battery,
-                        label: charging ? "Charging" : (low ? "Low Battery" : "On Battery"),
-                        value: "\(percent)%"
-                    )
-                }
+                // Back in the wings rather than dropped: this is a moment, and
+                // a word beside the notch with the matching glyph on the other
+                // side reads faster than a bar unfolding below it.
+                ActivityWingLayout(
+                    notchWidth: state.adjustedNotchSize.width,
+                    leading: Text(charging
+                                  ? "Charging"
+                                  : (low ? "Low Battery" : "On Battery"))
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(low ? .red : NotchTheme.inkPrimary)
+                        .fixedSize(),
+                    trailing: HStack(spacing: 5) {
+                        Text("\(percent)%")
+                            .font(.system(size: 13, weight: .bold, design: .rounded)
+                                .monospacedDigit())
+                            .contentTransition(.numericText())
+                            .fixedSize()
+                        Image(systemName: charging
+                              ? "battery.100percent.bolt"
+                              : (low ? "battery.25percent" : "battery.75percent"))
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    .foregroundStyle(low ? .red : NotchTheme.battery)
+                )
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(charging ? "Charging" : "On battery")
+                .accessibilityValue("\(percent) percent")
             case let .screenLock(locked):
                 dropped {
                     droppedRow(
@@ -134,13 +164,7 @@ struct CollapsedNotchView: View {
                     compactWeatherWing
                         .transition(NotchAnimations.activitySwap)
                 } else {
-                    // Weather off still leaves the charging badge, which is a
-                    // condition of the machine rather than a weather readout.
-                    ActivityWingLayout(
-                        notchWidth: state.adjustedNotchSize.width,
-                        leading: Color.clear.frame(width: 0),
-                        trailing: chargingBadge
-                    )
+                    Color.clear
                 }
             }
         }
@@ -235,10 +259,7 @@ struct CollapsedNotchView: View {
         ActivityWingLayout(
             notchWidth: state.adjustedNotchSize.width,
             leading: weatherIcon,
-            trailing: HStack(spacing: 9) {
-                chargingBadge
-                weatherTemperature
-            }
+            trailing: weatherTemperature
         )
     }
 
@@ -246,10 +267,7 @@ struct CollapsedNotchView: View {
         ActivityWingLayout(
             notchWidth: state.adjustedNotchSize.width,
             leading: weatherIcon,
-            trailing: HStack(spacing: 9) {
-                chargingBadge
-                weatherTemperature
-            }
+            trailing: weatherTemperature
         )
     }
 
@@ -270,32 +288,6 @@ struct CollapsedNotchView: View {
             }
         }
         .accessibilityHidden(true)
-    }
-
-    /// A bolt on the trailing wing for as long as the Mac is plugged in.
-    ///
-    /// Distinct from the plug/unplug activity, which is a moment that passes.
-    /// Being on power is a condition, so it stays up — and it distinguishes
-    /// charging from merely connected, which is what you see at 100% or under
-    /// optimised charging.
-    @ViewBuilder
-    private var chargingBadge: some View {
-        if state.settings.showChargingIndicator,
-           let power = state.activities.power,
-           power.onACPower {
-            HStack(spacing: 3) {
-                Image(systemName: power.isCharging ? "bolt.fill" : "powerplug.fill")
-                    .font(.system(size: 10, weight: .black))
-                Text("\(power.percent)%")
-                    .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
-                    .contentTransition(.numericText())
-            }
-            .foregroundStyle(NotchTheme.battery)
-            .transition(NotchAnimations.activitySwap)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(power.isCharging ? "Charging" : "Plugged in")
-            .accessibilityValue("\(power.percent) percent")
-        }
     }
 
     /// The bold temperature readout, on the right of the hardware notch.
@@ -329,13 +321,10 @@ struct CollapsedNotchView: View {
         ActivityWingLayout(
             notchWidth: state.adjustedNotchSize.width,
             leading: miniArtwork,
-            trailing: HStack(spacing: 9) {
-                chargingBadge
-                MusicVisualizerView(
-                    accent: state.media.accent,
-                    isPlaying: state.media.isPlaying
-                )
-            }
+            trailing: MusicVisualizerView(
+                accent: state.media.accent,
+                isPlaying: state.media.isPlaying
+            )
         )
     }
 

@@ -45,41 +45,14 @@ final class BrightnessController {
         CGMainDisplayID()
     }
 
-    private var hudTimer: Timer?
-    private var lastSeenLevel: Float = -1
 
-    /// Fired when the level changes without the app asking — i.e. the user
-    /// pressed a brightness key — so the notch can raise its HUD.
-    var onExternalChange: ((Float) -> Void)?
-    private var isSelfSetting = false
-
-    /// macOS posts no brightness-change notification, so without an event tap
-    /// the only way to notice a key press is to sample. This is a single
-    /// framework read at 4 Hz, and it is only used when HUD replacement is
-    /// off — with the media-key interceptor running, the key press itself
-    /// drives the HUD and nothing polls at all.
-    func startHUDMonitoring() {
-        guard isAvailable, hudTimer == nil else { return }
-        refresh()
-        lastSeenLevel = brightness
-        hudTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            let previous = self.brightness
-            self.refresh()
-            guard !self.isSelfSetting,
-                  abs(self.brightness - previous) > 0.005,
-                  abs(self.brightness - self.lastSeenLevel) > 0.005
-            else { return }
-            self.lastSeenLevel = self.brightness
-            self.onExternalChange?(self.brightness)
-        }
-    }
-
-    func stopHUDMonitoring() {
-        hudTimer?.invalidate()
-        hudTimer = nil
-    }
-
+    /// The sampler that used to drive the HUD is gone.
+    ///
+    /// It polled the level and raised the HUD on any change it had not made
+    /// itself, which cannot distinguish a key press from ambient
+    /// auto-brightness — so the notch lit up whenever the light in the room
+    /// changed. `MediaKeyInterceptor` sees the actual key press, and that is
+    /// the only thing a HUD should react to.
     func refresh() {
         if let getBrightnessFunc {
             var level: Float = 0
@@ -97,11 +70,6 @@ final class BrightnessController {
     func setBrightness(_ newValue: Float) {
         let clamped = min(max(newValue, 0), 1)
         brightness = clamped
-        lastSeenLevel = clamped
-        isSelfSetting = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.isSelfSetting = false
-        }
 
         if let setBrightnessFunc, setBrightnessFunc(displayID, clamped) == 0 {
             return

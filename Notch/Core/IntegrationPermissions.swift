@@ -153,9 +153,9 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
             return
         }
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Self.automationPermission(for: target.bundleID, askUser: false)
-            DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.async {
                 guard let self else { return }
                 switch result {
                 case noErr:
@@ -300,16 +300,13 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
             return
         }
 
-        let ask = { [weak self] in
+        let ask = {
             DispatchQueue.global(qos: .userInitiated).async {
                 // askUser: true is what raises the Automation prompt. This
                 // blocks until the user answers it, which is exactly why it is
                 // here and not on the main thread.
                 _ = Self.automationPermission(for: target.bundleID, askUser: true)
-                DispatchQueue.main.async {
-                    _ = self
-                    finish()
-                }
+                DispatchQueue.main.async(execute: finish)
             }
         }
 
@@ -323,8 +320,10 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
 
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
-            DispatchQueue.main.async { [weak self] in
+        NSWorkspace.shared.openApplication(
+            at: url, configuration: configuration
+        ) { [weak self] _, error in
+            DispatchQueue.main.async {
                 guard error == nil else {
                     self?.notes[.music] = "Couldn't open \(target.title)."
                     self?.pending.remove(.music)
