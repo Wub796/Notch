@@ -127,9 +127,13 @@ final class NotchState {
     let quickActions = QuickActions()
     let audioApps = AudioAppMonitor()
     let audioMeter = SystemAudioMeter()
+    let spotify = SpotifyLibrary()
 
-    /// Which half of the audio screen is showing.
-    var audioTab: AudioScreenTab = .devices
+    /// Which screen of the Devices surface is showing.
+    var devicesSection: DevicesSection = .now
+
+    /// Which output surface the Audio screen is showing.
+    var audioTab: AudioScreenTab = .system
 
     private let focusMonitor = FocusModeMonitor()
     private let desktopMonitor = DesktopChangeMonitor()

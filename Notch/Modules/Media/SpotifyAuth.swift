@@ -31,10 +31,17 @@ final class SpotifyAuth {
     /// scheme in Info.plist, so the OS hands it to the app.
     static let redirectURI = "notch://spotify-callback"
 
+    /// Everything the Devices screen needs, and nothing more: reading and
+    /// steering playback, the account's own playlists, and its listening
+    /// history. No write scopes — this never modifies a library.
     private static let scopes = [
+        "user-read-private",
         "user-read-playback-state",
+        "user-modify-playback-state",
         "user-read-currently-playing",
         "user-read-recently-played",
+        "playlist-read-private",
+        "playlist-read-collaborative",
     ].joined(separator: " ")
 
     private static let keychainAccount = "spotify-refresh-token"
@@ -52,7 +59,28 @@ final class SpotifyAuth {
     }
 
     private init() {
+        migrateIfScopesChanged()
         refreshState()
+    }
+
+    /// A refresh token only carries the scopes it was granted with. When this
+    /// app starts asking for more — the library and device screens needed four
+    /// beyond the original three — an existing token keeps working for the old
+    /// calls and quietly 403s the new ones, which looks like a broken feature
+    /// rather than a sign-in problem. So a scope change drops the token and
+    /// asks for consent again, once.
+    private func migrateIfScopesChanged() {
+        let defaults = UserDefaults.standard
+        let key = "spotifyScopeSignature"
+        // The scope string itself, not its hash: `hashValue` is seeded per
+        // process, so a hash would differ on every launch and sign the user
+        // out each time.
+        let signature = Self.scopes
+        guard defaults.string(forKey: key) != signature else { return }
+        if defaults.string(forKey: key) != nil {
+            Self.deleteRefreshToken()
+        }
+        defaults.set(signature, forKey: key)
     }
 
     private func refreshState() {

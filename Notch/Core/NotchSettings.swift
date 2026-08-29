@@ -178,6 +178,14 @@ final class NotchSettings {
 
     var fetchLyrics = true { didSet { save(fetchLyrics, "fetchLyrics") } }
 
+    /// Which order the Spotify library screen is sorted in. A raw string so
+    /// the settings layer stays free of the view's enum.
+    var spotifyLibrarySort: String? {
+        didSet {
+            UserDefaults.standard.set(spotifyLibrarySort, forKey: "spotifyLibrarySort")
+        }
+    }
+
     /// Drive the visualiser from the real output mix rather than the volume.
     /// Off by default: it costs a Screen Recording permission.
     var realtimeAudioMeter = false {
@@ -376,6 +384,7 @@ final class NotchSettings {
         if defaults.object(forKey: "fetchLyrics") != nil {
             fetchLyrics = defaults.bool(forKey: "fetchLyrics")
         }
+        spotifyLibrarySort = defaults.string(forKey: "spotifyLibrarySort")
         if defaults.object(forKey: "realtimeAudioMeter") != nil {
             realtimeAudioMeter = defaults.bool(forKey: "realtimeAudioMeter")
         }

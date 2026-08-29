@@ -685,8 +685,10 @@ private struct MediaSettingsPane: View {
                 + "client ID above. Notch can't ship one of its own — a public "
                 + "client ID in an open repository gets revoked, and the "
                 + "registration belongs to whoever runs the app. Connecting "
-                + "adds the up-next queue and follower counts; playback itself "
-                + "works without it."
+                + "unlocks the Devices screen — your playlists, search, "
+                + "recently played, and Spotify Connect devices with their own "
+                + "volume — plus the up-next queue and follower counts. "
+                + "Playback on this Mac works without it."
         )
     }
 

@@ -1,88 +1,165 @@
 import AppKit
+import CoreAudio
 import SwiftUI
 
-/// Which half of the audio screen is showing.
+/// Which output surface the audio screen is showing.
 ///
 /// Declared alongside the view but outside it, so `NotchState` can hold the
 /// selection without depending on a view type — a compile error anywhere in
 /// the view would otherwise take the whole state object down with it.
 enum AudioScreenTab: String, CaseIterable, Identifiable {
-    case apps, devices
+    /// Spotify Connect: the account's own devices, over the Web API.
+    case spotify
+    /// Local outputs CoreAudio reports as AirPlay.
+    case airplay
+    /// Processes making sound on this Mac.
+    case apps
+    /// Every local CoreAudio output.
+    case system
 
     var id: String { rawValue }
-    var title: String { self == .apps ? "Apps" : "Devices" }
-    var symbol: String { self == .apps ? "square.grid.2x2.fill" : "hifispeaker.2.fill" }
+
+    var title: String {
+        switch self {
+        case .spotify: "Spotify"
+        case .airplay: "AirPlay"
+        case .apps: "Apps"
+        case .system: "System"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .spotify: "music.note"
+        case .airplay: "airplayaudio"
+        case .apps: "square.grid.2x2.fill"
+        case .system: "laptopcomputer"
+        }
+    }
 }
 
-/// The audio screen, laid out like the Sapphire reference: a segmented
-/// Apps / Devices switch over a list of rows, each with an icon, a name and
-/// status, a wide blue level bar, and a trailing cluster of round buttons.
+/// The Audio screen's body: whichever of the four output surfaces is
+/// selected. The switch itself lives in `DevicesScreenView`, alongside the
+/// section pills, because the reference draws both in one capsule.
 ///
-/// Both tabs report real state. Devices is fully interactive. Apps lists every
-/// process CoreAudio says is running output — any device audio, not just the
-/// now-playing app — but its level is read-only: macOS exposes observing a
-/// process's audio, never setting its volume. Sapphire ships an audio HAL
-/// plug-in for that; drawing a slider that moves and changes nothing would be
-/// worse than saying so.
+/// Every tab reports real state, from two different places. Spotify is the
+/// account's Connect devices over the Web API — remote, and controllable
+/// wherever they are. AirPlay and System are this Mac's own CoreAudio
+/// outputs, fully interactive. Apps lists every process CoreAudio says is
+/// running output — any device audio, not just the now-playing app — but its
+/// level is read-only: macOS exposes observing a process's audio, never
+/// setting its volume. Sapphire ships an audio HAL plug-in for that; drawing
+/// a slider that moves and changes nothing would be worse than saying so.
 struct AudioDevicesView: View {
     let state: NotchState
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            tabSwitch
+    private var spotify: SpotifyLibrary { state.spotify }
 
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 8) {
-                    switch state.audioTab {
-                    case .apps: appRows
-                    case .devices: deviceRows
-                    }
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 10) {
+                switch state.audioTab {
+                case .spotify: spotifyRows
+                case .airplay: airplayRows
+                case .apps: appRows
+                case .system: deviceRows
                 }
-                .padding(.bottom, 2)
             }
+            .padding(.bottom, 2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { state.audio.refresh() }
-        // Whether a process is running output changes constantly, and CoreAudio
-        // posts no notification for it. This polls only while the Apps tab is
-        // on screen — the task is cancelled the moment the view goes away, so
-        // the closed notch still does nothing.
+        // Neither of these pushes: CoreAudio posts no notification for whether
+        // a process is running output, and a Connect device appearing is only
+        // visible by asking. Both poll strictly while their own tab is up —
+        // the task is cancelled the moment the view goes away, so the closed
+        // notch still does nothing.
         .task(id: state.audioTab) {
-            guard state.audioTab == .apps else { return }
-            while !Task.isCancelled {
-                state.refreshAudioApps()
-                try? await Task.sleep(for: .seconds(1))
+            switch state.audioTab {
+            case .apps:
+                while !Task.isCancelled {
+                    state.refreshAudioApps()
+                    try? await Task.sleep(for: .seconds(1))
+                }
+            case .spotify:
+                while !Task.isCancelled {
+                    spotify.refreshDevices()
+                    try? await Task.sleep(for: .seconds(4))
+                }
+            default:
+                break
             }
         }
     }
 
-    // MARK: - Tab switch
+    // MARK: - Spotify Connect
 
-    private var tabSwitch: some View {
-        HStack(spacing: 10) {
-            ForEach(AudioScreenTab.allCases) { tab in
-                let isActive = state.audioTab == tab
-                Button {
-                    withAnimation(NotchAnimations.content) { state.audioTab = tab }
-                } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: tab.symbol)
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(tab.title)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                    }
-                    .foregroundStyle(isActive ? .white : NotchTheme.inkSecondary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(
-                        Capsule().fill(isActive ? Color.accentColor : NotchTheme.surface)
-                    )
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(PressableButtonStyle())
-                .accessibilityAddTraits(isActive ? [.isSelected] : [])
+    @ViewBuilder
+    private var spotifyRows: some View {
+        if !spotify.isConnected {
+            SpotifyConnectPrompt(
+                message: "Connect Spotify to see and control the devices on your account."
+            )
+        } else if spotify.devices.isEmpty {
+            emptyRow(spotify.isLoadingDevices
+                     ? "Looking for devices…"
+                     : "No Spotify devices are available. Open Spotify somewhere first.")
+        } else {
+            ForEach(spotify.devices) { device in
+                SpotifyDeviceCard(
+                    device: device,
+                    onSelect: { spotify.transfer(to: device) },
+                    onVolume: { spotify.setVolume($0, for: device) }
+                )
             }
-            Spacer(minLength: 0)
+
+            if let error = spotify.lastError {
+                Text(error)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    // MARK: - AirPlay
+
+    /// Local AirPlay outputs, which is what CoreAudio calls an Apple TV or a
+    /// HomePod once macOS has one selected. Spotify's own Connect speakers
+    /// live on the Spotify tab — they are a different transport, and merging
+    /// the two lists would make it impossible to tell which one a row means.
+    @ViewBuilder
+    private var airplayRows: some View {
+        let outputs = state.audio.devices.filter {
+            $0.transport == kAudioDeviceTransportTypeAirPlay
+        }
+
+        if outputs.isEmpty {
+            emptyRow("No AirPlay outputs are connected")
+        } else {
+            ForEach(outputs) { device in
+                let isCurrent = device.id == state.audio.currentDeviceID
+                AudioRow(
+                    icon: .symbol("airplayaudio"),
+                    title: device.name,
+                    status: isCurrent ? (state.audio.isMuted ? "Muted" : "Output") : nil,
+                    statusIsLive: isCurrent && !state.audio.isMuted,
+                    level: isCurrent ? Double(state.audio.volume) : nil,
+                    isHighlighted: isCurrent,
+                    onLevelChange: isCurrent ? { state.audio.setVolume(Float($0)) } : nil,
+                    onSelect: { state.audio.select(device) }
+                ) {
+                    RoundIconButton(
+                        systemImage: state.audio.isMuted
+                            ? "speaker.slash.fill"
+                            : "speaker.wave.2.fill",
+                        help: state.audio.isMuted ? "Unmute" : "Mute",
+                        isEnabled: isCurrent
+                    ) {
+                        state.audio.toggleMute()
+                    }
+                }
+            }
         }
     }
 

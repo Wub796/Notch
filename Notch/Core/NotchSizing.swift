@@ -47,7 +47,7 @@ enum NotchSizing {
     static let defaultOpenWidth: Double = 900
     static let minimumOpenHeight: Double = 140
     static let defaultOpenHeight: Double = 182
-    static let maximumOpenHeight: Double = 420
+    static let maximumOpenHeight: Double = 460
 
     static func maxAllowedOpenWidth(for screen: NSScreen? = NSScreen.main) -> Double {
         guard let width = screen?.frame.width, width > 0 else { return 900 }
@@ -89,7 +89,7 @@ enum NotchSizing {
         case .tools: CGSize(width: 880, height: 210)
         case .notes: CGSize(width: 560, height: 260)
         case .telemetry: CGSize(width: 760, height: 190)
-        case .audio: CGSize(width: 700, height: 300)
+        case .audio: CGSize(width: 940, height: 440)
         }
     }
 

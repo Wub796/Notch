@@ -112,7 +112,7 @@ struct NotchLayoutView: View {
         case .telemetry:
             TelemetryView(telemetry: state.telemetry)
         case .audio:
-            AudioDevicesView(state: state)
+            DevicesScreenView(state: state, namespace: namespace)
         }
     }
 }
