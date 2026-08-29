@@ -90,16 +90,15 @@ final class NotchState {
         max(adjustedNotchSize.height, 38)
     }
 
-    /// Hover is only detected over the physical notch (plus a small margin),
-    /// never over the full slab — a wide detection radius made the notch open
-    /// when the pointer was merely near the menu bar.
+    /// Hover is detected over the hardware notch and nowhere else.
+    ///
+    /// Exactly the notch, with no margin: the closed pill is often much wider
+    /// than the notch because of its live-activity wings, and any margin on
+    /// top of that opened the notch when the pointer was merely crossing the
+    /// menu bar near it. Expanded, the whole slab stays live so hovering
+    /// anywhere inside keeps it open.
     var hoverProbeSize: CGSize {
-        guard mode != .expanded else { return expandedSize }
-        let padding = min(max(settings.hoverPadding, 0), 80)
-        return CGSize(
-            width: adjustedNotchSize.width + padding,
-            height: adjustedNotchSize.height + 4
-        )
+        mode == .expanded ? expandedSize : adjustedNotchSize
     }
 
 

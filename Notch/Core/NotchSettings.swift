@@ -247,9 +247,6 @@ final class NotchSettings {
         didSet { save(cornerRadiusScaling, "cornerRadiusScaling") }
     }
 
-    /// Extra margin around the notch that still counts as hovering it.
-    var hoverPadding = 16.0 { didSet { save(hoverPadding, "hoverPadding") } }
-
     /// Restores every dimension above to its shipped value.
     func resetNotchDimensions() {
         notchWidthAdjustment = 0
@@ -258,7 +255,6 @@ final class NotchSettings {
         openNotchHeight = NotchSizing.defaultOpenHeight
         peekScale = 1.10
         cornerRadiusScaling = true
-        hoverPadding = 16
     }
 
     /// Raw value of the last tab the user opened; restored across launches.
@@ -381,7 +377,6 @@ final class NotchSettings {
             ("openNotchWidth", { v in self.openNotchWidth = v }),
             ("openNotchHeight", { v in self.openNotchHeight = v }),
             ("peekScale", { v in self.peekScale = v }),
-            ("hoverPadding", { v in self.hoverPadding = v }),
         ] where defaults.object(forKey: key) != nil {
             apply(defaults.double(forKey: key))
         }

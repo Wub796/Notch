@@ -343,21 +343,13 @@ private struct DimensionSliders: View {
 
             Toggle("Round the open corners further", isOn: $settings.cornerRadiusScaling)
 
-            slider(
-                "Hover target",
-                value: $settings.hoverPadding,
-                range: 0 ... 80,
-                step: 2,
-                format: { String(format: "%.0f pt", $0) }
-            )
-
             Button("Reset Dimensions") {
                 settings.resetNotchDimensions()
             }
         } header: {
             Label("Open Panel", systemImage: "square.on.circle")
         } footer: {
-            Text("Every screen opens to this one panel, so switching tabs never resizes the notch. Width is capped to your display. Hover target widens the area around the notch that responds to the pointer; larger values open it more eagerly.")
+            Text("Every screen opens to this one panel, so switching tabs never resizes the notch, and the width is capped to your display. Hovering is detected over the hardware notch itself, never over the wings beside it.")
         }
     }
 

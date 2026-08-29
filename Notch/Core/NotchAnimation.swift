@@ -20,12 +20,12 @@ enum AnimationProfile: String, CaseIterable, Identifiable, Hashable, Sendable {
 
 /// Shared animation curves.
 ///
-/// The notch's own open/close springs live in `NotchContainerView`, matching
-/// boring.notch and Atoll exactly: `.spring(response: 0.42, dampingFraction: 1)`
-/// opening and `0.45` closing, both critically damped. What lives here is
-/// everything else — content swaps, gauges, live-activity changes — which both
-/// references drive with `.smooth` and `.bouncy` rather than a tuned spring per
-/// gesture.
+/// The open and close springs are the references' shape — critically damped,
+/// close a touch slower than open — but longer than their 0.42/0.45. Theirs
+/// snap; at this size a slower settle reads as deliberate rather than abrupt.
+/// They live here rather than in the view so the Animation Style picker
+/// actually reaches the expansion, which is the motion it most obviously
+/// describes.
 enum NotchAnimations {
     static var prefersReducedMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -36,6 +36,32 @@ enum NotchAnimations {
 
     private static var profile: AnimationProfile {
         NotchSettings.shared.animationProfile
+    }
+
+    /// Opening into the full panel.
+    static var open: Animation {
+        guard !prefersReducedMotion else { return reduced }
+        switch profile {
+        case .snappy: return .spring(response: 0.5, dampingFraction: 1, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.52, dampingFraction: 0.78, blendDuration: 0)
+        case .calm: return .spring(response: 0.7, dampingFraction: 1, blendDuration: 0)
+        }
+    }
+
+    /// Closing back into the hardware notch, slightly longer than opening so
+    /// the notch never appears to snap shut.
+    static var close: Animation {
+        guard !prefersReducedMotion else { return reduced }
+        switch profile {
+        case .snappy: return .spring(response: 0.54, dampingFraction: 1, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.56, dampingFraction: 0.95, blendDuration: 0)
+        case .calm: return .spring(response: 0.74, dampingFraction: 1, blendDuration: 0)
+        }
+    }
+
+    /// The animation that should drive a change into the given mode.
+    static func forMode(_ mode: NotchMode) -> Animation {
+        mode == .expanded ? open : close
     }
 
     /// Tab switches, gauge fills, lyric moves.

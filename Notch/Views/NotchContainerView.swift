@@ -15,20 +15,9 @@ struct NotchContainerView: View {
     @Namespace private var notchNamespace
     @State private var isHovering = false
 
-    // Animation constants taken from the references. Open is slightly quicker
-    // than close and both are critically damped, so the slab settles without
-    // the wobble a lighter spring gives a shape this large.
-    private static let openAnimation = Animation.spring(
-        response: 0.42, dampingFraction: 1.0, blendDuration: 0
-    )
-    private static let closeAnimation = Animation.spring(
-        response: 0.45, dampingFraction: 1.0, blendDuration: 0
-    )
-    private static let hoverAnimation = Animation.bouncy.speed(1.2)
-
+    /// The open/close springs, which follow the user's Animation Style.
     private var notchAnimation: Animation {
-        guard !NotchAnimations.prefersReducedMotion else { return NotchAnimations.reduced }
-        return state.mode == .expanded ? Self.openAnimation : Self.closeAnimation
+        NotchAnimations.forMode(state.mode)
     }
 
     private var shape: NotchShape {
@@ -84,7 +73,7 @@ struct NotchContainerView: View {
                 radius: state.settings.cornerRadiusScaling ? 6 : 4
             )
             .animation(notchAnimation, value: state.mode)
-            .animation(Self.hoverAnimation, value: isHovering)
+            .animation(NotchAnimations.hover, value: isHovering)
             .animation(notchAnimation, value: state.collapsedActivity)
             .contentShape(
                 HoverRegionShape(
