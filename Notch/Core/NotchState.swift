@@ -59,7 +59,7 @@ final class NotchState {
         // height = top bar (38) + vertical padding (32) + the module's real
         // content height. These were previously guessed high, which left a
         // slab of dead black under every screen.
-        case .home: CGSize(width: 980, height: 158)
+        case .home: CGSize(width: 980, height: 206)
         case .media: CGSize(width: 880, height: 296)
         case .weather: CGSize(width: 800, height: 272)
         case .calendar: CGSize(width: 760, height: 296)
@@ -119,6 +119,7 @@ final class NotchState {
     let shortcuts = ShortcutsManager()
     let audio = AudioOutputManager()
     let bluetooth = BluetoothBatteryMonitor()
+    let brightness = BrightnessController()
 
     private let focusMonitor = FocusModeMonitor()
     private let desktopMonitor = DesktopChangeMonitor()
@@ -272,8 +273,8 @@ final class NotchState {
     /// Corner radius per state, user-adjustable. Peek sits midway between
     /// the closed and open radii so the morph reads continuously.
     var cornerRadius: CGFloat {
-        let closed = min(max(settings.collapsedCornerRadius, 0), 30)
-        let open = min(max(settings.expandedCornerRadius, 8), 48)
+        let closed = min(max(settings.collapsedCornerRadius, 0), 34)
+        let open = min(max(settings.expandedCornerRadius, 8), 52)
         switch mode {
         case .collapsed: return closed
         case .peek: return closed + (open - closed) * 0.4
@@ -379,6 +380,7 @@ final class NotchState {
         telemetry.start()
         weather.refresh()
         audio.refresh()
+        brightness.refresh()
         bluetooth.start()
         shortcuts.refresh()
     }

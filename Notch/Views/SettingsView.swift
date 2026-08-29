@@ -306,14 +306,14 @@ private struct DimensionSliders: View {
             slider(
                 "Closed corners",
                 value: $settings.collapsedCornerRadius,
-                range: 0 ... 30,
+                range: 0 ... 34,
                 step: 1,
                 format: { String(format: "%.0f pt", $0) }
             )
             slider(
                 "Open corners",
                 value: $settings.expandedCornerRadius,
-                range: 8 ... 48,
+                range: 8 ... 52,
                 step: 1,
                 format: { String(format: "%.0f pt", $0) }
             )

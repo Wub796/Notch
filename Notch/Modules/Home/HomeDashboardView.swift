@@ -13,19 +13,61 @@ struct HomeDashboardView: View {
         // Weather and calendar take exactly the width their content needs
         // (fixedSize), so a wider weekday or temperature can never be forced
         // past a hard frame and clipped by the slab. Music absorbs the rest.
-        HStack(alignment: .center, spacing: 24) {
-            mediaPlayerSection
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 12) {
+            HStack(alignment: .center, spacing: 26) {
+                mediaPlayerSection
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            weatherWidget
-                .fixedSize(horizontal: true, vertical: false)
-                .layoutPriority(1)
+                weatherWidget
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
 
-            calendarWidget
-                .fixedSize(horizontal: true, vertical: false)
-                .layoutPriority(1)
+                calendarWidget
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
+            }
+            .frame(maxWidth: .infinity)
+
+            controlsRow
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+
+    // MARK: - Volume and brightness
+
+    /// Thick gradient bars for the two things people reach for most.
+    private var controlsRow: some View {
+        HStack(spacing: 18) {
+            GradientLevelBar(
+                value: state.audio.isMuted ? 0 : state.audio.volume,
+                systemImage: state.audio.isMuted
+                    ? "speaker.slash.fill"
+                    : "speaker.wave.2.fill",
+                gradient: [
+                    Color(red: 0.30, green: 0.42, blue: 0.95),
+                    Color(red: 0.55, green: 0.45, blue: 0.98),
+                    Color(red: 0.86, green: 0.48, blue: 0.95),
+                ],
+                accessibilityLabel: "Volume"
+            ) { level in
+                state.audio.setVolume(level)
+            }
+
+            if state.brightness.isAvailable {
+                GradientLevelBar(
+                    value: state.brightness.brightness,
+                    systemImage: "sun.max.fill",
+                    gradient: [
+                        Color(red: 0.98, green: 0.62, blue: 0.20),
+                        Color(red: 1.00, green: 0.80, blue: 0.32),
+                        Color(red: 1.00, green: 0.94, blue: 0.66),
+                    ],
+                    accessibilityLabel: "Display brightness"
+                ) { level in
+                    state.brightness.setBrightness(level)
+                }
+            }
+        }
     }
 
     // MARK: - Music

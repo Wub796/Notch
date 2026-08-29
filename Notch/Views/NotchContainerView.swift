@@ -18,18 +18,25 @@ struct NotchContainerView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .top)
+        // Every label in the notch inherits the rounded face; individual
+        // views only choose size and weight.
+        .fontDesign(.rounded)
         .preferredColorScheme(.dark)
     }
 
     private var notchBody: some View {
         ZStack(alignment: .top) {
-            if state.mode == .expanded {
-                ExpandedNotchView(state: state, namespace: notchNamespace)
-                    .transition(.glass)
-            } else {
-                CollapsedNotchView(state: state, namespace: notchNamespace)
-                    .transition(.opacity)
-            }
+            // Both layers stay mounted and cross-fade in place. Insert/remove
+            // transitions made the whole slab appear to fade and pop; keeping
+            // the black shape and both content layers alive means only the
+            // geometry moves, which is what reads as a smooth morph.
+            CollapsedNotchView(state: state, namespace: notchNamespace)
+                .opacity(state.mode == .expanded ? 0 : 1)
+                .allowsHitTesting(state.mode != .expanded)
+
+            ExpandedNotchView(state: state, namespace: notchNamespace)
+                .opacity(state.mode == .expanded ? 1 : 0)
+                .allowsHitTesting(state.mode == .expanded)
         }
         .frame(width: state.currentSize.width, height: state.currentSize.height, alignment: .top)
         // Completely black base in every state — the slab always hides the
@@ -67,8 +74,9 @@ struct NotchContainerView: View {
             of: ShelfController.acceptedTypes,
             delegate: NotchDropDelegate(state: state)
         )
+        // One animation drives geometry and the cross-fade together.
+        .animation(NotchAnimations.forMode(state.mode), value: state.mode)
         .animation(NotchAnimations.forMode(state.mode), value: state.currentSize)
-        .animation(NotchAnimations.forMode(state.mode), value: state.cornerRadius)
         .animation(NotchAnimations.content, value: state.tab)
         .animation(NotchAnimations.activity, value: state.collapsedActivity)
     }

@@ -183,8 +183,8 @@ final class NotchSettings {
     var peekScale = 1.10 { didSet { save(peekScale, "peekScale") } }
 
     /// Corner radius of the closed pill and the open slab.
-    var collapsedCornerRadius = 10.0 { didSet { save(collapsedCornerRadius, "collapsedCornerRadius") } }
-    var expandedCornerRadius = 26.0 { didSet { save(expandedCornerRadius, "expandedCornerRadius") } }
+    var collapsedCornerRadius = 14.0 { didSet { save(collapsedCornerRadius, "collapsedCornerRadius") } }
+    var expandedCornerRadius = 34.0 { didSet { save(expandedCornerRadius, "expandedCornerRadius") } }
 
     /// Extra margin around the notch that still counts as hovering it.
     var hoverPadding = 16.0 { didSet { save(hoverPadding, "hoverPadding") } }
