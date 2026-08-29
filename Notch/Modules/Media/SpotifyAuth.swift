@@ -31,9 +31,10 @@ final class SpotifyAuth {
     /// scheme in Info.plist, so the OS hands it to the app.
     static let redirectURI = "notch://spotify-callback"
 
-    /// Everything the Devices screen needs, and nothing more: reading and
-    /// steering playback, the account's own playlists, and its listening
-    /// history. No write scopes — this never modifies a library.
+    /// Everything the Devices screen and the player need, and nothing more:
+    /// reading and steering playback, the account's playlists, its listening
+    /// history, and its saved songs — the last one so the player's heart is a
+    /// real control rather than a decoration.
     private static let scopes = [
         "user-read-private",
         "user-read-playback-state",
@@ -42,6 +43,9 @@ final class SpotifyAuth {
         "user-read-recently-played",
         "playlist-read-private",
         "playlist-read-collaborative",
+        // The heart in the player writes here, and nowhere else.
+        "user-library-read",
+        "user-library-modify",
     ].joined(separator: " ")
 
     private static let keychainAccount = "spotify-refresh-token"

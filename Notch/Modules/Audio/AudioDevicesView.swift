@@ -263,7 +263,7 @@ struct AudioDevicesView: View {
                  : "macOS 14.4 or later is needed to tell which apps are "
                     + "actually making sound; this lists media apps that are "
                     + "running.")
-                .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                .font(.notchFootnote)
                 .foregroundStyle(NotchTheme.inkMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 2)
@@ -272,13 +272,10 @@ struct AudioDevicesView: View {
 
     private func emptyRow(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .font(.notchBody)
             .foregroundStyle(NotchTheme.inkMuted)
-            .frame(maxWidth: .infinity, minHeight: 60)
-            .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(NotchTheme.surface)
-            }
+            .frame(maxWidth: .infinity, minHeight: 64)
+            .notchCard()
     }
 }
 
@@ -312,13 +309,13 @@ struct AudioRow<Actions: View>: View {
 
                     VStack(alignment: .leading, spacing: 0) {
                         Text(title)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .font(.notchBody.weight(.bold))
                             .foregroundStyle(NotchTheme.inkPrimary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                         if let status {
                             Text(status)
-                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                .font(.notchFootnote.weight(.bold))
                                 .foregroundStyle(statusIsLive ? .green : NotchTheme.inkMuted)
                         }
                     }
@@ -342,19 +339,9 @@ struct AudioRow<Actions: View>: View {
                 actions()
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, NotchTheme.Space.m)
         .padding(.vertical, 10)
-        .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(NotchTheme.surface)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(
-                    isHighlighted ? Color.accentColor.opacity(0.8) : .clear,
-                    lineWidth: 1.5
-                )
-        }
+        .notchCard(isHighlighted: isHighlighted)
     }
 
     @ViewBuilder
@@ -389,19 +376,19 @@ private struct LevelBar: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(NotchTheme.surfaceHover)
 
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.accentColor)
                     .frame(width: max(0, min(geometry.size.width * level, geometry.size.width)))
 
                 HStack {
                     Text("Volume")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(.notchCallout.weight(.bold))
                     Spacer(minLength: 8)
                     Text("\(Int((level * 100).rounded()))%")
-                        .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
+                        .font(.notchCallout.weight(.bold).monospacedDigit())
                         .contentTransition(.numericText())
                 }
                 .foregroundStyle(NotchTheme.inkPrimary)

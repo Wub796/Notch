@@ -283,15 +283,18 @@ extension SpotifyClient {
         let contextURI: String?
         let isPlaying: Bool
         let deviceID: String?
+        let trackID: String?
     }
 
     private struct PlaybackResponse: Decodable {
         let is_playing: Bool?
         let context: Context?
         let device: Device?
+        let item: Item?
 
         struct Context: Decodable { let uri: String? }
         struct Device: Decodable { let id: String? }
+        struct Item: Decodable { let id: String? }
     }
 
     /// What the account is playing, wherever it is playing. `nil` when nothing
@@ -303,7 +306,29 @@ extension SpotifyClient {
         return Playback(
             contextURI: response.context?.uri,
             isPlaying: response.is_playing ?? false,
-            deviceID: response.device?.id
+            deviceID: response.device?.id,
+            trackID: response.item?.id
+        )
+    }
+
+    // MARK: Saved songs
+
+    /// Whether the track is in the account's Liked Songs.
+    static func isSaved(trackID: String, token: String) async -> Bool {
+        guard let data = await get("me/tracks/contains?ids=\(trackID)", token: token),
+              let flags = try? JSONDecoder().decode([Bool].self, from: data)
+        else { return false }
+        return flags.first ?? false
+    }
+
+    /// Adds or removes the track from Liked Songs.
+    @discardableResult
+    static func setSaved(_ saved: Bool, trackID: String, token: String) async -> Bool {
+        await write(
+            "me/tracks?ids=\(trackID)",
+            method: saved ? "PUT" : "DELETE",
+            token: token,
+            body: nil
         )
     }
 
@@ -499,9 +524,18 @@ extension SpotifyClient {
         token: String,
         body: [String: Any]? = nil
     ) async -> Bool {
+        await write(path, method: "PUT", token: token, body: body)
+    }
+
+    private static func write(
+        _ path: String,
+        method: String,
+        token: String,
+        body: [String: Any]? = nil
+    ) async -> Bool {
         guard let url = URL(string: path, relativeTo: base) else { return false }
         var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
+        request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 8
         if let body {

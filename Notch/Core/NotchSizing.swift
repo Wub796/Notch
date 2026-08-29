@@ -84,11 +84,11 @@ enum NotchSizing {
         case .media: CGSize(width: 560, height: 280)
         case .weather: CGSize(width: 600, height: 290)
         case .calendar: CGSize(width: 620, height: 366)
-        case .shelf: CGSize(width: 660, height: 220)
-        case .clipboard: CGSize(width: 700, height: 200)
-        case .tools: CGSize(width: 880, height: 210)
-        case .notes: CGSize(width: 560, height: 260)
-        case .telemetry: CGSize(width: 760, height: 190)
+        case .shelf: CGSize(width: 700, height: 272)
+        case .clipboard: CGSize(width: 720, height: 252)
+        case .tools: CGSize(width: 900, height: 302)
+        case .notes: CGSize(width: 600, height: 292)
+        case .telemetry: CGSize(width: 800, height: 262)
         case .audio: CGSize(width: 940, height: 440)
         }
     }

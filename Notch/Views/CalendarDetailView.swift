@@ -60,7 +60,7 @@ struct CalendarDetailView: View {
                     .fixedSize()
 
                 Text(selected.formatted(.dateTime.year()))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+                    .font(.notchBody.monospacedDigit())
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .fixedSize()
             }
@@ -104,7 +104,7 @@ struct CalendarDetailView: View {
                 HStack(spacing: 4) {
                     ForEach(Array("MTWTFSS".enumerated()), id: \.offset) { _, letter in
                         Text(String(letter))
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .font(.notchBody)
                             .foregroundStyle(NotchTheme.inkSecondary)
                             .frame(maxWidth: .infinity)
                     }
@@ -212,7 +212,7 @@ private struct WeekDayCell: View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Text(day.formatted(.dateTime.weekday(.abbreviated)).uppercased())
-                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .font(.notchBody.weight(.heavy))
                     .foregroundStyle(isSelected ? .white : NotchTheme.inkSecondary)
                     .fixedSize()
                 Text("\(Calendar.current.component(.day, from: day))")

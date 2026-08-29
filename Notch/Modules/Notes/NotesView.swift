@@ -5,50 +5,40 @@ struct NotesView: View {
     @Bindable var notes: NotesManager
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NotchTheme.Space.m) {
+            ScreenHeader("Notes", subtitle: subtitle) {
+                ScreenTextButton(title: "Clear", systemImage: "trash") {
+                    withAnimation(NotchAnimations.content) { notes.clear() }
+                }
+                .opacity(notes.text.isEmpty ? 0.4 : 1)
+                .disabled(notes.text.isEmpty)
+            }
+
             TextEditor(text: $notes.text)
-                .font(.system(size: 12))
+                .font(.notchBody.weight(.regular))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .scrollContentBackground(.hidden)
-                .padding(8)
-                .background {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(NotchTheme.surface)
-                }
+                .padding(10)
+                .notchCard()
                 .overlay(alignment: .topLeading) {
                     if notes.text.isEmpty {
                         Text("Jot something down…")
-                            .font(.system(size: 12))
+                            .font(.notchBody.weight(.regular))
                             .foregroundStyle(NotchTheme.inkMuted)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 16)
+                            .padding(.horizontal, 15)
+                            .padding(.vertical, 18)
                             .allowsHitTesting(false)
                     }
                 }
-
-            HStack(spacing: 10) {
-                Text("\(notes.wordCount) word\(notes.wordCount == 1 ? "" : "s")")
-                    .font(.system(size: 9.5).monospacedDigit())
-                    .foregroundStyle(NotchTheme.inkMuted)
-
-                if notes.lastSavedAt != nil {
-                    Label("Saved", systemImage: "checkmark.circle.fill")
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(NotchTheme.inkMuted)
-                }
-
-                Spacer()
-
-                Button("Clear") {
-                    withAnimation(NotchAnimations.content) { notes.clear() }
-                }
-                .buttonStyle(PressableButtonStyle())
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(NotchTheme.inkSecondary)
-                .disabled(notes.text.isEmpty)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityLabel("Scratchpad")
+    }
+
+    /// Word count and save state on one line, where every other screen puts
+    /// its status — rather than a footer row of its own.
+    private var subtitle: String {
+        let words = "\(notes.wordCount) word\(notes.wordCount == 1 ? "" : "s")"
+        return notes.lastSavedAt == nil ? words : words + " · Saved"
     }
 }

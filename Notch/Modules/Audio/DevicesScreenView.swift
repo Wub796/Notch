@@ -73,25 +73,13 @@ struct DevicesScreenView: View {
 
     // MARK: - Title
 
+    /// Just the name: the back button lives in the header strip directly
+    /// above it, where every other detail screen keeps its own.
     private var titleRow: some View {
-        HStack(spacing: 12) {
-            Button {
-                state.select(.home)
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(NotchTheme.inkPrimary)
-                    .frame(width: 30, height: 30)
-                    .background(Circle().fill(NotchTheme.surface))
-                    .contentShape(Circle())
-            }
-            .buttonStyle(PressableButtonStyle())
-            .accessibilityLabel("Back to the dashboard")
-
+        HStack(spacing: 0) {
             Text("Devices")
-                .font(.system(size: 21, weight: .bold, design: .rounded))
+                .font(.notchDisplay)
                 .foregroundStyle(NotchTheme.inkPrimary)
-
             Spacer(minLength: 0)
         }
     }
@@ -111,7 +99,7 @@ struct DevicesScreenView: View {
         if spotify.isConnected {
             HStack(spacing: 0) {
                 Text(spotify.profile?.displayName ?? "Spotify")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.notchBody.weight(.bold))
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .lineLimit(1)
                     // The pill row beside this is eight items wide; a long
@@ -129,7 +117,7 @@ struct DevicesScreenView: View {
                     spotify.clear()
                 } label: {
                     Text("Log out")
-                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                        .font(.notchCallout.weight(.semibold))
                         .foregroundStyle(NotchTheme.inkSecondary)
                         .padding(.horizontal, 12)
                         .contentShape(Rectangle())
@@ -147,7 +135,7 @@ struct DevicesScreenView: View {
                     Image(systemName: "music.note")
                         .font(.system(size: 12, weight: .bold))
                     Text("Connect Spotify")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.notchBody.weight(.bold))
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 14)
@@ -212,7 +200,7 @@ struct DevicesScreenView: View {
                 Image(systemName: symbol)
                     .font(.system(size: 11, weight: .semibold))
                 Text(title)
-                    .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                    .font(.notchCallout.weight(.bold))
                     // The row carries eight of these when Audio is up; letting
                     // one wrap or truncate would break the whole capsule.
                     .fixedSize()
@@ -253,7 +241,7 @@ struct SpotifyLibraryScreen: View {
                 )
             } else if spotify.playlists.isEmpty {
                 Text(spotify.isLoadingLibrary ? "Loading your library…" : "No playlists yet.")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .font(.notchBody)
                     .foregroundStyle(NotchTheme.inkMuted)
                     .frame(maxWidth: .infinity, minHeight: 80)
             } else {
@@ -282,18 +270,7 @@ struct SpotifyLibraryScreen: View {
     }
 
     private var header: some View {
-        HStack(alignment: .lastTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Library")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(NotchTheme.inkPrimary)
-                Text("Playlists sorted by \(spotify.sort.title)")
-                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(NotchTheme.inkSecondary)
-            }
-
-            Spacer(minLength: 8)
-
+        ScreenHeader("Library", subtitle: "Playlists sorted by \(spotify.sort.title)") {
             Menu {
                 ForEach(SpotifyLibrary.LibrarySort.allCases) { option in
                     Button {
@@ -311,7 +288,7 @@ struct SpotifyLibraryScreen: View {
                     Image(systemName: "arrow.up.arrow.down")
                         .font(.system(size: 12, weight: .semibold))
                     Text(spotify.sort.title)
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .font(.notchBody.weight(.bold))
                     Image(systemName: "chevron.down")
                         .font(.system(size: 10, weight: .bold))
                 }
@@ -340,11 +317,11 @@ struct PlaylistCard: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(playlist.name)
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.notchHeadline)
                     .foregroundStyle(isPlaying ? Color.green : NotchTheme.inkPrimary)
                     .lineLimit(1)
                 Text(playlist.owner.isEmpty ? "\(playlist.trackCount) tracks" : playlist.owner)
-                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                    .font(.notchCallout)
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .lineLimit(1)
             }
@@ -373,16 +350,12 @@ struct PlaylistCard: View {
             .accessibilityLabel(isPlaying ? "Now playing" : "Play \(playlist.name)")
         }
         .padding(10)
-        .background {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(isPlaying ? Color.green.opacity(0.10) : NotchTheme.surface)
-        }
+        .notchCard(isHighlighted: isPlaying, tint: .green)
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(
-                    isPlaying ? Color.green.opacity(0.35) : .white.opacity(isHovering ? 0.14 : 0.05),
-                    lineWidth: 1
-                )
+            if isHovering, !isPlaying {
+                RoundedRectangle(cornerRadius: NotchTheme.Radius.card, style: .continuous)
+                    .strokeBorder(.white.opacity(0.16), lineWidth: 1)
+            }
         }
         .onHover { isHovering = $0 }
         .animation(NotchAnimations.content, value: isHovering)
@@ -394,7 +367,7 @@ struct PlaylistCard: View {
             if let artwork {
                 Image(nsImage: artwork).resizable().aspectRatio(contentMode: .fill)
             } else {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
                     .fill(NotchTheme.surfaceHover)
                     .overlay {
                         Image(systemName: "music.note.list")
@@ -404,7 +377,7 @@ struct PlaylistCard: View {
             }
         }
         .frame(width: 54, height: 54)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous))
     }
 }
 
@@ -450,7 +423,7 @@ struct SpotifyDiscoverScreen: View {
                 set: { spotify.query = $0 }
             ))
             .textFieldStyle(.plain)
-            .font(.system(size: 14, weight: .medium, design: .rounded))
+            .font(.notchBody.weight(.medium))
             .foregroundStyle(NotchTheme.inkPrimary)
             .focused($searchFocused)
             .disabled(!spotify.isConnected)
@@ -469,35 +442,31 @@ struct SpotifyDiscoverScreen: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 42)
-        .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(NotchTheme.surface)
-        }
+        .notchCard(radius: NotchTheme.Radius.tile)
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(
-                    searchFocused ? Color.accentColor.opacity(0.6) : .white.opacity(0.07),
-                    lineWidth: 1
-                )
+            if searchFocused {
+                RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
+            }
         }
     }
 
     private var shelf: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(Self.greeting())
-                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .font(.notchDisplay)
                 .foregroundStyle(NotchTheme.inkPrimary)
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("For You")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.notchHeadline)
                     .foregroundStyle(NotchTheme.inkPrimary)
 
                 if spotify.forYou.isEmpty {
                     Text(spotify.isLoadingLibrary
                          ? "Loading…"
                          : "Play something and it will show up here.")
-                        .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                        .font(.notchCallout)
                         .foregroundStyle(NotchTheme.inkMuted)
                         .frame(height: 60)
                 } else {
@@ -515,11 +484,8 @@ struct SpotifyDiscoverScreen: View {
                     }
                 }
             }
-            .padding(14)
-            .background {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(NotchTheme.surface)
-            }
+            .padding(NotchTheme.Space.l)
+            .notchCard()
         }
     }
 
@@ -527,7 +493,7 @@ struct SpotifyDiscoverScreen: View {
     private var results: some View {
         if spotify.searchResults.isEmpty {
             Text(spotify.isSearching ? "Searching…" : "Nothing found.")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(.notchBody)
                 .foregroundStyle(NotchTheme.inkMuted)
                 .frame(maxWidth: .infinity, minHeight: 80)
         } else {
@@ -572,7 +538,7 @@ struct DiscoverTile: View {
                     if let artwork {
                         Image(nsImage: artwork).resizable().aspectRatio(contentMode: .fill)
                     } else {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
                             .fill(NotchTheme.surfaceHover)
                         Image(systemName: item.kind == .artist ? "person.fill" : "music.note")
                             .font(.system(size: 20, weight: .medium))
@@ -592,15 +558,15 @@ struct DiscoverTile: View {
                     }
                 }
                 .frame(width: 108, height: 108)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous))
 
                 Text(item.title)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.notchBody.weight(.bold))
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .lineLimit(1)
 
                 Text(item.subtitle)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .font(.notchCaption)
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .lineLimit(1)
             }
@@ -633,7 +599,7 @@ struct SpotifyDeviceCard: View {
                     .frame(width: 30)
 
                 Text(device.name)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(.notchHeadline)
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .lineLimit(1)
 
@@ -647,7 +613,7 @@ struct SpotifyDeviceCard: View {
                 } else {
                     Button(action: onSelect) {
                         Text("Switch")
-                            .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                            .font(.notchCallout.weight(.bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 14)
                             .frame(height: 28)
@@ -666,23 +632,13 @@ struct SpotifyDeviceCard: View {
                 )
             } else {
                 Text("This device doesn't accept volume changes from Spotify.")
-                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                    .font(.notchCaption)
                     .foregroundStyle(NotchTheme.inkMuted)
             }
         }
-        .padding(16)
+        .padding(NotchTheme.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(NotchTheme.surface)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(
-                    device.isActive ? Color.green.opacity(0.28) : .white.opacity(0.06),
-                    lineWidth: 1
-                )
-        }
+        .notchCard(isHighlighted: device.isActive, tint: .green)
     }
 }
 
@@ -712,10 +668,10 @@ struct SpotifyVolumeBar: View {
 
                 HStack(spacing: 8) {
                     Text("Volume")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(.notchHeadline)
                     Spacer(minLength: 8)
                     Text("\(Int((fraction * 100).rounded())) %")
-                        .font(.system(size: 15, weight: .bold, design: .rounded).monospacedDigit())
+                        .font(.notchHeadline.monospacedDigit())
                         .contentTransition(.numericText())
                 }
                 .foregroundStyle(.white)
@@ -755,7 +711,7 @@ struct SpotifyConnectPrompt: View {
                 .foregroundStyle(Color.green.opacity(0.8))
 
             Text(message)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(.notchBody)
                 .foregroundStyle(NotchTheme.inkSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -764,7 +720,7 @@ struct SpotifyConnectPrompt: View {
                 SpotifyAuth.shared.signIn()
             } label: {
                 Text("Connect Spotify")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.notchBody.weight(.bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 18)
                     .frame(height: 32)
@@ -773,11 +729,8 @@ struct SpotifyConnectPrompt: View {
             }
             .buttonStyle(PressableButtonStyle())
         }
-        .padding(20)
+        .padding(NotchTheme.Space.xl)
         .frame(maxWidth: .infinity)
-        .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(NotchTheme.surface)
-        }
+        .notchCard()
     }
 }

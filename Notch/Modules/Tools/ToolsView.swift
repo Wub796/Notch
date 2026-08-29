@@ -7,30 +7,46 @@ struct ToolsView: View {
     let state: NotchState
 
     var body: some View {
-        // Budget: NotchState.moduleContentSize, about 738 x 136 at the
-        // default panel size — the columns were sized for a 1000pt slab.
-        HStack(alignment: .top, spacing: 16) {
-            audioColumn
-                .frame(width: 164, alignment: .leading)
+        // Budget: NotchState.moduleContentSize, about 838 x 240 at the
+        // default panel size. Each column is a card so the four read as four
+        // things rather than one dense field of text.
+        VStack(alignment: .leading, spacing: NotchTheme.Space.m) {
+            ScreenHeader("Tools", subtitle: "Output, accessories, timers and shortcuts")
 
-            accessoriesColumn
-                .frame(width: 140, alignment: .leading)
+            HStack(alignment: .top, spacing: NotchTheme.Space.m) {
+                column { audioColumn }
+                    .frame(width: 190, alignment: .leading)
 
-            timerColumn
-                .frame(maxWidth: .infinity, alignment: .leading)
+                column { accessoriesColumn }
+                    .frame(width: 168, alignment: .leading)
 
-            if state.settings.showQuickActions {
-                quickActionsColumn
-                    .fixedSize(horizontal: true, vertical: false)
+                column { timerColumn }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if state.settings.showQuickActions {
+                    column { quickActionsColumn }
+                        .fixedSize(horizontal: true, vertical: false)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// One column of the tools grid, in the shared card treatment.
+    private func column<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .padding(NotchTheme.Space.m)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .notchCard()
     }
 
     // MARK: - Audio output
 
     private var audioColumn: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: NotchTheme.Space.s) {
             sectionLabel("OUTPUT")
 
             if state.audio.devices.isEmpty {
@@ -57,11 +73,11 @@ struct ToolsView: View {
                 Image(systemName: state.audio.isMuted
                     ? "speaker.slash.fill"
                     : "speaker.wave.2.fill")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12.5))
                     .foregroundStyle(
                         state.audio.isMuted ? .red : NotchTheme.inkSecondary
                     )
-                    .frame(width: 18, height: 18)
+                    .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
             .buttonStyle(PressableButtonStyle())
@@ -93,25 +109,25 @@ struct ToolsView: View {
         } label: {
             HStack(spacing: 7) {
                 Image(systemName: device.symbolName)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(isCurrent ? NotchTheme.battery : NotchTheme.inkSecondary)
-                    .frame(width: 15)
+                    .frame(width: 16)
                 Text(device.name)
-                    .font(.system(size: 11, weight: isCurrent ? .semibold : .regular))
+                    .font(.notchCaption.weight(isCurrent ? .bold : .medium))
                     .foregroundStyle(isCurrent ? NotchTheme.inkPrimary : NotchTheme.inkSecondary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if isCurrent {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(NotchTheme.battery)
                 }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isCurrent ? NotchTheme.surface : .clear)
+                RoundedRectangle(cornerRadius: NotchTheme.Radius.thumb, style: .continuous)
+                    .fill(isCurrent ? NotchTheme.surfaceHover : .clear)
             }
             .contentShape(Rectangle())
         }
@@ -123,7 +139,7 @@ struct ToolsView: View {
     // MARK: - Accessories
 
     private var accessoriesColumn: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: NotchTheme.Space.s) {
             sectionLabel("ACCESSORIES")
 
             if state.bluetooth.devices.isEmpty {
@@ -141,13 +157,13 @@ struct ToolsView: View {
     private func accessoryRow(_ device: BluetoothBatteryMonitor.Device) -> some View {
         HStack(spacing: 8) {
             Image(systemName: device.symbolName)
-                .font(.system(size: 13))
+                .font(.system(size: 14))
                 .foregroundStyle(NotchTheme.inkSecondary)
-                .frame(width: 18)
+                .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(device.name)
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(.notchCaption.weight(.bold))
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .lineLimit(1)
 
@@ -170,11 +186,11 @@ struct ToolsView: View {
         HStack(spacing: 2) {
             if let prefix {
                 Text(prefix)
-                    .font(.system(size: 8, weight: .heavy))
+                    .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(NotchTheme.inkMuted)
             }
             Text("\(percent)%")
-                .font(.system(size: 9.5, weight: .semibold).monospacedDigit())
+                .font(.notchFootnote.weight(.bold).monospacedDigit())
                 .foregroundStyle(percent <= 20 ? .red : NotchTheme.inkPrimary.opacity(0.9))
         }
     }
@@ -182,13 +198,13 @@ struct ToolsView: View {
     // MARK: - Timer, eye break, shortcuts
 
     private var timerColumn: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: NotchTheme.Space.s) {
             sectionLabel("TIMER")
 
             if state.timer.isRunning {
                 HStack(spacing: 10) {
                     Text(TimerManager.timeString(state.timer.remaining))
-                        .font(.system(size: 22, weight: .bold).monospacedDigit())
+                        .font(.notchTitle.monospacedDigit())
                         .foregroundStyle(NotchTheme.inkPrimary)
                         .contentTransition(.numericText())
 
@@ -196,9 +212,9 @@ struct ToolsView: View {
                         state.timer.togglePause()
                     } label: {
                         Image(systemName: state.timer.isPaused ? "play.fill" : "pause.fill")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(NotchTheme.inkPrimary)
-                            .frame(width: 24, height: 24)
+                            .frame(width: 26, height: 26)
                             .background(Circle().fill(NotchTheme.surface))
                     }
                     .buttonStyle(PressableButtonStyle())
@@ -208,9 +224,9 @@ struct ToolsView: View {
                         withAnimation(NotchAnimations.content) { state.timer.cancel() }
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(NotchTheme.inkSecondary)
-                            .frame(width: 24, height: 24)
+                            .frame(width: 26, height: 26)
                             .background(Circle().fill(NotchTheme.surface))
                     }
                     .buttonStyle(PressableButtonStyle())
@@ -225,10 +241,10 @@ struct ToolsView: View {
                             }
                         } label: {
                             Text("\(minutes)m")
-                                .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                                .font(.notchCaption.weight(.bold).monospacedDigit())
                                 .foregroundStyle(NotchTheme.inkPrimary)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 5)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 6)
                                 .background(Capsule().fill(NotchTheme.surface))
                         }
                         .buttonStyle(PressableButtonStyle())
@@ -250,7 +266,7 @@ struct ToolsView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: state.eyeBreak.isEnabled ? "eye.fill" : "eye.slash")
-                    .font(.system(size: 10.5))
+                    .font(.system(size: 12))
                     .foregroundStyle(
                         state.eyeBreak.isEnabled ? NotchTheme.battery : NotchTheme.inkMuted
                     )
@@ -259,7 +275,7 @@ struct ToolsView: View {
                         ? "Look away…"
                         : "Break in \(Int(state.eyeBreak.timeUntilBreak / 60) + 1) min")
                     : "Eye breaks off")
-                    .font(.system(size: 10.5))
+                    .font(.notchCaption)
                     .foregroundStyle(NotchTheme.inkSecondary)
                 Spacer(minLength: 0)
             }
@@ -282,15 +298,15 @@ struct ToolsView: View {
                             Image(systemName: state.shortcuts.runningName == name
                                 ? "hourglass"
                                 : "square.stack.3d.up.fill")
-                                .font(.system(size: 9))
-                            Text(name)
                                 .font(.system(size: 10))
+                            Text(name)
+                                .font(.notchFootnote)
                                 .lineLimit(1)
                         }
                         .foregroundStyle(NotchTheme.inkSecondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(NotchTheme.surface))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(NotchTheme.surfaceHover))
                     }
                     .buttonStyle(PressableButtonStyle())
                     .accessibilityLabel("Run shortcut \(name)")
@@ -302,7 +318,7 @@ struct ToolsView: View {
     // MARK: - Quick actions
 
     private var quickActionsColumn: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: NotchTheme.Space.s) {
             sectionLabel("QUICK ACTIONS")
 
             VStack(alignment: .leading, spacing: 4) {
@@ -336,10 +352,10 @@ struct ToolsView: View {
                 // the button look inert.
                 if let error = state.quickActions.lastError {
                     Text(error)
-                        .font(.system(size: 9.5, weight: .medium))
+                        .font(.notchFootnote)
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(width: 132, alignment: .leading)
+                        .frame(width: 146, alignment: .leading)
                 }
             }
         }
@@ -355,20 +371,20 @@ struct ToolsView: View {
         Button(action: action) {
             HStack(spacing: 7) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 10.5))
-                    .frame(width: 14)
+                    .font(.system(size: 12))
+                    .frame(width: 16)
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.notchCaption.weight(.semibold))
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(isEnabled ? NotchTheme.inkSecondary : NotchTheme.inkMuted)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .frame(width: 132, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(width: 146, alignment: .leading)
             .background {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(NotchTheme.surface)
+                RoundedRectangle(cornerRadius: NotchTheme.Radius.thumb, style: .continuous)
+                    .fill(NotchTheme.surfaceHover)
             }
             .contentShape(Rectangle())
         }
@@ -381,15 +397,15 @@ struct ToolsView: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 9, weight: .heavy))
-            .tracking(0.8)
+            .font(.notchEyebrow)
+            .tracking(0.9)
             .foregroundStyle(NotchTheme.inkMuted)
             .accessibilityAddTraits(.isHeader)
     }
 
     private func placeholder(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 10.5))
+            .font(.notchCaption)
             .foregroundStyle(NotchTheme.inkMuted)
             .padding(.top, 2)
     }

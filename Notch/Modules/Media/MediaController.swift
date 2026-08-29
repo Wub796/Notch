@@ -337,6 +337,147 @@ final class MediaController {
     /// Drives the selected provider directly. `tell application` launches the
     /// app if it isn't running, so picking a provider and pressing play really
     /// starts that player.
+    // MARK: - Shuffle and favourite
+
+    /// Both of these were local `@State` in the player view: the heart and the
+    /// shuffle glyph changed colour and did nothing at all. They talk to the
+    /// player now — shuffle through Apple Events, which every supported player
+    /// understands, and the heart through whatever the current player actually
+    /// has (Music has `loved`; Spotify's saved-songs library is Web API only).
+    private(set) var isShuffling = false
+    private(set) var isFavorite = false
+
+    /// The app these two controls talk to: whatever is actually playing when
+    /// that is a player with an Apple Events vocabulary, and the configured
+    /// provider otherwise. Without this the heart aimed at Music while
+    /// Spotify was the thing making sound.
+    private var controlBundleID: String {
+        if let source = sourceAppBundleID,
+           source == "com.apple.Music" || source == MusicProvider.spotify.bundleID {
+            return source
+        }
+        return fallbackBundleID
+    }
+
+    private var controlAppName: String {
+        controlBundleID == MusicProvider.spotify.bundleID ? "Spotify" : "Music"
+    }
+
+    private var controlAppIsRunning: Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: controlBundleID).isEmpty
+    }
+
+    /// Whether the heart can do anything for the player that is playing.
+    var canFavorite: Bool {
+        guard hasTrack else { return false }
+        if controlBundleID == MusicProvider.spotify.bundleID {
+            return SpotifyAuth.shared.state == .signedIn
+        }
+        return controlBundleID == "com.apple.Music"
+    }
+
+    func toggleShuffle() {
+        let appName = controlAppName
+        let isMusic = controlBundleID == "com.apple.Music"
+        let property = isMusic ? "shuffle enabled" : "shuffling"
+        let wanted = !isShuffling
+        isShuffling = wanted
+
+        runScript("tell application \"\(appName)\" to set \(property) to \(wanted)") { [weak self] ok in
+            guard !ok else { return }
+            // The player refused — put the control back where it was rather
+            // than leaving it showing a state that is not real.
+            self?.isShuffling = !wanted
+        }
+    }
+
+    func toggleFavorite() {
+        guard canFavorite else { return }
+        let wanted = !isFavorite
+        isFavorite = wanted
+
+        if controlBundleID == "com.apple.Music" {
+            let appName = controlAppName
+            runScript(
+                "tell application \"\(appName)\" to set loved of current track to \(wanted)"
+            ) { [weak self] ok in
+                guard !ok else { return }
+                self?.isFavorite = !wanted
+            }
+            return
+        }
+
+        Task { [weak self] in
+            guard let token = await SpotifyAuth.shared.validAccessToken(),
+                  let id = await SpotifyClient.playback(token: token)?.trackID,
+                  await SpotifyClient.setSaved(wanted, trackID: id, token: token)
+            else {
+                await MainActor.run { [weak self] in self?.isFavorite = !wanted }
+                return
+            }
+        }
+    }
+
+    /// Reads both states for the track that just started, so the controls show
+    /// the player's truth rather than whatever they were left on.
+    private func refreshShuffleAndFavorite() {
+        let appName = controlAppName
+        let isMusic = controlBundleID == "com.apple.Music"
+        let property = isMusic ? "shuffle enabled" : "shuffling"
+        let lovedScript = isMusic
+            ? "tell application \"\(appName)\" to return (loved of current track) as text"
+            : nil
+        let shuffleScript = "tell application \"\(appName)\" to return \(property) as text"
+        let running = controlAppIsRunning
+        let allowed = IntegrationPermissions.isAutomationAllowed(controlBundleID)
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard running, allowed else { return }
+            let shuffle = Self.scriptString(shuffleScript) == "true"
+            let loved = lovedScript.map { Self.scriptString($0) == "true" }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if self.isShuffling != shuffle { self.isShuffling = shuffle }
+                if let loved, self.isFavorite != loved { self.isFavorite = loved }
+            }
+        }
+
+        guard !isMusic else { return }
+        Task { [weak self] in
+            guard let token = await SpotifyAuth.shared.validAccessToken(),
+                  let id = await SpotifyClient.playback(token: token)?.trackID
+            else { return }
+            let saved = await SpotifyClient.isSaved(trackID: id, token: token)
+            await MainActor.run { [weak self] in
+                guard let self, self.isFavorite != saved else { return }
+                self.isFavorite = saved
+            }
+        }
+    }
+
+    /// One fire-and-forget script, off the main thread, reporting whether it
+    /// ran without an error.
+    private func runScript(_ source: String, completion: @escaping (Bool) -> Void) {
+        guard controlAppIsRunning else {
+            completion(false)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            var error: NSDictionary?
+            NSAppleScript(source: source)?.executeAndReturnError(&error)
+            let ok = error == nil
+            DispatchQueue.main.async { completion(ok) }
+        }
+    }
+
+    private static func scriptString(_ source: String) -> String? {
+        var error: NSDictionary?
+        let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
+        guard error == nil else { return nil }
+        return result?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func runProviderCommand(appName: String, command: String) {
         guard fallbackAppIsRunning,
               let script = NSAppleScript(source: "tell application \"\(appName)\" to \(command)")
@@ -559,6 +700,7 @@ final class MediaController {
                 lyrics.clear()
             }
             refreshSpotifyDetail(for: track)
+            refreshShuffleAndFavorite()
         } else {
             lyrics.clear()
             artwork = nil

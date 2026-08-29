@@ -7,82 +7,53 @@ struct ShelfView: View {
     let shelf: ShelfController
 
     var body: some View {
-        VStack(spacing: 0) {
-            if shelf.items.isEmpty {
-                emptyState
-            } else {
-                VStack(spacing: 8) {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(shelf.items) { item in
-                                ShelfItemCard(item: item, shelf: shelf)
-                            }
+        VStack(alignment: .leading, spacing: NotchTheme.Space.m) {
+            ScreenHeader("Shelf", subtitle: subtitle) {
+                if !shelf.items.isEmpty {
+                    HStack(spacing: NotchTheme.Space.s) {
+                        ScreenTextButton(
+                            title: "AirDrop All",
+                            systemImage: "airplane.circle.fill",
+                            isProminent: true
+                        ) {
+                            shelf.airDropAll()
                         }
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 2)
+
+                        ScreenTextButton(title: "Clear", systemImage: "xmark.circle") {
+                            withAnimation(.notchSpring) { shelf.clear() }
+                        }
                     }
-                    footer
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+
+            if shelf.items.isEmpty {
+                ScreenEmptyState(
+                    symbol: "tray",
+                    title: "Nothing on the shelf",
+                    caption: "Drag files onto the notch to park them here"
+                )
+                .notchCard()
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: NotchTheme.Space.m) {
+                        ForEach(shelf.items) { item in
+                            ShelfItemCard(item: item, shelf: shelf)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 2)
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
-        .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.white.opacity(0.035))
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.notchSpring, value: shelf.items)
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "tray")
-                .font(.system(size: 36, weight: .ultraLight))
-                .foregroundStyle(NotchTheme.inkMuted)
-            Text("No Active Files or Shelf Items")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(NotchTheme.inkSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var footer: some View {
-        HStack {
-            Button {
-                shelf.airDropAll()
-            } label: {
-                Label("AirDrop All", systemImage: "airplane.circle.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(.blue))
-                    .foregroundStyle(.white)
-            }
-            .buttonStyle(PressableButtonStyle())
-            .hoverLift(1.04)
-
-            Spacer()
-
-            Text("\(shelf.items.count) item\(shelf.items.count == 1 ? "" : "s")")
-                .font(.system(size: 10.5).monospacedDigit())
-                .foregroundStyle(NotchTheme.inkMuted)
-
-            Button {
-                withAnimation(.notchSpring) {
-                    shelf.clear()
-                }
-            } label: {
-                Label("Clear", systemImage: "xmark.circle")
-                    .font(.system(size: 11, weight: .semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(NotchTheme.surface))
-                    .foregroundStyle(NotchTheme.inkSecondary)
-            }
-            .buttonStyle(PressableButtonStyle())
-            .hoverLift(1.04)
-        }
+    private var subtitle: String {
+        let count = shelf.items.count
+        guard count > 0 else { return "Drop files to keep them close" }
+        return "\(count) item\(count == 1 ? "" : "s") · drag one out to move it"
     }
 }
 
@@ -93,31 +64,34 @@ private struct ShelfItemCard: View {
     @State private var hovering = false
 
     var body: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 6) {
             Image(nsImage: item.icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 38, height: 38)
-                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: NotchTheme.Radius.thumb, style: .continuous))
                 .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
 
             Text(item.name)
-                .font(.system(size: 10, weight: .medium))
+                .font(.notchCaption)
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
             Text(item.detail)
-                .font(.system(size: 9.5))
+                .font(.notchFootnote)
                 .foregroundStyle(NotchTheme.inkMuted)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
-        .frame(width: 92)
-        .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(hovering ? NotchTheme.surfaceHover : NotchTheme.surface)
+        .padding(.horizontal, NotchTheme.Space.s)
+        .padding(.vertical, 10)
+        .frame(width: 104)
+        .notchCard(radius: NotchTheme.Radius.tile)
+        .overlay {
+            if hovering {
+                RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
+                    .strokeBorder(.white.opacity(0.18), lineWidth: 1)
+            }
         }
         .overlay(alignment: .topTrailing) {
             if hovering {
@@ -127,7 +101,7 @@ private struct ShelfItemCard: View {
                     }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
+                        .font(.system(size: 14))
                         .foregroundStyle(.white, .black.opacity(0.6))
                 }
                 .buttonStyle(.plain)

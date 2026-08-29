@@ -15,13 +15,26 @@ struct HomeDashboardView: View {
     let namespace: Namespace.ID
 
     var body: some View {
-        HStack(alignment: .center, spacing: 26) {
+        // Hairlines rather than more air between the three: the sections have
+        // very different natural widths, so equal gaps still read as uneven —
+        // "weather too close to the calendar, too far from the music" was
+        // exactly that. A rule makes each gap deliberate and identical.
+        HStack(alignment: .center, spacing: NotchTheme.Space.xl) {
             musicSection
+            columnDivider
             weatherSection
+            columnDivider
             calendarSection
         }
         .fixedSize(horizontal: true, vertical: false)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+
+    private var columnDivider: some View {
+        Rectangle()
+            .fill(NotchTheme.hairline)
+            .frame(width: 1, height: 74)
+            .accessibilityHidden(true)
     }
 
     // MARK: - Music
@@ -311,7 +324,7 @@ struct HomeDashboardView: View {
 
             if let event {
                 Text(event.start.formatted(date: .omitted, time: .shortened))
-                    .font(.system(size: 13, weight: .heavy, design: .rounded).monospacedDigit())
+                    .font(.notchBody.weight(.heavy).monospacedDigit())
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .fixedSize()
                 Text(event.title)
@@ -324,7 +337,7 @@ struct HomeDashboardView: View {
                 Text(state.calendar.accessState == .granted
                      ? "No more items today"
                      : "Calendar access off")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .font(.notchBody.weight(.medium))
                     .fixedSize()
                     .foregroundStyle(NotchTheme.inkSecondary)
             }

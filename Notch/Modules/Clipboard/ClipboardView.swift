@@ -6,63 +6,57 @@ struct ClipboardView: View {
     let clipboard: ClipboardManager
 
     var body: some View {
-        if !NotchSettings.shared.clipboardHistoryEnabled {
-            emptyState(
-                icon: "clipboard",
-                title: "Clipboard history is off",
-                caption: "Turn it on in Settings → Activities"
-            )
-        } else if clipboard.entries.isEmpty {
-            emptyState(
-                icon: "doc.on.clipboard",
-                title: "Nothing copied yet",
-                caption: "Copies you make will collect here"
-            )
-        } else {
-            VStack(spacing: 8) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 9) {
-                        ForEach(clipboard.entries) { entry in
-                            ClipboardCard(entry: entry, clipboard: clipboard)
-                        }
-                    }
-                    .padding(.horizontal, 2)
-                    .padding(.vertical, 3)
-                }
-
-                HStack {
-                    Text("\(clipboard.entries.count) item\(clipboard.entries.count == 1 ? "" : "s")")
-                        .font(.system(size: 10).monospacedDigit())
-                        .foregroundStyle(NotchTheme.inkMuted)
-                    Spacer()
-                    Button("Clear unpinned") {
+        VStack(alignment: .leading, spacing: NotchTheme.Space.m) {
+            ScreenHeader("Clipboard", subtitle: subtitle) {
+                if !clipboard.entries.isEmpty {
+                    ScreenTextButton(title: "Clear Unpinned", systemImage: "trash") {
                         withAnimation(NotchAnimations.content) {
                             clipboard.clearUnpinned()
                         }
                     }
-                    .buttonStyle(PressableButtonStyle())
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(NotchTheme.inkSecondary)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .animation(NotchAnimations.content, value: clipboard.entries)
+
+            content
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .animation(NotchAnimations.content, value: clipboard.entries)
     }
 
-    private func emptyState(icon: String, title: String, caption: String) -> some View {
-        VStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 22, weight: .light))
-                .foregroundStyle(NotchTheme.inkMuted)
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(NotchTheme.inkSecondary)
-            Text(caption)
-                .font(.system(size: 10.5))
-                .foregroundStyle(NotchTheme.inkMuted)
+    private var subtitle: String {
+        guard NotchSettings.shared.clipboardHistoryEnabled else { return "History is off" }
+        let count = clipboard.entries.count
+        guard count > 0 else { return "Nothing copied yet" }
+        let pinned = clipboard.entries.filter(\.isPinned).count
+        let items = "\(count) item\(count == 1 ? "" : "s")"
+        return pinned > 0 ? items + " · \(pinned) pinned" : items
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if !NotchSettings.shared.clipboardHistoryEnabled {
+            ScreenEmptyState(
+                symbol: "clipboard",
+                title: "Clipboard history is off",
+                caption: "Turn it on in Settings → Activities"
+            )
+        } else if clipboard.entries.isEmpty {
+            ScreenEmptyState(
+                symbol: "doc.on.clipboard",
+                title: "Nothing copied yet",
+                caption: "Copies you make will collect here"
+            )
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: NotchTheme.Space.m) {
+                    ForEach(clipboard.entries) { entry in
+                        ClipboardCard(entry: entry, clipboard: clipboard)
+                    }
+                }
+                .padding(.horizontal, 2)
+                .padding(.vertical, 3)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -74,37 +68,42 @@ private struct ClipboardCard: View {
     @State private var justCopied = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: NotchTheme.Space.xs) {
+            HStack(spacing: 5) {
                 if entry.isPinned {
                     Image(systemName: "pin.fill")
-                        .font(.system(size: 8))
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.orange)
                 }
+
                 Text(entry.copiedAt, style: .relative)
-                    .font(.system(size: 8.5))
+                    .font(.notchFootnote)
                     .foregroundStyle(NotchTheme.inkMuted)
                     .lineLimit(1)
+
                 Spacer(minLength: 0)
-                if justCopied {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundStyle(NotchTheme.battery)
-                }
+
+                Image(systemName: justCopied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(justCopied ? NotchTheme.battery : NotchTheme.inkMuted)
+                    .opacity(justCopied || hovering ? 1 : 0)
             }
 
             Text(entry.text.trimmingCharacters(in: .whitespacesAndNewlines))
-                .font(.system(size: 10.5))
+                .font(.notchCaption)
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .lineLimit(4)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(9)
-        .frame(width: 132, height: 84, alignment: .topLeading)
-        .background {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(hovering ? NotchTheme.surfaceHover : NotchTheme.surface)
+        .padding(11)
+        .frame(width: 152, height: 96, alignment: .topLeading)
+        .notchCard(radius: NotchTheme.Radius.tile, isHighlighted: entry.isPinned, tint: .orange)
+        .overlay {
+            if hovering, !entry.isPinned {
+                RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
+                    .strokeBorder(.white.opacity(0.18), lineWidth: 1)
+            }
         }
         .onHover { isHovering in
             withAnimation(NotchAnimations.content) { hovering = isHovering }

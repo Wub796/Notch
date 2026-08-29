@@ -96,7 +96,7 @@ struct WeatherDetailView: View {
 
                 Text("H: \(WeatherService.temperatureString(celsius: weather.highCelsius))  "
                      + "L: \(WeatherService.temperatureString(celsius: weather.lowCelsius))")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+                    .font(.notchBody.monospacedDigit())
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .fixedSize()
                     .padding(.top, 6)
@@ -119,7 +119,7 @@ struct WeatherDetailView: View {
                 .font(.system(size: 12))
                 .symbolRenderingMode(.multicolor)
             Text(text)
-                .font(.system(size: 12.5, weight: .semibold, design: .rounded).monospacedDigit())
+                .font(.notchCallout.weight(.semibold).monospacedDigit())
                 .foregroundStyle(NotchTheme.inkSecondary)
                 .fixedSize()
         }
@@ -196,7 +196,7 @@ struct WeatherDetailView: View {
     ) -> some View {
         VStack(spacing: 6) {
             Text(caption)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .font(.notchBody.weight(.bold))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .fixedSize()
 

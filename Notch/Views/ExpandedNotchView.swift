@@ -29,6 +29,13 @@ struct ExpandedNotchView: View {
             DetailHeaderView(state: state) {
                 calendarHeaderTrailing
             }
+        case .audio:
+            // The Devices screen draws its own title and section switch, so
+            // the strip carries only the way back — the module rail here would
+            // have been a second, competing set of destinations.
+            DetailHeaderView(state: state) {
+                EmptyView()
+            }
         default:
             NotchTopBarView(state: state)
         }
@@ -51,7 +58,7 @@ struct ExpandedNotchView: View {
                     .foregroundStyle(NotchTheme.inkPrimary)
             }
             Text(state.media.sourceAppName ?? "Not Playing")
-                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .font(.notchFootnote.weight(.semibold))
                 .foregroundStyle(NotchTheme.inkPrimary)
         }
         .padding(.horizontal, 10)
@@ -85,7 +92,7 @@ struct ExpandedNotchView: View {
     ) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 10, weight: .heavy, design: .rounded))
+                .font(.notchEyebrow)
                 .tracking(0.6)
                 .foregroundStyle(isActive ? NotchTheme.inkPrimary : NotchTheme.inkMuted)
                 .padding(.horizontal, 9)
@@ -121,7 +128,7 @@ struct ExpandedNotchView: View {
                 state.calendar.moveSelectedDay(to: Date())
             } label: {
                 Text("Today")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.notchBody.weight(.bold))
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .contentShape(Rectangle())
             }
@@ -170,24 +177,24 @@ struct DropZoneView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.notchBody)
                     .foregroundStyle(NotchTheme.inkPrimary)
                 Text(instantAirDrop
                     ? "Files and text are sent immediately"
                     : "Items stay until you send or clear them")
-                    .font(.system(size: 10.5))
+                    .font(.notchCaption)
                     .foregroundStyle(NotchTheme.inkSecondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: NotchTheme.Radius.card, style: .continuous)
                 .strokeBorder(
                     .blue.opacity(0.7),
                     style: StrokeStyle(lineWidth: 1.5, dash: [7, 5], dashPhase: dashPhase)
                 )
                 .background {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: NotchTheme.Radius.card, style: .continuous)
                         .fill(.blue.opacity(0.08))
                 }
         }

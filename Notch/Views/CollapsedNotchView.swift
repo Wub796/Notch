@@ -23,7 +23,7 @@ struct CollapsedNotchView: View {
                     musicWings
                         .frame(height: state.adjustedNotchSize.height)
                     Text(line)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.notchBody.weight(.bold))
                         .foregroundStyle(state.media.accent)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -81,12 +81,12 @@ struct CollapsedNotchView: View {
                     leading: Text(charging
                                   ? "Charging"
                                   : (low ? "Low Battery" : "On Battery"))
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.notchBody.weight(.bold))
                         .foregroundStyle(low ? .red : NotchTheme.inkPrimary)
                         .fixedSize(),
                     trailing: HStack(spacing: 5) {
                         Text("\(percent)%")
-                            .font(.system(size: 13, weight: .bold, design: .rounded)
+                            .font(.notchBody.weight(.bold)
                                 .monospacedDigit())
                             .contentTransition(.numericText())
                             .fixedSize()
@@ -210,7 +210,7 @@ struct CollapsedNotchView: View {
                 .frame(width: 20)
 
             Text(label)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .font(.notchBody.weight(.bold))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -219,7 +219,7 @@ struct CollapsedNotchView: View {
 
             if let value {
                 Text(value)
-                    .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.notchBody.weight(.bold).monospacedDigit())
                     .foregroundStyle(tint)
                     .contentTransition(.numericText())
                     .fixedSize()
@@ -314,12 +314,12 @@ struct CollapsedNotchView: View {
         Group {
             if let weather = state.weather.snapshot {
                 Text(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
-                    .font(.system(size: 15, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.notchHeadline.monospacedDigit())
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .contentTransition(.numericText())
             } else {
                 Text("--°")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.notchHeadline)
                     .foregroundStyle(NotchTheme.inkMuted)
             }
         }

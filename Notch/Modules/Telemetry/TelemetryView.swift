@@ -10,10 +10,34 @@ struct TelemetryView: View {
     let telemetry: TelemetryController
 
     var body: some View {
+        VStack(alignment: .leading, spacing: NotchTheme.Space.m) {
+            ScreenHeader("System", subtitle: subtitle)
+
+            gauges
+                .padding(.horizontal, NotchTheme.Space.l)
+                .padding(.vertical, NotchTheme.Space.m)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .notchCard()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// CPU, memory and battery at a glance, with the numbers that only make
+    /// sense as text beside them.
+    private var subtitle: String {
+        var parts = ["CPU \(percentString(telemetry.cpuUsage))",
+                     "Memory \(percentString(telemetry.memoryPressure))"]
+        if telemetry.hasBattery {
+            parts.append("Battery \(percentString(telemetry.batteryPercent))")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private var gauges: some View {
         // Every column is a fixed width: the gauges are already fixed, and the
         // tiles beside them are pinned above, so nothing here reflows as the
         // numbers change.
-        HStack(alignment: .center, spacing: 22) {
+        HStack(alignment: .center, spacing: NotchTheme.Space.xl) {
             VStack(spacing: 6) {
                 CircularGaugeView(
                     value: telemetry.cpuUsage,
@@ -89,18 +113,18 @@ struct TelemetryView: View {
     ) -> some View {
         HStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(tint)
-                .frame(width: 16)
+                .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(value)
-                    .font(.system(size: 13, weight: .bold).monospacedDigit())
+                    .font(.notchBody.weight(.bold).monospacedDigit())
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .contentTransition(.numericText())
                     .animation(.notchSpring, value: value)
                     .lineLimit(1)
                 Text(label)
-                    .font(.system(size: 10))
+                    .font(.notchFootnote)
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .lineLimit(1)
             }
@@ -124,8 +148,6 @@ struct TelemetryView: View {
     static func speedString(_ bytesPerSecond: Double) -> String {
         let rate = max(bytesPerSecond, 0)
         switch rate {
-        case ..<1_024:
-            return String(format: "%.1f KB/s", rate / 1_024)
         case ..<(1_024 * 1_024):
             return String(format: "%.1f KB/s", rate / 1_024)
         case ..<(1_024 * 1_024 * 1_024):

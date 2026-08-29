@@ -14,8 +14,6 @@ struct MediaPlayerView: View {
 
     private var media: MediaController { state.media }
 
-    @State private var isFavorite = false
-    @State private var shuffleOn = false
 
     var body: some View {
         // Budget: `NotchState.moduleContentSize`, about 498 x 250. Header 78,
@@ -83,12 +81,12 @@ struct MediaPlayerView: View {
                 .lineLimit(2)
         } else if let followers = media.followersLabel {
             Text(followers)
-                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                .font(.notchCaption.weight(.semibold))
                 .foregroundStyle(NotchTheme.inkMuted)
                 .lineLimit(1)
         } else if let album = media.track?.album, !album.isEmpty {
             Text(album)
-                .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                .font(.notchCaption)
                 .foregroundStyle(NotchTheme.inkSecondary)
                 .lineLimit(1)
         }
@@ -117,7 +115,7 @@ struct MediaPlayerView: View {
                         .tracking(0.8)
                         .foregroundStyle(NotchTheme.inkMuted)
                     Text(next.title)
-                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                        .font(.notchCaption.weight(.bold))
                         .foregroundStyle(NotchTheme.inkPrimary)
                         .lineLimit(1)
                     Text(next.artist)
@@ -128,14 +126,7 @@ struct MediaPlayerView: View {
                 .frame(width: 96, alignment: .leading)
             }
             .padding(6)
-            .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(NotchTheme.surface)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.white.opacity(0.12), lineWidth: 1)
-            }
+            .notchCard(radius: NotchTheme.Radius.tile)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Up next: \(next.title) by \(next.artist)")
         }
@@ -175,7 +166,7 @@ struct MediaPlayerView: View {
                 .background(Circle().fill(NotchTheme.surfaceHover))
 
             Text(media.track?.artist ?? "Unknown Artist")
-                .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                .font(.notchCallout.weight(.bold))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .lineLimit(1)
 
@@ -211,7 +202,7 @@ struct MediaPlayerView: View {
         Group {
             if let current = media.lyrics.currentLine?.text, !current.isEmpty {
                 Text(current)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.notchBody.weight(.bold))
                     .foregroundStyle(media.accent)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
@@ -225,7 +216,7 @@ struct MediaPlayerView: View {
             } else if !media.lyrics.lines.isEmpty {
                 // Unsynced lyrics: show the opening line rather than nothing.
                 Text(media.lyrics.lines[0].text)
-                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                    .font(.notchCallout.weight(.semibold))
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .lineLimit(1)
             } else {
@@ -299,27 +290,33 @@ struct MediaPlayerView: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// Both of these reach the player. The heart is Music's `loved` flag, or
+    /// Spotify's Liked Songs when an account is connected — it is disabled
+    /// rather than decorative when neither is available, because a control
+    /// that only changes its own colour is worse than one that is greyed out.
     private var bottomActions: some View {
         HStack(spacing: 24) {
             transportIcon(
-                isFavorite ? "heart.fill" : "heart",
+                media.isFavorite ? "heart.fill" : "heart",
                 size: 14,
-                label: isFavorite ? "Remove from favorites" : "Favorite",
-                tint: isFavorite ? .red : nil
+                label: media.isFavorite ? "Remove from favourites" : "Add to favourites",
+                tint: media.isFavorite ? .red : nil,
+                isEnabled: media.canFavorite
             ) {
                 withAnimation(NotchAnimations.content) {
-                    isFavorite.toggle()
+                    media.toggleFavorite()
                 }
             }
 
             transportIcon(
-                shuffleOn ? "shuffle.fill" : "shuffle",
+                media.isShuffling ? "shuffle.circle.fill" : "shuffle",
                 size: 14,
-                label: shuffleOn ? "Turn off shuffle" : "Shuffle",
-                tint: shuffleOn ? .blue : nil
+                label: media.isShuffling ? "Turn off shuffle" : "Shuffle",
+                tint: media.isShuffling ? .blue : nil,
+                isEnabled: media.canControlTransport
             ) {
                 withAnimation(NotchAnimations.content) {
-                    shuffleOn.toggle()
+                    media.toggleShuffle()
                 }
             }
         }
