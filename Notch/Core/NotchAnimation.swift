@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Animation personality, selectable in Settings (profile tables adapted from
 /// Sapphire's NotchConfiguration).
-enum AnimationProfile: String, CaseIterable, Identifiable {
+enum AnimationProfile: String, CaseIterable, Identifiable, Hashable, Sendable {
     case snappy
     case bouncy
     case calm
@@ -19,27 +19,28 @@ enum AnimationProfile: String, CaseIterable, Identifiable {
     }
 }
 
-/// Per-gesture springs: expansion overshoots, collapse settles hard, hover is
-/// quick, content transitions are fully damped. All collapse to a short ease
-/// under Reduce Motion.
+/// Per-gesture springs: longer response and heavier damping than classic
+/// springs so the notch glides instead of snapping, with only a gentle
+/// overshoot on expansion. All collapse to a short ease under Reduce Motion.
 enum NotchAnimations {
     private static var reduceMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
     private static var profile: AnimationProfile {
-        AnimationProfile(rawValue: NotchSettings.shared.animationProfile) ?? .snappy
+        NotchSettings.shared.animationProfile
     }
 
     private static let reduced = Animation.easeOut(duration: 0.15)
 
-    /// Opening into the full panel — the one gesture allowed to overshoot.
+    /// Opening into the full panel — a glide with a soft settle and just a
+    /// hint of overshoot.
     static var expand: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.4, dampingFraction: 0.55)
-        case .bouncy: return .spring(response: 0.4, dampingFraction: 0.5)
-        case .calm: return .spring(response: 0.7, dampingFraction: 0.9)
+        case .snappy: return .spring(response: 0.5, dampingFraction: 0.7)
+        case .bouncy: return .spring(response: 0.55, dampingFraction: 0.6)
+        case .calm: return .spring(response: 0.7, dampingFraction: 0.92)
         }
     }
 
@@ -47,9 +48,9 @@ enum NotchAnimations {
     static var collapse: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.3, dampingFraction: 0.98)
-        case .bouncy: return .spring(response: 0.3, dampingFraction: 0.85)
-        case .calm: return .spring(response: 0.5, dampingFraction: 0.95)
+        case .snappy: return .spring(response: 0.4, dampingFraction: 0.95)
+        case .bouncy: return .spring(response: 0.4, dampingFraction: 0.85)
+        case .calm: return .spring(response: 0.55, dampingFraction: 0.98)
         }
     }
 
@@ -57,19 +58,19 @@ enum NotchAnimations {
     static var hover: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.25, dampingFraction: 0.55)
-        case .bouncy: return .spring(response: 0.25, dampingFraction: 0.45)
-        case .calm: return .spring(response: 0.5, dampingFraction: 1.0)
+        case .snappy: return .spring(response: 0.3, dampingFraction: 0.7)
+        case .bouncy: return .spring(response: 0.3, dampingFraction: 0.6)
+        case .calm: return .spring(response: 0.45, dampingFraction: 0.95)
         }
     }
 
-    /// Tab switches, gauge fills, lyric moves — damped, no wobble.
+    /// Tab switches, gauge fills, lyric moves — fully damped, no wobble.
     static var content: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.45, dampingFraction: 1.0)
-        case .bouncy: return .spring(response: 0.55, dampingFraction: 0.85)
-        case .calm: return .spring(response: 0.75, dampingFraction: 0.9)
+        case .snappy: return .spring(response: 0.5, dampingFraction: 0.95)
+        case .bouncy: return .spring(response: 0.6, dampingFraction: 0.85)
+        case .calm: return .spring(response: 0.7, dampingFraction: 0.98)
         }
     }
 
@@ -77,8 +78,8 @@ enum NotchAnimations {
     static var activity: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.4, dampingFraction: 0.98)
-        case .bouncy: return .spring(response: 0.4, dampingFraction: 0.8)
+        case .snappy: return .spring(response: 0.45, dampingFraction: 0.95)
+        case .bouncy: return .spring(response: 0.45, dampingFraction: 0.8)
         case .calm: return .spring(response: 0.6, dampingFraction: 0.98)
         }
     }

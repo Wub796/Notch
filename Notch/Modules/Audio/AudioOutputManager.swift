@@ -46,6 +46,23 @@ final class AudioOutputManager {
         currentDeviceID = Self.defaultOutputDevice()
     }
 
+    /// The glyph for the current output device, or a generic speaker.
+    var currentSymbol: String {
+        devices.first { $0.id == currentDeviceID }?.symbolName ?? "speaker.wave.2.fill"
+    }
+
+    /// Cycles the default output to the next available device.
+    func cycleToNextDevice() {
+        if devices.isEmpty {
+            refresh()
+        }
+        let list = devices
+        guard list.count > 1,
+              let index = list.firstIndex(where: { $0.id == currentDeviceID })
+        else { return }
+        select(list[(index + 1) % list.count])
+    }
+
     /// Switches the system default output (and the default for new system
     /// sounds along with it).
     func select(_ device: Device) {
@@ -131,12 +148,13 @@ final class AudioOutputManager {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        var name: CFString = "" as CFString
-        var size = UInt32(MemoryLayout<CFString>.size)
-        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &name) == noErr else {
+        var name: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &name) == noErr,
+              let name else {
             return nil
         }
-        let resolved = name as String
+        let resolved = name.takeUnretainedValue() as String
         return resolved.isEmpty ? nil : resolved
     }
 

@@ -17,6 +17,11 @@ final class LyricsEngine {
     private(set) var isSynced = false
     private(set) var isLoading = false
 
+    var currentLine: Line? {
+        guard let currentIndex, lines.indices.contains(currentIndex) else { return nil }
+        return lines[currentIndex]
+    }
+
     private var loadedTrackKey: String?
     private var fetchTask: Task<Void, Never>?
 

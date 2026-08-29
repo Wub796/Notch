@@ -1,9 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// Collapsed and peek states: pure black, hugging the hardware notch, with
-/// live-activity wings — now playing, a volume HUD, battery events, or an
-/// imminent meeting — appearing around the camera housing.
+/// Collapsed and peek states: glass, hugging the hardware notch, with
+/// live-activity wings — the weather glyph on the left and its bold
+/// temperature on the right, now playing, a volume HUD, battery events,
+/// or an imminent meeting.
 struct CollapsedNotchView: View {
     let state: NotchState
     let namespace: Namespace.ID
@@ -83,8 +84,8 @@ struct CollapsedNotchView: View {
                     )
                 }
             case nil:
-                if state.settings.showIdleFace {
-                    idleFaceWing
+                if state.settings.showCompactWeather {
+                    compactWeatherWing
                 } else {
                     Color.clear
                 }
@@ -93,19 +94,65 @@ struct CollapsedNotchView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var idleFaceWing: some View {
+    private var compactWeatherWing: some View {
         ActivityWingLayout(
             notchWidth: state.notchSize.width,
-            leading: Color.clear.frame(width: 1),
-            trailing: IdleFaceView()
+            leading: weatherIcon,
+            trailing: weatherTemperature
+        )
+    }
+
+    /// The condition glyph, on the left of the hardware notch.
+    private var weatherIcon: some View {
+        Group {
+            if let weather = state.weather.snapshot {
+                Image(systemName: WeatherService.symbol(
+                    for: weather.weatherCode,
+                    isDay: weather.isDay
+                ))
+                .font(.system(size: 13, weight: .semibold))
+                .symbolRenderingMode(.multicolor)
+            } else {
+                Image(systemName: "cloud.sun.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(NotchTheme.inkMuted)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// The bold temperature readout, on the right of the hardware notch.
+    private var weatherTemperature: some View {
+        Group {
+            if let weather = state.weather.snapshot {
+                Text(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
+                    .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(NotchTheme.inkPrimary)
+                    .contentTransition(.numericText())
+            } else {
+                Text("--°")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(NotchTheme.inkMuted)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Current weather")
+        .accessibilityValue(
+            state.weather.snapshot.map {
+                WeatherService.temperatureString(celsius: $0.temperatureCelsius)
+                + ", " + WeatherService.condition(for: $0.weatherCode)
+            } ?? "Unavailable"
         )
     }
 
     private var musicWings: some View {
         ActivityWingLayout(
             notchWidth: state.notchSize.width,
-            leading: miniArtwork,
-            trailing: AudioBarsView(isAnimating: state.media.isPlaying, tint: state.media.accent)
+            leading: HStack(spacing: 8) {
+                miniArtwork
+                weatherIcon
+            },
+            trailing: weatherTemperature
         )
     }
 
@@ -129,52 +176,5 @@ struct CollapsedNotchView: View {
         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .accessibilityHidden(true)
-    }
-}
-
-/// Minimal four-bar equalizer shown in the right wing, tinted with the
-/// artwork accent; freezes at rest heights while paused. Purely decorative:
-/// hidden from accessibility, and held static under Reduce Motion.
-struct AudioBarsView: View {
-    let isAnimating: Bool
-    let tint: Color
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var animate = false
-
-    private let barHeights: [CGFloat] = [10, 16, 7, 13]
-
-    private var shouldAnimate: Bool {
-        isAnimating && !reduceMotion
-    }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 2.5) {
-            ForEach(barHeights.indices, id: \.self) { index in
-                Capsule()
-                    .fill(tint)
-                    .frame(width: 2.5, height: barHeight(index))
-                    .animation(
-                        shouldAnimate
-                            ? .easeInOut(duration: 0.45)
-                                .repeatForever(autoreverses: true)
-                                .delay(Double(index) * 0.12)
-                            : .default,
-                        value: animate
-                    )
-            }
-        }
-        .frame(height: 16)
-        .accessibilityHidden(true)
-        .onAppear { animate = shouldAnimate }
-        .onChange(of: shouldAnimate) { _, animating in
-            animate = animating
-        }
-    }
-
-    private func barHeight(_ index: Int) -> CGFloat {
-        if animate { return barHeights[index] }
-        // Reduce Motion while playing: hold mid heights instead of pulsing.
-        return isAnimating ? barHeights[index] * 0.6 : 4
     }
 }

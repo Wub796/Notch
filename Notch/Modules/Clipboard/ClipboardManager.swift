@@ -78,9 +78,10 @@ final class ClipboardManager {
     }
 
     private func trim() {
-        guard entries.count > Self.historyLimit else { return }
+        let capacity = NotchSettings.shared.clipboardMaxCapacity
+        guard entries.count > capacity else { return }
         var kept: [Entry] = []
-        for entry in entries where kept.count < Self.historyLimit || entry.isPinned {
+        for entry in entries where kept.count < capacity || entry.isPinned {
             kept.append(entry)
         }
         entries = kept

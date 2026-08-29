@@ -29,7 +29,7 @@ struct NotchGeometry {
             )
         }
         let width = screen.frame.width - leftArea.width - rightArea.width + 4
-        return CGSize(width: width, height: topInset)
+        return CGSize(width: min(max(width, 120), screen.frame.width - 40), height: topInset)
     }
 
     /// The screen the panel should live on: prefer a display with a physical

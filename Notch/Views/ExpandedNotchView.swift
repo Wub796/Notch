@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The expanded slab. A single clean surface: a strip of borderless icons
+/// The expanded slab. A single black surface: a strip of borderless icons
 /// flanking the hardware notch along the top, and the active module beneath
 /// it. No dividers, no centered controls.
 struct ExpandedNotchView: View {
@@ -9,8 +9,10 @@ struct ExpandedNotchView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NotchTopBarView(state: state)
-                .frame(height: max(state.notchSize.height, 28))
+            // Tall enough to drop the icons clear of the screen's top edge on
+            // every display, not just notched ones.
+            header
+                .frame(height: max(state.notchSize.height, 38))
 
             Group {
                 if state.isDropTargeted || state.shelf.isResolvingDrop {
@@ -23,35 +25,32 @@ struct ExpandedNotchView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 20)
-            .padding(.top, 6)
-            .padding(.bottom, 14)
+            .padding(.horizontal, 42)
+            .padding(.top, 18)
+            .padding(.bottom, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // Everything stays inside the slab, whatever a module reports.
         .clipped()
-        .background {
-            // Ambient backdrop on media-bearing tabs: the artwork itself,
-            // blurred into a glow behind the glass.
-            if state.tab == .home || state.tab == .media {
-                Group {
-                    if let artwork = state.media.artwork {
-                        Image(nsImage: artwork)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .blur(radius: 70)
-                            .saturation(1.6)
-                            .opacity(0.2)
-                    } else {
-                        Ellipse()
-                            .fill(state.media.accent)
-                            .opacity(0.08)
-                            .blur(radius: 60)
-                    }
-                }
-                .allowsHitTesting(false)
-                .transition(.opacity)
+    }
+
+    @ViewBuilder
+    private var header: some View {
+        switch state.tab {
+        case .media:
+            DetailHeaderView(state: state) {
+                sourcePill
             }
+        case .weather:
+            DetailHeaderView(state: state) {
+                weatherHeaderTrailing
+            }
+        case .calendar:
+            DetailHeaderView(state: state) {
+                calendarHeaderTrailing
+            }
+        default:
+            NotchTopBarView(state: state)
         }
     }
 
@@ -62,16 +61,19 @@ struct ExpandedNotchView: View {
             HomeDashboardView(state: state, namespace: namespace)
                 .transition(.opacity)
         case .media:
-            MediaPlayerView(media: state.media, namespace: namespace)
+            MediaPlayerView(state: state, namespace: namespace)
+                .transition(.opacity)
+        case .weather:
+            WeatherDetailView(state: state)
+                .transition(.opacity)
+        case .calendar:
+            CalendarDetailView(state: state)
                 .transition(.opacity)
         case .shelf:
             ShelfView(shelf: state.shelf)
                 .transition(.opacity)
         case .clipboard:
             ClipboardView(clipboard: state.clipboard)
-                .transition(.opacity)
-        case .calendar:
-            CalendarView(calendar: state.calendar)
                 .transition(.opacity)
         case .tools:
             ToolsView(state: state)
@@ -83,6 +85,103 @@ struct ExpandedNotchView: View {
             TelemetryView(telemetry: state.telemetry)
                 .transition(.opacity)
         }
+    }
+
+    // MARK: - Detail headers
+
+    /// The media header's right-hand pill: source app icon + name, standing in
+    /// for the reference's play-count pill.
+    private var sourcePill: some View {
+        HStack(spacing: 6) {
+            if let icon = state.media.sourceAppIcon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 14, height: 14)
+                    .clipShape(Circle())
+            } else {
+                Image(systemName: state.media.isPlaying ? "play.fill" : "music.note")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(NotchTheme.inkPrimary)
+            }
+            Text(state.media.sourceAppName ?? "Not Playing")
+                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(NotchTheme.inkPrimary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(.white.opacity(0.12)))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Source: \(state.media.sourceAppName ?? "none")")
+    }
+
+    private var weatherHeaderTrailing: some View {
+        HStack(spacing: 8) {
+            Text(updatedLabel)
+                .font(.system(size: 9.5, weight: .medium, design: .rounded).monospacedDigit())
+                .foregroundStyle(NotchTheme.inkMuted)
+
+            NotchIconButton(systemImage: "arrow.clockwise", help: "Refresh weather") {
+                state.weather.refresh(force: true)
+            }
+        }
+    }
+
+    private var updatedLabel: String {
+        guard let snapshot = state.weather.snapshot else { return "No data yet" }
+        let ago = Date().timeIntervalSince(snapshot.fetchedAt)
+        if ago < 60 { return "Updated just now" }
+        return "Updated \(Int(ago / 60))m ago"
+    }
+
+    private var calendarHeaderTrailing: some View {
+        HStack(spacing: 12) {
+            NotchIconButton(
+                systemImage: state.calendar.isMonthView ? "square.grid.2x2.fill" : "square.grid.2x2",
+                isActive: state.calendar.isMonthView,
+                help: state.calendar.isMonthView ? "Show week view" : "Show month view"
+            ) {
+                state.calendar.isMonthView.toggle()
+            }
+            NotchIconButton(systemImage: "chevron.left", help: "Previous day") {
+                state.calendar.moveSelectedDay(by: -1)
+            }
+
+            TodayPillButton {
+                state.calendar.moveSelectedDay(to: Date())
+            }
+
+            NotchIconButton(systemImage: "chevron.right", help: "Next day") {
+                state.calendar.moveSelectedDay(by: 1)
+            }
+        }
+    }
+}
+
+/// Pill button that jumps the calendar selection to today.
+private struct TodayPillButton: View {
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text("Today")
+                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(.white.opacity(isHovering ? 0.2 : 0.12)))
+                .overlay {
+                    Capsule().strokeBorder(.white.opacity(isHovering ? 0.55 : 0.35), lineWidth: 0.75)
+                }
+        }
+        .buttonStyle(PressableButtonStyle())
+        .onHover { hovering in
+            withAnimation(NotchAnimations.content) {
+                isHovering = hovering
+            }
+        }
+        .help("Jump to today")
     }
 }
 

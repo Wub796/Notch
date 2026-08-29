@@ -17,12 +17,19 @@ struct SettingsView: View {
                 .tabItem { Label("Activities", systemImage: "bolt.badge.clock") }
             SystemSettingsPane()
                 .tabItem { Label("System", systemImage: "gauge.with.dots.needle.50percent") }
+            PrivacySettingsPane()
+                .tabItem { Label("Privacy", systemImage: "hand.raised") }
             ProSettingsPane()
                 .tabItem { Label("Pro", systemImage: "sparkles") }
             AboutSettingsPane()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 560, height: 470)
+        .frame(width: 580, height: 520)
+        // Match the notch's dark glass aesthetic.
+        .preferredColorScheme(.dark)
+        .onAppear {
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 }
 
@@ -36,23 +43,40 @@ private struct GeneralSettingsPane: View {
             Section {
                 Toggle("Launch at login", isOn: $settings.launchAtLogin)
                 Toggle("Haptic feedback", isOn: $settings.hapticsEnabled)
+                Toggle("Auto-collapse when mouse leaves", isOn: $settings.autoCollapseOnMouseExit)
+            } header: {
+                Label("Startup & Interaction", systemImage: "power")
             } footer: {
-                Text("Haptics play on the trackpad when the notch opens, closes, or receives a drop.")
+                Text("Haptics play on the trackpad when the notch opens, closes, or receives a file drop.")
             }
 
-            Section("Animation") {
+            Section {
                 Picker("Animation style", selection: $settings.animationProfile) {
                     ForEach(AnimationProfile.allCases) { profile in
-                        Text(profile.title).tag(profile.rawValue)
+                        Text(profile.title).tag(profile)
                     }
                 }
                 .pickerStyle(.segmented)
-                Text("Snappy is quick with a little spring, Bouncy overshoots playfully, Calm glides. The system Reduce Motion setting overrides all three.")
+
+                Text(animationDescription)
                     .font(.callout)
                     .foregroundStyle(.secondary)
+            } header: {
+                Label("Animation Personality", systemImage: "wand.and.stars")
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var animationDescription: String {
+        switch settings.animationProfile {
+        case .snappy:
+            "Snappy is quick and responsive with an energetic micro-spring."
+        case .bouncy:
+            "Bouncy playfully overshoots on expansion for a fluid, lively feel."
+        case .calm:
+            "Calm smoothly glides open with gentle, fully-damped transitions."
+        }
     }
 }
 
@@ -65,51 +89,67 @@ private struct NotchSettingsPane: View {
         Form {
             Section {
                 Toggle("Expand on hover", isOn: $settings.expandOnHover)
-                Toggle("Scroll on the notch to open it", isOn: $settings.scrollToExpand)
+                Toggle("Scroll on the notch to open/close", isOn: $settings.scrollToExpand)
+            } header: {
+                Label("Expansion Gestures", systemImage: "cursorarrow.click.2")
             } footer: {
-                Text("Hovering always makes the notch peek. A click opens it fully; with hover expansion on, lingering does too.")
+                Text("Hovering peeks the notch. A click opens it fully; with hover expansion on, lingering does too.")
             }
 
             if settings.expandOnHover {
-                Section("Timing") {
-                    delaySlider(
-                        "Open delay",
+                Section {
+                    sliderRow(
+                        title: "Open delay",
                         value: $settings.openDelay,
-                        range: 0 ... 0.5
+                        range: 0 ... 0.5,
+                        format: "%.2f s"
                     )
-                    delaySlider(
-                        "Close delay",
+                    sliderRow(
+                        title: "Close delay",
                         value: $settings.closeDelay,
-                        range: 0.2 ... 1.0
+                        range: 0.2 ... 1.0,
+                        format: "%.2f s"
                     )
+                } header: {
+                    Label("Hover Timing", systemImage: "timer")
+                } footer: {
+                    Text("Configures dwell time before the notch opens or closes on pointer hover.")
                 }
             }
 
             Section {
-                Toggle("Idle face", isOn: $settings.showIdleFace)
+                Toggle("Show weather in compact notch", isOn: $settings.showCompactWeather)
+
+                Picker("Temperature unit", selection: $settings.temperatureUnit) {
+                    ForEach(TemperatureUnit.allCases) { unit in
+                        Text(unit.title).tag(unit)
+                    }
+                }
+            } header: {
+                Label("Compact Notch", systemImage: "cloud.sun")
             } footer: {
-                Text("A tiny blinking companion in the notch wing when nothing else is happening.")
+                Text("When idle or playing music, the collapsed notch shows the weather condition icon and bold temperature.")
             }
+
         }
         .formStyle(.grouped)
     }
 
-    private func delaySlider(
-        _ title: String,
+    private func sliderRow(
+        title: String,
         value: Binding<Double>,
-        range: ClosedRange<Double>
+        range: ClosedRange<Double>,
+        format: String
     ) -> some View {
-        LabeledContent {
-            HStack(spacing: 10) {
-                Slider(value: value, in: range, step: 0.05)
-                    .frame(width: 180)
-                Text(String(format: "%.2f s", value.wrappedValue))
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 48, alignment: .trailing)
-            }
-        } label: {
+        HStack {
             Text(title)
+            Spacer()
+            Slider(value: value, in: range, step: 0.05)
+                .frame(width: 170)
+            Text(String(format: format, value.wrappedValue))
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 52, alignment: .trailing)
         }
     }
 }
@@ -121,19 +161,55 @@ private struct MediaSettingsPane: View {
 
     var body: some View {
         Form {
-            Section("Collapsed notch") {
-                Toggle("Artwork and equalizer while playing", isOn: $settings.showMediaWings)
-                Toggle("Live lyric line under the notch", isOn: $settings.lyricActivityEnabled)
-                Toggle("Announce new tracks", isOn: $settings.sneakPeekEnabled)
-                Text("New tracks scroll their title and artist through the notch for a few seconds, even while it's closed.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            Section {
+                Picker("Music source", selection: $settings.musicProvider) {
+                    ForEach(MusicProvider.allCases) { provider in
+                        Text(provider.title).tag(provider)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: settings.musicProvider) { _, newValue in
+                    // Choosing a player asks for control permission up front
+                    // so transport works on the first press.
+                    guard newValue != .automatic else { return }
+                    IntegrationPermissions.Integration.music.request {}
+                }
+            } header: {
+                Label("Integration", systemImage: "music.note")
+            } footer: {
+                Text("The notch follows and controls this player. Choosing one asks for control permission; denied access can be re-enabled in the Privacy tab.")
             }
 
             Section {
-                Toggle("Fetch synchronized lyrics", isOn: $settings.fetchLyrics)
+                Toggle("Artwork and weather wings while playing", isOn: $settings.showMediaWings)
+                Toggle("Live lyric line under the notch", isOn: $settings.lyricActivityEnabled)
+                Toggle("Announce new tracks (sneak peek)", isOn: $settings.sneakPeekEnabled)
+
+                if settings.sneakPeekEnabled {
+                    HStack {
+                        Text("Sneak peek duration")
+                        Spacer()
+                        Slider(value: $settings.sneakPeekDuration, in: 2.0 ... 8.0, step: 0.5)
+                            .frame(width: 170)
+                        Text(String(format: "%.1f s", settings.sneakPeekDuration))
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 52, alignment: .trailing)
+                    }
+                }
+            } header: {
+                Label("Collapsed Notch", systemImage: "music.note")
             } footer: {
-                Text("Lyrics are looked up on lrclib.net using the track title and artist. Tap a line to jump playback there.")
+                Text("New tracks briefly display the song title and artist in the closed notch wings.")
+            }
+
+            Section {
+                Toggle("Fetch synchronized lyrics from LRCLIB", isOn: $settings.fetchLyrics)
+                Toggle("Auto-scroll lyrics during playback", isOn: $settings.autoScrollLyrics)
+            } header: {
+                Label("Lyrics & Playback", systemImage: "quote.bubble")
+            } footer: {
+                Text("Lyrics are matched via track title and artist. Tap any line in the lyrics view to seek playback directly.")
             }
         }
         .formStyle(.grouped)
@@ -148,36 +224,134 @@ private struct ActivitiesSettingsPane: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Battery, lock, and meeting alerts", isOn: $settings.liveActivitiesEnabled)
-                Toggle("Volume changes", isOn: $settings.volumeHUDEnabled)
-                Toggle("Weather on the dashboard", isOn: $settings.showWeather)
-                Toggle("Battery percentage beside the icon", isOn: $settings.showBatteryPercentage)
-                Toggle("Desktop switches", isOn: $settings.desktopChangeEnabled)
+                Toggle("Battery charging and power events", isOn: $settings.liveActivitiesEnabled)
+                Toggle("Volume change HUD", isOn: $settings.volumeHUDEnabled)
+                Toggle("Desktop & Spaces switches", isOn: $settings.desktopChangeEnabled)
+                Toggle("Bluetooth accessories battery levels", isOn: $settings.showAccessoryBattery)
+                Toggle("Eye break reminders (20-20-20)", isOn: $settings.eyeBreakEnabled)
+                Toggle("Battery percentage beside the battery glyph", isOn: $settings.showBatteryPercentage)
+
+                Picker("Low battery warning threshold", selection: $settings.lowBatteryThreshold) {
+                    Text("10%").tag(10)
+                    Text("15%").tag(15)
+                    Text("20%").tag(20)
+                    Text("25%").tag(25)
+                }
             } header: {
-                Text("Live activities")
+                Label("Live Activities & Alerts", systemImage: "bolt.badge.clock")
             } footer: {
-                Text("These sources are event-driven — nothing polls in the background. Weather uses your approximate location via Open-Meteo. Monitor changes apply on next launch.")
+                Text("Live activities are event-driven and zero-polling. Monitor changes apply immediately.")
             }
 
             Section {
                 Toggle("Clipboard history", isOn: $settings.clipboardHistoryEnabled)
+                if settings.clipboardHistoryEnabled {
+                    Picker("Maximum history entries", selection: $settings.clipboardMaxCapacity) {
+                        Text("10 items").tag(10)
+                        Text("25 items").tag(25)
+                        Text("50 items").tag(50)
+                        Text("100 items").tag(100)
+                    }
+                }
             } header: {
-                Text("Clipboard")
+                Label("Clipboard", systemImage: "doc.on.clipboard")
             } footer: {
-                Text("macOS provides no clipboard-change notification, so this is the one feature that polls (once a second while enabled). Items marked concealed by password managers are ignored, and only pinned items are written to disk.")
+                Text("Concealed entries from password managers are excluded. Pinned entries persist across launches.")
             }
 
             Section {
                 Toggle("AirDrop dropped files immediately", isOn: $settings.instantAirDrop)
+                Toggle("Clear items from shelf after dragging out", isOn: $settings.autoClearShelf)
             } header: {
-                Text("Shelf")
+                Label("Shelf", systemImage: "tray.full")
             } footer: {
                 Text(settings.instantAirDrop
-                    ? "Files dropped on the notch go straight to AirDrop."
-                    : "Files dropped on the notch stay on the shelf: drag them out, AirDrop them, or double-click to open.")
+                    ? "Files dropped on the notch immediately trigger the system AirDrop share picker."
+                    : "Files dropped on the notch remain on the shelf for dragging, previewing, or AirDropping.")
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - Privacy / Permissions
+
+private struct PrivacySettingsPane: View {
+    @State private var refreshToken = 0
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(IntegrationPermissions.Integration.allCases) { integration in
+                    PermissionRow(integration: integration) {
+                        integration.request {
+                            refreshToken += 1
+                        }
+                    }
+                }
+            } header: {
+                Label("Integrations & Permissions", systemImage: "hand.raised.fill")
+            } footer: {
+                Text("Each integration asks once. Denied access can be re-enabled in System Settings → Privacy & Security.")
+            }
+        }
+        .formStyle(.grouped)
+        .id(refreshToken)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshToken += 1
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                refreshToken += 1
+            }
+        }
+    }
+}
+
+private struct PermissionRow: View {
+    let integration: IntegrationPermissions.Integration
+    let action: () -> Void
+
+    var body: some View {
+        let status = integration.status
+
+        HStack(spacing: 10) {
+            Image(systemName: integration.systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(statusColor(status))
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(integration.title)
+                    .fontWeight(.medium)
+                Text(integration.detail)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Text(status.title)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(statusColor(status))
+
+            Button(status == .denied ? "Open Settings" : "Allow") {
+                if status == .denied, let url = integration.settingsURL {
+                    NSWorkspace.shared.open(url)
+                } else {
+                    action()
+                }
+            }
+        }
+    }
+
+    private func statusColor(_ status: IntegrationPermissions.Status) -> Color {
+        switch status {
+        case .granted: .green
+        case .denied: .red
+        case .undetermined: .secondary
+        }
     }
 }
 
@@ -190,14 +364,26 @@ private struct SystemSettingsPane: View {
         Form {
             Section {
                 Picker("Refresh every", selection: $settings.telemetryInterval) {
+                    Text("0.5 seconds").tag(0.5)
                     Text("1 second").tag(1.0)
                     Text("2 seconds").tag(2.0)
                     Text("5 seconds").tag(5.0)
                 }
             } header: {
-                Text("System monitor")
+                Label("Sampling Rate", systemImage: "gauge.with.dots.needle.50percent")
             } footer: {
-                Text("CPU, memory, battery, and network sampling only runs while the notch is open — the collapsed notch uses no CPU.")
+                Text("Telemetry hardware sensors only sample while the notch is expanded — zero CPU is consumed when collapsed.")
+            }
+
+            Section {
+                Toggle("Show CPU rolling sparkline", isOn: $settings.showCPUSparkline)
+                Toggle("Show Memory pressure ring", isOn: $settings.showMemoryPressure)
+                Toggle("Show Network throughput speeds", isOn: $settings.showNetworkSpeed)
+                Toggle("Show Battery health and power draw", isOn: $settings.showBatteryHealth)
+            } header: {
+                Label("Metrics Display", systemImage: "chart.line.uptrend.xyaxis")
+            } footer: {
+                Text("Customizes which telemetry components appear in the System tab and main dashboard.")
             }
         }
         .formStyle(.grouped)
@@ -231,7 +417,7 @@ private struct ProSettingsPane: View {
                     activationField
                 }
 
-                Text("License keys are validated locally in this build — connect a licensing backend (Paddle, Lemon Squeezy…) before selling.")
+                Text("License keys are validated locally in this build — connect a licensing backend before selling.")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)

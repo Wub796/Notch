@@ -1,38 +1,64 @@
 import AppKit
 import SwiftUI
 
-/// Expanded media module: large artwork (matched-geometry from the collapsed
-/// wing), track info, a seekable scrubber, transport controls, and live
-/// lyrics — all tinted by the artwork-derived accent.
+/// Expanded music module per the reference: large artwork with a soft glow,
+/// track metadata with a monogram artist row, a synced-lyrics panel, the
+/// seekable progress bar, transport, and the bottom heart/shuffle row.
 struct MediaPlayerView: View {
-    let media: MediaController
+    let state: NotchState
     let namespace: Namespace.ID
 
-    var body: some View {
-        HStack(alignment: .top, spacing: 20) {
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(spacing: 12) {
-                    artwork
-                    trackInfo
-                }
-                ScrubberBar(
-                    duration: media.track?.duration ?? 0,
-                    elapsed: media.displayedElapsed,
-                    accent: media.accent
-                ) { target in
-                    media.seek(to: target)
-                }
-                transportControls
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+    private var media: MediaController { state.media }
 
-            LyricsView(lyrics: media.lyrics, accent: media.accent) { time in
-                media.seek(to: time + 0.05)
+    @State private var showLyrics = true
+    @State private var isFavorite = false
+    @State private var shuffleOn = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 28) {
+                artwork
+
+                VStack(alignment: .leading, spacing: 5) {
+                    MarqueeText(
+                        text: media.track?.title ?? "Nothing Playing",
+                        font: .system(size: 20, weight: .black, design: .rounded),
+                        width: 200
+                    )
+                    .foregroundStyle(NotchTheme.inkPrimary)
+
+                    artistRow
+
+                    Text(media.track?.album ?? "Unknown Album")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(NotchTheme.inkSecondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if showLyrics {
+                    LyricsView(lyrics: media.lyrics, accent: media.accent) { time in
+                        media.seek(to: time + 0.05)
+                    }
+                    .frame(width: 200)
+                }
             }
-            .frame(width: 196)
+
+            progressRow
+
+            lyricLine
+                .frame(maxWidth: .infinity)
+
+            transportRow
+
+            bottomActions
+                .frame(maxWidth: .infinity)
         }
+        .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
+
+    // MARK: - Artwork & metadata
 
     private var artwork: some View {
         Group {
@@ -41,75 +67,95 @@ struct MediaPlayerView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else {
-                // Vinyl-style placeholder disc.
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(NotchTheme.surface)
                     .overlay {
-                        Circle()
-                            .fill(
-                                RadialGradient(
-                                    colors: [.white.opacity(0.16), .white.opacity(0.03)],
-                                    center: .center,
-                                    startRadius: 4,
-                                    endRadius: 34
-                                )
-                            )
-                            .padding(8)
-                    }
-                    .overlay {
                         Image(systemName: "music.note")
-                            .font(.system(size: 22))
+                            .font(.system(size: 30, weight: .medium))
                             .foregroundStyle(NotchTheme.inkMuted)
                     }
             }
         }
-        .frame(width: 64, height: 64)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .frame(width: 104, height: 104)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
-        .shadow(color: .black.opacity(0.45), radius: 9, y: 4)
-        .overlay(alignment: .bottomLeading) {
-            if let icon = media.sourceAppIcon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .frame(width: 17, height: 17)
-                    .clipShape(Circle())
-                    .overlay { Circle().stroke(.black.opacity(0.55), lineWidth: 1.5) }
-                    .offset(x: -5, y: 5)
-                    .accessibilityLabel("Playing in \(media.sourceAppName ?? "another app")")
-            }
-        }
+        .shadow(color: media.accent.opacity(0.5), radius: 16, y: 6)
     }
 
-    private var trackInfo: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            MarqueeText(
-                text: media.track?.title ?? "Nothing Playing",
-                font: .system(size: 13.5, weight: .semibold),
-                width: 190
-            )
-            .foregroundStyle(NotchTheme.inkPrimary)
-            Text(media.track?.artist ?? "Play something to see it here")
-                .font(.system(size: 12))
-                .foregroundStyle(NotchTheme.inkSecondary)
+    private var artistRow: some View {
+        HStack(spacing: 6) {
+            // Monogram avatar stands in for the reference's artist photo.
+            Text(String(media.track?.artist.prefix(1) ?? "?").uppercased())
+                .font(.system(size: 9, weight: .heavy, design: .rounded))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(NotchTheme.surfaceHover))
+
+            Text(media.track?.artist ?? "Unknown Artist")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(NotchTheme.inkPrimary)
                 .lineLimit(1)
-            if let album = media.track?.album, !album.isEmpty {
-                Text(album)
-                    .font(.system(size: 11))
-                    .foregroundStyle(NotchTheme.inkMuted)
-                    .lineLimit(1)
+
+            if media.track != nil {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.blue)
+                    .accessibilityLabel("Verified artist")
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var transportControls: some View {
-        HStack(spacing: 20) {
-            Spacer()
+    // MARK: - Progress & lyrics
 
-            TransportIconButton(
-                systemImage: "backward.fill",
-                accessibilityLabel: "Previous track",
-                isEnabled: media.hasTrack
+    private var progressRow: some View {
+        ScrubberBar(
+            duration: media.track?.duration ?? 0,
+            elapsed: media.displayedElapsed,
+            accent: media.accent
+        ) { target in
+            media.seek(to: target)
+        }
+    }
+
+    /// The reference's centered lyric line — the live synced line, tinted.
+    private var lyricLine: some View {
+        Group {
+            if let current = media.lyrics.currentLine?.text, !current.isEmpty {
+                Text(current)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(media.accent)
+                    .lineLimit(1)
+                    .contentTransition(.opacity)
+            } else {
+                Text("♪")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(NotchTheme.inkMuted.opacity(0.5))
+            }
+        }
+        .frame(height: 20)
+        .animation(.notchSpring, value: media.lyrics.currentIndex)
+    }
+
+    // MARK: - Transport
+
+    private var transportRow: some View {
+        HStack(spacing: 24) {
+            transportIcon(
+                showLyrics ? "list.bullet.rectangle.fill" : "list.bullet.rectangle",
+                size: 15,
+                label: showLyrics ? "Hide lyrics panel" : "Show lyrics panel",
+                tint: showLyrics ? nil : NotchTheme.inkMuted
+            ) {
+                withAnimation(NotchAnimations.content) {
+                    showLyrics.toggle()
+                }
+            }
+
+            transportIcon(
+                "backward.fill",
+                size: 16,
+                label: "Previous track",
+                isEnabled: media.canControlTransport
             ) {
                 media.previousTrack()
             }
@@ -118,31 +164,78 @@ struct MediaPlayerView: View {
                 media.togglePlayPause()
             } label: {
                 Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(.black)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(NotchTheme.inkPrimary)
                     .frame(width: 34, height: 34)
-                    .background {
-                        Circle().fill(media.accent)
-                    }
-                    .contentShape(Circle())
+                    .contentShape(Rectangle())
             }
             .buttonStyle(PressableButtonStyle())
-            .hoverLift(1.05)
-            .shadow(color: media.accent.opacity(0.35), radius: 10, y: 2)
-            .disabled(!media.hasTrack)
-            .opacity(media.hasTrack ? 1 : 0.35)
+            .hoverLift(1.08)
+            .disabled(!media.canControlTransport)
+            .opacity(media.canControlTransport ? 1 : 0.4)
             .accessibilityLabel(media.isPlaying ? "Pause" : "Play")
 
-            TransportIconButton(
-                systemImage: "forward.fill",
-                accessibilityLabel: "Next track",
-                isEnabled: media.hasTrack
+            transportIcon(
+                "forward.fill",
+                size: 16,
+                label: "Next track",
+                isEnabled: media.canControlTransport
             ) {
                 media.nextTrack()
             }
 
-            Spacer()
+            transportIcon(state.audio.currentSymbol, size: 15, label: "Switch audio output") {
+                state.audio.cycleToNextDevice()
+            }
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var bottomActions: some View {
+        HStack(spacing: 24) {
+            transportIcon(
+                isFavorite ? "heart.fill" : "heart",
+                size: 14,
+                label: isFavorite ? "Remove from favorites" : "Favorite",
+                tint: isFavorite ? .red : nil
+            ) {
+                withAnimation(NotchAnimations.content) {
+                    isFavorite.toggle()
+                }
+            }
+
+            transportIcon(
+                shuffleOn ? "shuffle.fill" : "shuffle",
+                size: 14,
+                label: shuffleOn ? "Turn off shuffle" : "Shuffle",
+                tint: shuffleOn ? .blue : nil
+            ) {
+                withAnimation(NotchAnimations.content) {
+                    shuffleOn.toggle()
+                }
+            }
+        }
+    }
+
+    private func transportIcon(
+        _ systemImage: String,
+        size: CGFloat,
+        label: String,
+        tint: Color? = nil,
+        isEnabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(tint ?? NotchTheme.inkPrimary)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .modifier(HoverIconModifier())
+        .disabled(!isEnabled)
+        .accessibilityLabel(label)
     }
 
     static func timeString(_ interval: TimeInterval) -> String {
@@ -152,41 +245,8 @@ struct MediaPlayerView: View {
     }
 }
 
-/// Secondary transport control: faint circular hover background, press
-/// compression, dimmed when disabled.
-private struct TransportIconButton: View {
-    let systemImage: String
-    let accessibilityLabel: String
-    let isEnabled: Bool
-    let action: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(NotchTheme.inkPrimary)
-                .frame(width: 32, height: 32)
-                .background {
-                    Circle().fill(.white.opacity(hovering ? 0.1 : 0))
-                }
-                .contentShape(Circle())
-        }
-        .buttonStyle(PressableButtonStyle())
-        .onHover { isHovering in
-            withAnimation(.notchSpring) {
-                hovering = isHovering
-            }
-        }
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.35)
-        .accessibilityLabel(accessibilityLabel)
-    }
-}
-
-/// Seekable progress bar: grows on hover, shows a knob while interacting, and
-/// commits the seek on release.
+/// Seekable progress bar in the reference style: white timestamps, a solid
+/// accent fill over a dark track, growing on hover with a knob while dragging.
 struct ScrubberBar: View {
     let duration: TimeInterval
     let elapsed: TimeInterval
@@ -211,26 +271,19 @@ struct ScrubberBar: View {
     }
 
     var body: some View {
-        // Reference layout: elapsed | bar | −remaining on a single row.
         HStack(spacing: 8) {
             Text(MediaPlayerView.timeString(dragFraction.map { $0 * duration } ?? elapsed))
-                .font(.system(size: 9.5, weight: .medium).monospacedDigit())
-                .foregroundStyle(NotchTheme.inkMuted)
+                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                .foregroundStyle(NotchTheme.inkPrimary)
                 .frame(width: 34, alignment: .trailing)
 
             GeometryReader { proxy in
                 let width = proxy.size.width
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(.white.opacity(0.14))
+                        .fill(.white.opacity(0.16))
                     Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [accent.opacity(0.75), accent],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                        .fill(accent)
                         .frame(width: max(width * displayedFraction, 0))
 
                     if isInteracting {
@@ -263,12 +316,11 @@ struct ScrubberBar: View {
             .animation(.notchSpring, value: isInteracting)
             .onHover { hovering = $0 }
 
-            // Click to flip between remaining and total time.
             Text(showRemaining
                 ? "−" + MediaPlayerView.timeString(max(duration - elapsed, 0))
                 : MediaPlayerView.timeString(duration))
-                .font(.system(size: 9.5, weight: .medium).monospacedDigit())
-                .foregroundStyle(NotchTheme.inkMuted)
+                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                .foregroundStyle(NotchTheme.inkPrimary)
                 .frame(width: 38, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { showRemaining.toggle() }

@@ -1,3 +1,4 @@
+import AppKit
 import EventKit
 import Foundation
 import Observation
@@ -26,6 +27,36 @@ final class CalendarController {
     private(set) var accessState: AccessState = .undetermined
     private(set) var items: [ScheduleItem] = []
 
+    /// The day highlighted in the calendar detail view.
+    var selectedDate = Date()
+
+    /// Whether the calendar detail shows the month grid instead of the week.
+    var isMonthView = false
+
+    /// Days in the week (Monday-first) that contains `selectedDate`.
+    var selectedWeek: [Date] {
+        let calendar = Calendar.current
+        guard let interval = calendar.dateInterval(of: .weekOfYear, for: selectedDate) else {
+            return []
+        }
+        return (0 ..< 7).compactMap { calendar.date(byAdding: .day, value: $0, to: interval.start) }
+    }
+
+    /// Events whose start falls on the selected day.
+    var itemsOnSelectedDay: [ScheduleItem] {
+        items.filter { Calendar.current.isDate($0.start, inSameDayAs: selectedDate) }
+    }
+
+    func moveSelectedDay(by days: Int) {
+        if let date = Calendar.current.date(byAdding: .day, value: days, to: selectedDate) {
+            selectedDate = date
+        }
+    }
+
+    func moveSelectedDay(to date: Date) {
+        selectedDate = date
+    }
+
     /// The next event starting within the live-activity window, published in
     /// the collapsed notch wings.
     private(set) var upcomingSoon: ScheduleItem?
@@ -49,11 +80,15 @@ final class CalendarController {
     /// If access was granted in an earlier launch, load immediately so the
     /// meeting-soon activity works before the notch is ever expanded.
     func bootstrapIfAuthorized() {
-        guard accessState == .undetermined,
-              EKEventStore.authorizationStatus(for: .event) == .fullAccess
-        else { return }
-        accessState = .granted
-        loadEvents()
+        switch EKEventStore.authorizationStatus(for: .event) {
+        case .fullAccess, .authorized:
+            accessState = .granted
+            loadEvents()
+        case .denied, .restricted:
+            accessState = .denied
+        default:
+            accessState = .undetermined
+        }
     }
 
     private static let meetingHosts = [
@@ -70,12 +105,24 @@ final class CalendarController {
     /// Called each time the notch expands; EventKit queries are cheap and this
     /// keeps the timeline current without any background refresh timer.
     func refresh() {
-        switch accessState {
-        case .denied:
+        switch EKEventStore.authorizationStatus(for: .event) {
+        case .denied, .restricted, .writeOnly:
+            accessState = .denied
             return
-        case .granted:
+        case .fullAccess, .authorized:
+            accessState = .granted
             loadEvents()
-        case .undetermined:
+        case .notDetermined:
+            requestAccess()
+        @unknown default:
+            break
+        }
+    }
+
+    /// Explicit entry point to prompt the user for calendar permissions.
+    func requestAccess(completion: (() -> Void)? = nil) {
+        NSApp.activate(ignoringOtherApps: true)
+        if #available(macOS 14.0, *) {
             store.requestFullAccessToEvents { [weak self] granted, _ in
                 DispatchQueue.main.async {
                     guard let self else { return }
@@ -83,6 +130,18 @@ final class CalendarController {
                     if granted {
                         self.loadEvents()
                     }
+                    completion?()
+                }
+            }
+        } else {
+            store.requestAccess(to: .event) { [weak self] granted, _ in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.accessState = granted ? .granted : .denied
+                    if granted {
+                        self.loadEvents()
+                    }
+                    completion?()
                 }
             }
         }

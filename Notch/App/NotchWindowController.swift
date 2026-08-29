@@ -32,11 +32,24 @@ final class NotchWindowController: NSWindowController {
         )
 
         let panel = NotchPanel(contentRect: frame)
-        let hostingView = NSHostingView(rootView: NotchContainerView(state: state))
+        let hostingView = NotchHostingView(rootView: NotchContainerView(state: state))
         hostingView.frame = NSRect(origin: .zero, size: frame.size)
         panel.contentView = hostingView
 
         super.init(window: panel)
+
+        // SwiftUI controls in a borderless non-activating panel only fire
+        // reliably once the panel is key (highlighting without firing is a
+        // known macOS behavior). Becoming key here does not activate the app
+        // or steal focus — it's the standard popover model.
+        state.onModeChange = { [weak panel] mode in
+            guard let panel else { return }
+            if mode == .expanded {
+                panel.makeKey()
+            } else {
+                panel.resignKey()
+            }
+        }
     }
 
     @available(*, unavailable)
@@ -46,5 +59,14 @@ final class NotchWindowController: NSWindowController {
 
     func showPanel() {
         window?.orderFrontRegardless()
+    }
+}
+
+/// Delivers the first click straight to SwiftUI instead of consuming it for
+/// window activation, so controls respond on the very first click in the
+/// panel.
+final class NotchHostingView: NSHostingView<NotchContainerView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
     }
 }

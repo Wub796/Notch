@@ -109,6 +109,20 @@ struct PressableButtonStyle: ButtonStyle {
     }
 }
 
+/// Standard feedback for bare icon buttons: dimmed at rest, full brightness
+/// on hover, half-faded when disabled (picked up from the environment).
+struct HoverIconModifier: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isEnabled ? (hovering ? 1 : 0.72) : 0.35)
+            .animation(NotchAnimations.content, value: hovering)
+            .onHover { hovering = $0 }
+    }
+}
+
 /// Lifts an element on pointer hover.
 struct HoverLiftModifier: ViewModifier {
     var scale: CGFloat
@@ -146,7 +160,7 @@ struct GlassTransitionModifier: ViewModifier {
 
 extension AnyTransition {
     static let glass = AnyTransition.modifier(
-        active: GlassTransitionModifier(blur: 8, opacity: 0, offsetY: 10),
+        active: GlassTransitionModifier(blur: 3, opacity: 0, offsetY: 6),
         identity: GlassTransitionModifier(blur: 0, opacity: 1, offsetY: 0)
     )
 }

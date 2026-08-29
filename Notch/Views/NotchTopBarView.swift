@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// The strip that flanks the hardware notch when the slab is open: tab icons
-/// and settings on the left, status controls on the right. Borderless — the
-/// glyphs sit directly on the slab, brightening on selection and hover.
+/// The home top bar: a settings gear and shelf tray on the left, system status
+/// icons on the right. No tab navigation — the dashboard's music/weather/
+/// calendar sections drill into the detail screens, matching the reference.
 struct NotchTopBarView: View {
     let state: NotchState
 
@@ -11,35 +11,23 @@ struct NotchTopBarView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            leadingIcons
-                .padding(.leading, 18)
+            leadingControls
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             // Reserved dead zone: nothing is drawn behind the camera housing.
             Color.clear
                 .frame(width: state.notchSize.width)
 
-            trailingIcons
-                .padding(.trailing, 18)
+            trailingControls
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
+        .padding(.horizontal, 34)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var leadingIcons: some View {
-        HStack(spacing: 2) {
-            ForEach(NotchTab.allCases) { tab in
-                BareIconButton(
-                    systemImage: tab.systemImage,
-                    isActive: state.tab == tab,
-                    help: tab.title,
-                    badge: tab == .shelf ? state.shelf.items.count : 0
-                ) {
-                    state.select(tab)
-                }
-            }
-
-            BareIconButton(
+    private var leadingControls: some View {
+        HStack(spacing: 16) {
+            NotchIconButton(
                 systemImage: "gearshape",
                 isActive: false,
                 help: "Settings"
@@ -47,19 +35,33 @@ struct NotchTopBarView: View {
                 NSApp.activate(ignoringOtherApps: true)
                 openSettings()
             }
+
+            NotchIconButton(
+                systemImage: "archivebox",
+                isActive: state.tab == .shelf,
+                help: state.tab == .shelf ? "Back to Home" : "Shelf",
+                activeTint: .blue
+            ) {
+                // The tray toggles home ↔ shelf — the only affordance that
+                // reaches the shelf, so it must also be the way back.
+                state.select(state.tab == .shelf ? .home : .shelf)
+            }
         }
     }
 
-    private var trailingIcons: some View {
-        HStack(spacing: 4) {
+    private var trailingControls: some View {
+        HStack(spacing: 16) {
             if state.telemetry.hasBattery {
                 battery
             }
 
-            BareIconButton(
+            audioOutput
+
+            NotchIconButton(
                 systemImage: state.keepAwake.isActive ? "cup.and.saucer.fill" : "cup.and.saucer",
                 isActive: state.keepAwake.isActive,
-                help: state.keepAwake.isActive ? "Allow sleep" : "Keep Mac awake"
+                help: state.keepAwake.isActive ? "Allow sleep" : "Keep Mac awake",
+                activeTint: NotchTheme.battery
             ) {
                 NotchTheme.Haptics.generic()
                 withAnimation(NotchAnimations.content) {
@@ -67,13 +69,28 @@ struct NotchTopBarView: View {
                 }
             }
 
-            BareIconButton(
-                systemImage: state.isPinned ? "pin.fill" : "pin",
-                isActive: state.isPinned,
-                help: state.isPinned ? "Unpin" : "Pin the notch open"
-            ) {
-                state.togglePin()
-            }
+            // Charging state — a status indicator, not a control.
+            Image(systemName: "battery.100percent.bolt")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(
+                    state.telemetry.isCharging ? NotchTheme.battery : NotchTheme.inkMuted
+                )
+                .frame(width: 28, height: 28)
+                .help(state.telemetry.isCharging ? "Battery charging" : "On battery")
+                .accessibilityLabel(state.telemetry.isCharging ? "Battery charging" : "On battery")
+        }
+    }
+
+    private var audioOutput: some View {
+        let device = state.audio.devices.first {
+            $0.id == state.audio.currentDeviceID
+        }
+        return NotchIconButton(
+            systemImage: state.audio.currentSymbol,
+            isActive: false,
+            help: device.map { "Audio: \($0.name)" } ?? "Audio output"
+        ) {
+            state.audio.cycleToNextDevice()
         }
     }
 
@@ -81,19 +98,17 @@ struct NotchTopBarView: View {
         HStack(spacing: 3) {
             if state.settings.showBatteryPercentage {
                 Text("\(Int((state.telemetry.batteryPercent * 100).rounded()))")
-                    .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(NotchTheme.inkPrimary)
                     .contentTransition(.numericText())
             }
-            Image(systemName: state.telemetry.isCharging
-                ? "battery.100percent.bolt"
-                : batterySymbol)
-                .font(.system(size: 12.5))
+            Image(systemName: batterySymbol)
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(
                     state.telemetry.isCharging ? NotchTheme.battery : NotchTheme.inkSecondary
                 )
         }
-        .padding(.trailing, 2)
+        .padding(.horizontal, 5)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Battery")
         .accessibilityValue(
@@ -113,48 +128,86 @@ struct NotchTopBarView: View {
     }
 }
 
-/// Borderless icon button: no chrome, just the glyph, lifting in brightness
-/// on hover and selection.
-struct BareIconButton: View {
-    let systemImage: String
-    let isActive: Bool
-    let help: String
-    var badge: Int = 0
+/// Detail-screen header: a circular back button on the left and custom
+/// trailing controls on the right, over the same reserved notch dead zone.
+struct DetailHeaderView<Trailing: View>: View {
+    let state: NotchState
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: 0) {
+            NotchBackButton {
+                state.select(.home)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Color.clear
+                .frame(width: state.notchSize.width)
+
+            trailing()
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(.horizontal, 34)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Circular dark back button with a white chevron, per the reference.
+struct NotchBackButton: View {
     let action: () -> Void
 
-    @State private var hovering = false
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 13, weight: .heavy))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(.white.opacity(isHovering ? 0.22 : 0.12)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .onHover { hovering in
+            withAnimation(NotchAnimations.content) {
+                isHovering = hovering
+            }
+        }
+        .help("Back to Home")
+        .accessibilityLabel("Back to Home")
+    }
+}
+
+/// A bare icon control: no chrome, just the glyph, brightening on hover and
+/// selection.
+struct NotchIconButton: View {
+    let systemImage: String
+    var isActive: Bool = false
+    let help: String
+    var activeTint: Color? = nil
+    let action: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 12, weight: isActive ? .semibold : .regular))
+                .font(.system(size: 13, weight: isActive ? .heavy : .semibold))
                 .foregroundStyle(
                     isActive
-                        ? NotchTheme.inkPrimary
-                        : NotchTheme.inkSecondary.opacity(hovering ? 1 : 0.7)
+                        ? (activeTint ?? NotchTheme.inkPrimary)
+                        : NotchTheme.inkSecondary.opacity(isHovering ? 1 : 0.72)
                 )
-                .frame(width: 21, height: 21)
+                .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
-                .overlay(alignment: .topTrailing) {
-                    if badge > 0 {
-                        Text("\(badge)")
-                            .font(.system(size: 8, weight: .heavy).monospacedDigit())
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 3.5)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(.blue))
-                            .offset(x: 5, y: -3)
-                    }
-                }
         }
         .buttonStyle(PressableButtonStyle())
-        .onHover { isHovering in
+        .onHover { hovering in
             withAnimation(NotchAnimations.content) {
-                hovering = isHovering
+                isHovering = hovering
             }
         }
         .help(help)
         .accessibilityLabel(help)
-        .accessibilityAddTraits(isActive ? [.isSelected] : [])
     }
 }

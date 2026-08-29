@@ -17,8 +17,7 @@ struct NotchContainerView: View {
             notchBody
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        // Content inside the notch is always on glass over black.
+        .frame(maxWidth: .infinity, alignment: .top)
         .preferredColorScheme(.dark)
     }
 
@@ -32,14 +31,11 @@ struct NotchContainerView: View {
                     .transition(.opacity)
             }
         }
-        .frame(width: state.currentSize.width, height: state.currentSize.height)
+        .frame(width: state.currentSize.width, height: state.currentSize.height, alignment: .top)
+        // Completely black base in every state — the slab always hides the
+        // menu bar behind it and merges with the hardware notch.
         .background {
-            ZStack {
-                if state.mode == .expanded {
-                    Rectangle().fill(.ultraThinMaterial)
-                }
-                Rectangle().fill(.black.opacity(state.mode == .expanded ? 0.88 : 1.0))
-            }
+            shape.fill(.black)
         }
         .clipShape(shape)
         .shadow(
@@ -59,16 +55,38 @@ struct NotchContainerView: View {
         .onHover { hovering in
             state.hoverChanged(hovering)
         }
-        .onTapGesture {
-            state.handleTap()
-        }
+        // Click-to-expand only matters while closed. macOS gives a parent
+        // `.onTapGesture` priority over child `Button`s, so leaving it live in
+        // expanded mode swallows the top bar's clicks.
+        .modifier(
+            ConditionalTapModifier(active: state.mode != .expanded) {
+                state.handleTap()
+            }
+        )
         .onDrop(
             of: ShelfController.acceptedTypes,
             delegate: NotchDropDelegate(state: state)
         )
-        .animation(NotchAnimations.forMode(state.mode), value: state.mode)
+        .animation(NotchAnimations.forMode(state.mode), value: state.currentSize)
+        .animation(NotchAnimations.forMode(state.mode), value: state.cornerRadius)
         .animation(NotchAnimations.content, value: state.tab)
         .animation(NotchAnimations.activity, value: state.collapsedActivity)
+    }
+}
+
+/// Applies the tap gesture only while `active`, so the container never
+/// competes with its child buttons.
+private struct ConditionalTapModifier: ViewModifier {
+    let active: Bool
+    let action: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if active {
+            content.onTapGesture(perform: action)
+        } else {
+            content
+        }
     }
 }
 

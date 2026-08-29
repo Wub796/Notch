@@ -151,38 +151,60 @@ struct OnboardingView: View {
         .background(Capsule().fill(.white.opacity(0.07)))
     }
 
+    @State private var refreshToken = 0
+
     private var permissions: some View {
-        VStack(spacing: 8) {
+        let calendarGranted = IntegrationPermissions.Integration.calendar.status == .granted
+        let locationGranted = IntegrationPermissions.Integration.location.status == .granted
+
+        return VStack(spacing: 8) {
             HStack(spacing: 8) {
-                permissionButton("calendar", "Enable Calendar") {
-                    state.calendar.refresh()
+                permissionButton(
+                    calendarGranted ? "checkmark.circle.fill" : "calendar",
+                    calendarGranted ? "Calendar Enabled" : "Enable Calendar",
+                    isGranted: calendarGranted
+                ) {
+                    IntegrationPermissions.Integration.calendar.request {
+                        refreshToken += 1
+                        state.calendar.refresh()
+                    }
                 }
-                permissionButton("location", "Enable Weather") {
-                    state.weather.refresh()
+                permissionButton(
+                    locationGranted ? "checkmark.circle.fill" : "location.fill",
+                    locationGranted ? "Weather Enabled" : "Enable Weather",
+                    isGranted: locationGranted
+                ) {
+                    IntegrationPermissions.Integration.location.request {
+                        refreshToken += 1
+                        state.weather.refresh(force: true)
+                    }
                 }
             }
             Text("Both are optional — you can grant or revoke them anytime in System Settings.")
                 .font(.system(size: 9.5))
                 .foregroundStyle(.white.opacity(0.4))
         }
+        .id(refreshToken)
     }
 
     private func permissionButton(
         _ icon: String,
         _ title: String,
+        isGranted: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             Label(title, systemImage: icon)
                 .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(isGranted ? .green : .white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
                 .background {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(.white.opacity(0.09))
+                        .fill(isGranted ? Color.green.opacity(0.15) : .white.opacity(0.09))
                 }
         }
         .buttonStyle(PressableButtonStyle())
+        .disabled(isGranted)
     }
 }

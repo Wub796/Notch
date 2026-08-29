@@ -10,43 +10,20 @@ enum NotchMode: Equatable {
     case expanded
 }
 
-enum NotchTab: String, CaseIterable, Identifiable {
+enum NotchTab: String {
+    /// Combined dashboard hosting music, weather, and calendar.
     case home
+    /// Dedicated player with full lyrics — everything else goes away.
     case media
+    /// Full-screen weather detail with an hourly forecast.
+    case weather
+    /// Week-at-a-glance calendar detail.
+    case calendar
     case shelf
     case clipboard
-    case calendar
     case tools
     case notes
     case telemetry
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .home: "Home"
-        case .media: "Media"
-        case .shelf: "Shelf"
-        case .clipboard: "Clipboard"
-        case .calendar: "Schedule"
-        case .tools: "Tools"
-        case .notes: "Notes"
-        case .telemetry: "System"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .home: "square.grid.2x2.fill"
-        case .media: "music.note"
-        case .shelf: "tray.full"
-        case .clipboard: "doc.on.clipboard"
-        case .calendar: "calendar"
-        case .tools: "slider.horizontal.3"
-        case .notes: "note.text"
-        case .telemetry: "gauge.with.dots.needle.50percent"
-        }
-    }
 }
 
 /// Root observable state for the notch UI. Owns every feature module and
@@ -61,28 +38,32 @@ final class NotchState {
     /// While pinned, the expanded panel ignores hover-out and outside clicks.
     var isPinned = false
 
+    /// Notifies the window controller of mode transitions so it can manage
+    /// key-window status (SwiftUI buttons in borderless panels only fire
+    /// reliably once the panel is key).
+    var onModeChange: ((NotchMode) -> Void)?
+
     /// Physical notch size, injected by NotchWindowController at launch.
     var notchSize: CGSize = NotchGeometry.fallbackSize
 
-    /// Each tab sizes the slab to its own content — the dashboard is wide and
-    /// short, detail tabs are narrower and a little taller.
+    /// Each tab sizes the slab to its own content.
     var expandedSize: CGSize {
         switch tab {
-        // Widths never drop below 700: the icon strip has to fit in the wing
-        // beside the hardware notch, which is up to ~230pt wide itself.
-        case .home: CGSize(width: 780, height: 150)
-        case .media: CGSize(width: 700, height: 208)
-        case .shelf: CGSize(width: 700, height: 190)
-        case .clipboard: CGSize(width: 740, height: 190)
-        case .calendar: CGSize(width: 700, height: 214)
-        case .tools: CGSize(width: 740, height: 206)
-        case .notes: CGSize(width: 700, height: 200)
-        case .telemetry: CGSize(width: 720, height: 178)
+        // Heights account for the 44 pt top bar plus 34 pt of content padding.
+        case .home: CGSize(width: 960, height: 220)
+        case .media: CGSize(width: 900, height: 350)
+        case .weather: CGSize(width: 800, height: 340)
+        case .calendar: CGSize(width: 760, height: 330)
+        case .shelf: CGSize(width: 780, height: 190)
+        case .clipboard: CGSize(width: 780, height: 190)
+        case .tools: CGSize(width: 780, height: 205)
+        case .notes: CGSize(width: 780, height: 198)
+        case .telemetry: CGSize(width: 780, height: 185)
         }
     }
 
     /// Largest slab any tab can request; the panel window is sized to this.
-    static let maxExpandedSize = CGSize(width: 790, height: 220)
+    static let maxExpandedSize = CGSize(width: 960, height: 350)
 
     /// Hover is only detected over the physical notch (plus a small margin),
     /// never over the full slab — a wide detection radius made the notch open
@@ -116,19 +97,31 @@ final class NotchState {
 
     private var pendingHoverWork: DispatchWorkItem?
     private var hoverStartedAt: Date?
+    private var isHovering = false
 
     /// Minimum dwell before a click counts as intentional rather than the tail
     /// of a fast pointer sweep across the menu bar.
     private static let minimumDwellForClick: TimeInterval = 0.06
 
     init() {
-        // Personalization: reopen on the tab the user last used.
+        // Personalization: reopen on the tab the user last used — but only a
+        // tab the current UI can still reach; the top bar no longer exposes
+        // every module, so restoring to a hidden one would strand the panel
+        // with no way back home.
         if let restored = NotchTab(rawValue: settings.lastTab) {
-            tab = restored
+            switch restored {
+            case .home, .media, .weather, .calendar, .shelf:
+                tab = restored
+            default:
+                tab = .home
+            }
         }
-        // Event-driven collapsed-notch features.
+        // Event-driven collapsed-notch features. Weather fetches at launch so
+        // the collapsed wings have a temperature without the notch opening
+        // first; refresh() is a no-op while the 30-minute cache is fresh.
         activities.start()
         calendar.bootstrapIfAuthorized()
+        weather.refresh()
 
         media.onTrackChange = { [weak self] track in
             self?.activities.showTrackChange(title: track.title, artist: track.artist)
@@ -148,15 +141,28 @@ final class NotchState {
         }
         desktopMonitor.start()
 
+        eyeBreak.setEnabled(settings.eyeBreakEnabled)
         eyeBreak.onBreakChange = { [weak self] active in
             self?.activities.showEyeBreak(active: active)
+        }
+        settings.onEyeBreakSettingChanged = { [weak self] enabled in
+            self?.eyeBreak.setEnabled(enabled)
         }
 
         timer.onFinished = { [weak self] in
             self?.activities.clearTransient()
         }
 
-        clipboard.start()
+        if settings.clipboardHistoryEnabled {
+            clipboard.start()
+        }
+        settings.onClipboardSettingChanged = { [weak self] enabled in
+            if enabled {
+                self?.clipboard.start()
+            } else {
+                self?.clipboard.stop()
+            }
+        }
     }
 
     /// The focus mode currently active, for the dashboard.
@@ -194,7 +200,7 @@ final class NotchState {
     /// split evenly into two wings, so each side must fit half of this.
     private var activityWingWidth: CGFloat {
         switch collapsedActivity {
-        case .music: 120
+        case .music: 140
         case .lyrics: 150
         case .timer: 130
         case .trackChange: 240
@@ -206,7 +212,7 @@ final class NotchState {
         case .desktopChange: 150
         case .accessoryBattery: 240
         case .meetingSoon: 260
-        case nil: settings.showIdleFace ? 96 : 0
+        case nil: settings.showCompactWeather ? 120 : 0
         }
     }
 
@@ -234,18 +240,20 @@ final class NotchState {
         }
     }
 
-    /// Corner radius per state (Sapphire's closed/hover/click values).
+    /// Corner radius per state — comfortably rounded.
     var cornerRadius: CGFloat {
         switch mode {
-        case .collapsed: 10
-        case .peek: 16
-        case .expanded: 26
+        case .collapsed: 14
+        case .peek: 22
+        case .expanded: 34
         }
     }
 
     // MARK: - Hover / expansion
 
     func hoverChanged(_ hovering: Bool) {
+        guard hovering != isHovering else { return }
+        isHovering = hovering
         pendingHoverWork?.cancel()
 
         if hovering {
@@ -255,9 +263,7 @@ final class NotchState {
                     mode = .peek
                 }
             }
-            // Linger past the open delay to expand fully (when enabled). The
-            // work item is cancelled the moment the pointer leaves, so a
-            // quick pass over the notch never opens it.
+            // Linger past the open delay to expand fully (when enabled).
             guard settings.expandOnHover, mode == .peek else { return }
             let work = DispatchWorkItem { [weak self] in
                 self?.expand()
@@ -272,7 +278,7 @@ final class NotchState {
                     mode = .collapsed
                 }
             case .expanded:
-                guard !isPinned else { return }
+                guard !isPinned, settings.autoCollapseOnMouseExit else { return }
                 let work = DispatchWorkItem { [weak self] in
                     self?.collapse()
                 }
@@ -310,6 +316,7 @@ final class NotchState {
         withAnimation(NotchAnimations.expand) {
             mode = .expanded
         }
+        onModeChange?(mode)
         wakeModules()
     }
 
@@ -321,6 +328,7 @@ final class NotchState {
             isDropTargeted = false
             isPinned = false
         }
+        onModeChange?(mode)
         sleepModules()
     }
 

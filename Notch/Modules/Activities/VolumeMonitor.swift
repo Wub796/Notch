@@ -13,7 +13,7 @@ final class VolumeMonitor {
     private var isRunning = false
 
     private static var volumeAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyVirtualMainVolume,
+        mSelector: kAudioDevicePropertyVolumeScalar,
         mScope: kAudioDevicePropertyScopeOutput,
         mElement: kAudioObjectPropertyElementMain
     )

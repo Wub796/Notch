@@ -51,6 +51,7 @@ final class MediaRemoteBridge {
     private var getApplicationPIDFunc: GetApplicationPIDFunc?
 
     let isAvailable: Bool
+    let supportsQueries: Bool
 
     private init() {
         guard let handle = dlopen(
@@ -58,6 +59,7 @@ final class MediaRemoteBridge {
             RTLD_NOW
         ) else {
             isAvailable = false
+            supportsQueries = false
             return
         }
 
@@ -77,6 +79,7 @@ final class MediaRemoteBridge {
         )
 
         isAvailable = getNowPlayingInfoFunc != nil && registerNotificationsFunc != nil
+        supportsQueries = getNowPlayingInfoFunc != nil && getIsPlayingFunc != nil && getApplicationPIDFunc != nil
     }
 
     var canSeek: Bool {
@@ -90,7 +93,7 @@ final class MediaRemoteBridge {
     }
 
     func nowPlayingInfo(_ completion: @escaping ([String: Any]) -> Void) {
-        guard let getNowPlayingInfoFunc else {
+        guard supportsQueries, let getNowPlayingInfoFunc else {
             completion([:])
             return
         }
@@ -100,7 +103,7 @@ final class MediaRemoteBridge {
     }
 
     func isPlaying(_ completion: @escaping (Bool) -> Void) {
-        guard let getIsPlayingFunc else {
+        guard supportsQueries, let getIsPlayingFunc else {
             completion(false)
             return
         }
@@ -121,7 +124,7 @@ final class MediaRemoteBridge {
     /// PID of the app currently publishing now-playing info, used to show
     /// which app the audio is coming from.
     func nowPlayingApplicationPID(_ completion: @escaping (Int32) -> Void) {
-        guard let getApplicationPIDFunc else {
+        guard supportsQueries, let getApplicationPIDFunc else {
             completion(0)
             return
         }

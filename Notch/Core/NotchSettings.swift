@@ -2,6 +2,61 @@ import Foundation
 import Observation
 import ServiceManagement
 
+/// Temperature unit choices for weather display.
+enum TemperatureUnit: String, CaseIterable, Identifiable, Hashable, Sendable {
+    case automatic
+    case celsius
+    case fahrenheit
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .automatic: "System Default"
+        case .celsius: "Celsius (°C)"
+        case .fahrenheit: "Fahrenheit (°F)"
+        }
+    }
+}
+
+/// Which player the notch's music features drive.
+enum MusicProvider: String, CaseIterable, Identifiable, Sendable {
+    case automatic
+    case appleMusic
+    case spotify
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .automatic: "Automatic"
+        case .appleMusic: "Apple Music"
+        case .spotify: "Spotify"
+        }
+    }
+
+    /// Bundle identifier used to decide whether the now-playing source is the
+    /// chosen provider.
+    var bundleID: String {
+        switch self {
+        case .automatic: ""
+        case .appleMusic: "com.apple.Music"
+        case .spotify: "com.spotify.client"
+        }
+    }
+
+    /// AppleScript app name used to drive the app directly (nil for Automatic,
+    /// which follows whatever is playing via MediaRemote). `tell application`
+    /// launches the app if it isn't running.
+    var appleScriptAppName: String? {
+        switch self {
+        case .automatic: nil
+        case .appleMusic: "Music"
+        case .spotify: "Spotify"
+        }
+    }
+}
+
 /// User preferences, persisted to UserDefaults, plus the launch-at-login
 /// registration through SMAppService.
 @Observable
@@ -9,18 +64,18 @@ final class NotchSettings {
     static let shared = NotchSettings()
 
     var expandOnHover = true { didSet { save(expandOnHover, "expandOnHover") } }
-    /// Dwell required before a hover opens the notch. Long enough that
-    /// sweeping the pointer past the notch never triggers it.
+    /// Dwell required before a hover opens the notch.
     var openDelay = 0.28 { didSet { save(openDelay, "openDelay") } }
     var closeDelay = 0.35 { didSet { save(closeDelay, "closeDelay") } }
 
     /// When on, dropped files go straight to AirDrop; when off they land on
     /// the shelf first.
     var instantAirDrop = false { didSet { save(instantAirDrop, "instantAirDrop") } }
+    var autoClearShelf = false { didSet { save(autoClearShelf, "autoClearShelf") } }
 
     /// Animation personality: snappy / bouncy / calm.
-    var animationProfile = AnimationProfile.snappy.rawValue {
-        didSet { save(animationProfile, "animationProfile") }
+    var animationProfile: AnimationProfile = .snappy {
+        didSet { save(animationProfile.rawValue, "animationProfile") }
     }
 
     /// Battery plug/unplug and meeting-soon activities in the collapsed notch.
@@ -32,37 +87,85 @@ final class NotchSettings {
     /// Current conditions in the dashboard (Open-Meteo).
     var showWeather = true { didSet { save(showWeather, "showWeather") } }
 
+    /// Temperature display unit.
+    var temperatureUnit: TemperatureUnit = .automatic {
+        didSet { save(temperatureUnit.rawValue, "temperatureUnit") }
+    }
+
+    /// Shows the weather glyph and a bold temperature in the compact notch.
+    var showCompactWeather = true { didSet { save(showCompactWeather, "showCompactWeather") } }
+
     /// Show the numeric percentage beside the battery glyph.
     var showBatteryPercentage = true { didSet { save(showBatteryPercentage, "showBatteryPercentage") } }
 
+    /// Low battery notification threshold.
+    var lowBatteryThreshold = 20 { didSet { save(lowBatteryThreshold, "lowBatteryThreshold") } }
+
     var showMediaWings = true { didSet { save(showMediaWings, "showMediaWings") } }
 
-    /// Announce new tracks in the collapsed notch (boring.notch's sneak peek).
+    /// Which player the notch follows and controls.
+    var musicProvider: MusicProvider = .automatic {
+        didSet { save(musicProvider.rawValue, "musicProvider") }
+    }
+
+    /// Announce new tracks in the collapsed notch.
     var sneakPeekEnabled = true { didSet { save(sneakPeekEnabled, "sneakPeekEnabled") } }
 
-    /// Show the current synced lyric line under the closed notch while
-    /// playing.
-    var lyricActivityEnabled = true { didSet { save(lyricActivityEnabled, "lyricActivityEnabled") } }
+    /// Duration for track sneak peek in seconds.
+    var sneakPeekDuration = 3.5 { didSet { save(sneakPeekDuration, "sneakPeekDuration") } }
 
-    /// Blinking idle face in the wing when nothing else is happening.
-    var showIdleFace = true { didSet { save(showIdleFace, "showIdleFace") } }
+    /// Show the current synced lyric line under the closed notch while playing.
+    var lyricActivityEnabled = true { didSet { save(lyricActivityEnabled, "lyricActivityEnabled") } }
 
     /// Two-finger scroll over the notch opens/closes it.
     var scrollToExpand = true { didSet { save(scrollToExpand, "scrollToExpand") } }
 
-    /// Clipboard history. This is the only feature that polls (macOS has no
-    /// pasteboard-change notification), so it is separately switchable.
+    /// Automatically collapse the notch when the cursor leaves.
+    var autoCollapseOnMouseExit = true { didSet { save(autoCollapseOnMouseExit, "autoCollapseOnMouseExit") } }
+
+    /// Clipboard history.
     var clipboardHistoryEnabled = true {
-        didSet { save(clipboardHistoryEnabled, "clipboardHistoryEnabled") }
+        didSet {
+            save(clipboardHistoryEnabled, "clipboardHistoryEnabled")
+            onClipboardSettingChanged?(clipboardHistoryEnabled)
+        }
+    }
+    var onClipboardSettingChanged: ((Bool) -> Void)?
+
+    var clipboardMaxCapacity = 25 {
+        didSet { save(clipboardMaxCapacity, "clipboardMaxCapacity") }
     }
 
     /// Announce Space switches in the notch.
     var desktopChangeEnabled = true {
         didSet { save(desktopChangeEnabled, "desktopChangeEnabled") }
     }
+
+    /// Bluetooth accessories battery monitor.
+    var showAccessoryBattery = true {
+        didSet { save(showAccessoryBattery, "showAccessoryBattery") }
+    }
+
+    /// Eye break 20-20-20 reminders.
+    var eyeBreakEnabled = false {
+        didSet {
+            save(eyeBreakEnabled, "eyeBreakEnabled")
+            onEyeBreakSettingChanged?(eyeBreakEnabled)
+        }
+    }
+    var onEyeBreakSettingChanged: ((Bool) -> Void)?
+
     var fetchLyrics = true { didSet { save(fetchLyrics, "fetchLyrics") } }
+    var autoScrollLyrics = true { didSet { save(autoScrollLyrics, "autoScrollLyrics") } }
+
     var hapticsEnabled = true { didSet { save(hapticsEnabled, "hapticsEnabled") } }
-    var telemetryInterval = 2.0 { didSet { save(telemetryInterval, "telemetryInterval") } }
+    var telemetryInterval = 1.0 { didSet { save(telemetryInterval, "telemetryInterval") } }
+
+    /// Show telemetry gauges in System view.
+    var showCPUSparkline = true { didSet { save(showCPUSparkline, "showCPUSparkline") } }
+    var showMemoryPressure = true { didSet { save(showMemoryPressure, "showMemoryPressure") } }
+    var showNetworkSpeed = true { didSet { save(showNetworkSpeed, "showNetworkSpeed") } }
+    var showBatteryHealth = true { didSet { save(showBatteryHealth, "showBatteryHealth") } }
 
     /// Raw value of the last tab the user opened; restored across launches.
     var lastTab = "" { didSet { save(lastTab, "lastTab") } }
@@ -88,11 +191,23 @@ final class NotchSettings {
         if defaults.object(forKey: "instantAirDrop") != nil {
             instantAirDrop = defaults.bool(forKey: "instantAirDrop")
         }
+        if defaults.object(forKey: "autoClearShelf") != nil {
+            autoClearShelf = defaults.bool(forKey: "autoClearShelf")
+        }
         if defaults.object(forKey: "showMediaWings") != nil {
             showMediaWings = defaults.bool(forKey: "showMediaWings")
         }
-        if let profile = defaults.string(forKey: "animationProfile") {
+        if let providerString = defaults.string(forKey: "musicProvider"),
+           let provider = MusicProvider(rawValue: providerString) {
+            musicProvider = provider
+        }
+        if let profileString = defaults.string(forKey: "animationProfile"),
+           let profile = AnimationProfile(rawValue: profileString) {
             animationProfile = profile
+        }
+        if let unitString = defaults.string(forKey: "temperatureUnit"),
+           let unit = TemperatureUnit(rawValue: unitString) {
+            temperatureUnit = unit
         }
         if defaults.object(forKey: "liveActivitiesEnabled") != nil {
             liveActivitiesEnabled = defaults.bool(forKey: "liveActivitiesEnabled")
@@ -103,35 +218,68 @@ final class NotchSettings {
         if defaults.object(forKey: "showWeather") != nil {
             showWeather = defaults.bool(forKey: "showWeather")
         }
+        if defaults.object(forKey: "showCompactWeather") != nil {
+            showCompactWeather = defaults.bool(forKey: "showCompactWeather")
+        }
         if defaults.object(forKey: "showBatteryPercentage") != nil {
             showBatteryPercentage = defaults.bool(forKey: "showBatteryPercentage")
+        }
+        if defaults.object(forKey: "lowBatteryThreshold") != nil {
+            lowBatteryThreshold = defaults.integer(forKey: "lowBatteryThreshold")
         }
         if defaults.object(forKey: "sneakPeekEnabled") != nil {
             sneakPeekEnabled = defaults.bool(forKey: "sneakPeekEnabled")
         }
+        if defaults.object(forKey: "sneakPeekDuration") != nil {
+            sneakPeekDuration = defaults.double(forKey: "sneakPeekDuration")
+        }
         if defaults.object(forKey: "lyricActivityEnabled") != nil {
             lyricActivityEnabled = defaults.bool(forKey: "lyricActivityEnabled")
-        }
-        if defaults.object(forKey: "showIdleFace") != nil {
-            showIdleFace = defaults.bool(forKey: "showIdleFace")
         }
         if defaults.object(forKey: "scrollToExpand") != nil {
             scrollToExpand = defaults.bool(forKey: "scrollToExpand")
         }
+        if defaults.object(forKey: "autoCollapseOnMouseExit") != nil {
+            autoCollapseOnMouseExit = defaults.bool(forKey: "autoCollapseOnMouseExit")
+        }
         if defaults.object(forKey: "clipboardHistoryEnabled") != nil {
             clipboardHistoryEnabled = defaults.bool(forKey: "clipboardHistoryEnabled")
+        }
+        if defaults.object(forKey: "clipboardMaxCapacity") != nil {
+            clipboardMaxCapacity = defaults.integer(forKey: "clipboardMaxCapacity")
         }
         if defaults.object(forKey: "desktopChangeEnabled") != nil {
             desktopChangeEnabled = defaults.bool(forKey: "desktopChangeEnabled")
         }
+        if defaults.object(forKey: "showAccessoryBattery") != nil {
+            showAccessoryBattery = defaults.bool(forKey: "showAccessoryBattery")
+        }
+        if defaults.object(forKey: "eyeBreakEnabled") != nil {
+            eyeBreakEnabled = defaults.bool(forKey: "eyeBreakEnabled")
+        }
         if defaults.object(forKey: "fetchLyrics") != nil {
             fetchLyrics = defaults.bool(forKey: "fetchLyrics")
+        }
+        if defaults.object(forKey: "autoScrollLyrics") != nil {
+            autoScrollLyrics = defaults.bool(forKey: "autoScrollLyrics")
         }
         if defaults.object(forKey: "hapticsEnabled") != nil {
             hapticsEnabled = defaults.bool(forKey: "hapticsEnabled")
         }
         if defaults.object(forKey: "telemetryInterval") != nil {
             telemetryInterval = defaults.double(forKey: "telemetryInterval")
+        }
+        if defaults.object(forKey: "showCPUSparkline") != nil {
+            showCPUSparkline = defaults.bool(forKey: "showCPUSparkline")
+        }
+        if defaults.object(forKey: "showMemoryPressure") != nil {
+            showMemoryPressure = defaults.bool(forKey: "showMemoryPressure")
+        }
+        if defaults.object(forKey: "showNetworkSpeed") != nil {
+            showNetworkSpeed = defaults.bool(forKey: "showNetworkSpeed")
+        }
+        if defaults.object(forKey: "showBatteryHealth") != nil {
+            showBatteryHealth = defaults.bool(forKey: "showBatteryHealth")
         }
         lastTab = defaults.string(forKey: "lastTab") ?? ""
         hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")

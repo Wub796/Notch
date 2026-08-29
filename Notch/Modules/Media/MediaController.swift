@@ -47,8 +47,27 @@ final class MediaController {
     private(set) var sourceAppName: String?
     private(set) var sourceAppIcon: NSImage?
     private var sourceAppPID: Int32 = 0
+    private var sourceAppBundleID: String?
+
+    private var selectedProvider: MusicProvider {
+        NotchSettings.shared.musicProvider
+    }
+
+    /// True when the current now-playing source is allowed by the selected
+    /// provider (always true for Automatic).
+    private func providerAllowsCurrentSource() -> Bool {
+        switch selectedProvider {
+        case .automatic:
+            return true
+        case .appleMusic, .spotify:
+            guard let sourceAppBundleID else { return true }
+            return sourceAppBundleID == selectedProvider.bundleID
+        }
+    }
 
     private let bridge = MediaRemoteBridge.shared
+    private var useMediaRemote: Bool
+    private var mediaRemoteRetryWork: DispatchWorkItem?
     private var progressTimer: Timer?
     private var fallbackTimer: Timer?
     private var lyricActivityTimer: Timer?
@@ -58,6 +77,12 @@ final class MediaController {
         track != nil
     }
 
+    /// True when transport controls do something: a track is showing, or a
+    /// specific provider is selected — play will launch and start that app.
+    var canControlTransport: Bool {
+        hasTrack || selectedProvider != .automatic
+    }
+
     var currentElapsed: TimeInterval {
         guard track != nil else { return 0 }
         guard isPlaying else { return elapsedAnchor }
@@ -65,7 +90,11 @@ final class MediaController {
     }
 
     init() {
-        if bridge.isAvailable {
+        useMediaRemote = false
+        if bridge.isAvailable && bridge.supportsQueries {
+            useMediaRemote = true
+        }
+        if useMediaRemote {
             bridge.registerForNotifications()
             let center = NotificationCenter.default
             center.addObserver(
@@ -88,6 +117,8 @@ final class MediaController {
     /// window so the collapsed notch burns zero background CPU.
     func setActive(_ active: Bool) {
         isActive = active
+        mediaRemoteRetryWork?.cancel()
+        mediaRemoteRetryWork = nil
         progressTimer?.invalidate()
         progressTimer = nil
         fallbackTimer?.invalidate()
@@ -95,7 +126,7 @@ final class MediaController {
         defer { updateLyricActivityTimer() }
         guard active else { return }
 
-        if bridge.isAvailable {
+        if useMediaRemote {
             refreshFromMediaRemote()
         } else {
             refreshFromAppleScript()
@@ -156,7 +187,9 @@ final class MediaController {
     // MARK: - Transport controls
 
     func togglePlayPause() {
-        if bridge.isAvailable {
+        if let provider = selectedProvider.appleScriptAppName {
+            runProviderCommand(appName: provider, command: "playpause")
+        } else if useMediaRemote {
             bridge.send(.togglePlayPause)
         } else {
             runMusicCommand("playpause")
@@ -164,7 +197,9 @@ final class MediaController {
     }
 
     func nextTrack() {
-        if bridge.isAvailable {
+        if let provider = selectedProvider.appleScriptAppName {
+            runProviderCommand(appName: provider, command: "next track")
+        } else if useMediaRemote {
             bridge.send(.nextTrack)
         } else {
             runMusicCommand("next track")
@@ -172,7 +207,9 @@ final class MediaController {
     }
 
     func previousTrack() {
-        if bridge.isAvailable {
+        if let provider = selectedProvider.appleScriptAppName {
+            runProviderCommand(appName: provider, command: "previous track")
+        } else if useMediaRemote {
             bridge.send(.previousTrack)
         } else {
             runMusicCommand("previous track")
@@ -189,19 +226,41 @@ final class MediaController {
         displayedElapsed = clamped
         lyrics.updateCurrentLine(for: clamped)
 
-        if bridge.isAvailable, bridge.canSeek {
+        if let provider = selectedProvider.appleScriptAppName {
+            runProviderCommand(appName: provider, command: "set player position to \(Int(clamped))")
+        } else if useMediaRemote, bridge.canSeek {
             bridge.setElapsedTime(clamped)
         } else {
             runMusicCommand("set player position to \(Int(clamped))")
         }
     }
 
+    /// Drives the selected provider directly. `tell application` launches the
+    /// app if it isn't running, so picking a provider and pressing play really
+    /// starts that player.
+    private func runProviderCommand(appName: String, command: String) {
+        guard fallbackAppIsRunning,
+              let script = NSAppleScript(source: "tell application \"\(appName)\" to \(command)")
+        else { return }
+        var error: NSDictionary?
+        script.executeAndReturnError(&error)
+        refreshFromAppleScript()
+    }
+
     // MARK: - MediaRemote source
 
     private func refreshFromMediaRemote() {
+        guard useMediaRemote else { return }
         bridge.nowPlayingInfo { [weak self] info in
             DispatchQueue.main.async {
-                self?.apply(info)
+                guard let self else { return }
+                guard self.providerAllowsCurrentSource() else {
+                    // A different app is playing than the one selected — show
+                    // nothing until the chosen provider takes over.
+                    self.apply([:])
+                    return
+                }
+                self.apply(info)
             }
         }
         bridge.nowPlayingApplicationPID { [weak self] pid in
@@ -212,6 +271,10 @@ final class MediaController {
         bridge.isPlaying { [weak self] playing in
             DispatchQueue.main.async {
                 guard let self else { return }
+                guard self.providerAllowsCurrentSource() else {
+                    if self.isPlaying { self.isPlaying = false }
+                    return
+                }
                 if self.isPlaying != playing {
                     // Re-anchor so extrapolation pauses/resumes correctly.
                     self.elapsedAnchor = self.currentElapsed
@@ -228,6 +291,8 @@ final class MediaController {
             track = nil
             artwork = nil
             isPlaying = false
+            sourceAppBundleID = nil
+            updateLyricActivityTimer()
             return
         }
 
@@ -265,10 +330,15 @@ final class MediaController {
         else {
             sourceAppName = nil
             sourceAppIcon = nil
+            sourceAppBundleID = nil
             return
         }
         sourceAppName = app.localizedName
         sourceAppIcon = app.icon
+        sourceAppBundleID = app.bundleIdentifier
+        // Re-pull metadata now that the source identity is known (info can
+        // arrive before the pid), so the provider filter sees the right app.
+        refreshFromMediaRemote()
     }
 
     /// Extracts the artwork accent off the main thread, once per unique image.
@@ -317,26 +387,38 @@ final class MediaController {
         }
     }
 
-    // MARK: - Apple Events fallback (Music.app)
+    // MARK: - Apple Events fallback (the selected provider)
 
-    private static let musicStateScript = """
-    tell application "Music"
-        if player state is stopped then return "stopped"
-        set t to current track
-        return (name of t) & "||" & (artist of t) & "||" & (album of t) & "||" & \
-    (duration of t as text) & "||" & (player position as text) & "||" & (player state as text)
-    end tell
-    """
+    /// App name and bundle used by the AppleScript fallback: the chosen
+    /// provider, or Music.app for Automatic.
+    private var fallbackAppName: String {
+        selectedProvider.appleScriptAppName ?? "Music"
+    }
 
-    private var musicIsRunning: Bool {
-        !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty
+    private var fallbackBundleID: String {
+        selectedProvider == .automatic ? "com.apple.Music" : selectedProvider.bundleID
+    }
+
+    private func stateScript(for appName: String) -> String {
+        """
+        tell application "\(appName)"
+            if player state is stopped then return "stopped"
+            set t to current track
+            return (name of t) & "||" & (artist of t) & "||" & (album of t) & "||" & \
+        (duration of t as text) & "||" & (player position as text) & "||" & (player state as text)
+        end tell
+        """
+    }
+
+    private var fallbackAppIsRunning: Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: fallbackBundleID).isEmpty
     }
 
     private func refreshFromAppleScript() {
-        // Never launch Music just to ask what is playing.
-        guard musicIsRunning, let script = NSAppleScript(source: Self.musicStateScript) else {
-            return
-        }
+        // Never launch a player just to ask what is playing.
+        guard fallbackAppIsRunning,
+              let script = NSAppleScript(source: stateScript(for: fallbackAppName))
+        else { return }
         var error: NSDictionary?
         let result = script.executeAndReturnError(&error)
         guard error == nil, let raw = result.stringValue, raw != "stopped" else {
@@ -361,18 +443,18 @@ final class MediaController {
         updateTrackIfChanged(newTrack)
         updateLyricActivityTimer()
 
-        // The AppleScript path only ever talks to Music.app.
+        // The AppleScript path only ever talks to the selected provider.
         if sourceAppName == nil,
-           let music = NSRunningApplication
-               .runningApplications(withBundleIdentifier: "com.apple.Music").first {
-            sourceAppName = music.localizedName
-            sourceAppIcon = music.icon
+           let app = NSRunningApplication
+               .runningApplications(withBundleIdentifier: fallbackBundleID).first {
+            sourceAppName = app.localizedName
+            sourceAppIcon = app.icon
         }
     }
 
     private func runMusicCommand(_ command: String) {
-        guard musicIsRunning,
-              let script = NSAppleScript(source: "tell application \"Music\" to \(command)")
+        guard fallbackAppIsRunning,
+              let script = NSAppleScript(source: "tell application \"\(fallbackAppName)\" to \(command)")
         else { return }
         var error: NSDictionary?
         script.executeAndReturnError(&error)

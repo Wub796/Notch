@@ -31,7 +31,7 @@ final class TelemetryController {
     func start() {
         guard timer == nil else { return }
         sample()
-        let interval = max(NotchSettings.shared.telemetryInterval, 1.0)
+        let interval = max(NotchSettings.shared.telemetryInterval, 0.5)
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.sample()
         }
