@@ -65,7 +65,7 @@ final class NotchState {
         case .calendar: CGSize(width: 760, height: 296)
         case .shelf: CGSize(width: 780, height: 206)
         case .clipboard: CGSize(width: 800, height: 190)
-        case .tools: CGSize(width: 820, height: 198)
+        case .tools: CGSize(width: 1000, height: 210)
         case .notes: CGSize(width: 720, height: 206)
         case .telemetry: CGSize(width: 800, height: 172)
         }
@@ -120,6 +120,7 @@ final class NotchState {
     let audio = AudioOutputManager()
     let bluetooth = BluetoothBatteryMonitor()
     let brightness = BrightnessController()
+    let quickActions = QuickActions()
 
     private let focusMonitor = FocusModeMonitor()
     private let desktopMonitor = DesktopChangeMonitor()
@@ -380,7 +381,7 @@ final class NotchState {
         telemetry.start()
         weather.refresh()
         audio.refresh()
-        brightness.refresh()
+        brightness.startTracking()
         bluetooth.start()
         shortcuts.refresh()
     }
@@ -388,6 +389,7 @@ final class NotchState {
     private func sleepModules() {
         media.setActive(false)
         telemetry.stop()
+        brightness.stopTracking()
         bluetooth.stop()
     }
 }

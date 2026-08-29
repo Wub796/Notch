@@ -16,6 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         attachToBestScreen()
         installScrollGesture()
         installOutsideClickMonitor()
+        installHotKey()
+        NotchSettings.shared.onScreenPreferenceChanged = { [weak self] in
+            self?.attachToBestScreen()
+        }
         presentOnboardingIfNeeded()
 
         NotificationCenter.default.addObserver(
@@ -87,6 +91,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, self.state.mode == .expanded, !self.state.isPinned else { return }
             self.state.collapse()
         }
+    }
+
+    /// System-wide shortcut that opens or closes the notch from anywhere.
+    private func installHotKey() {
+        HotKeyManager.shared.onTrigger = { [weak self] in
+            guard let self else { return }
+            if self.state.mode == .expanded {
+                self.state.collapse()
+            } else {
+                self.state.expand()
+            }
+        }
+        HotKeyManager.shared.apply(
+            HotKeyManager.Shortcut(rawValue: NotchSettings.shared.hotKey) ?? .disabled
+        )
     }
 
     private func presentOnboardingIfNeeded() {

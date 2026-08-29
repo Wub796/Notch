@@ -167,6 +167,29 @@ final class NotchSettings {
     var showNetworkSpeed = true { didSet { save(showNetworkSpeed, "showNetworkSpeed") } }
     var showBatteryHealth = true { didSet { save(showBatteryHealth, "showBatteryHealth") } }
 
+    /// System-wide shortcut that toggles the notch.
+    var hotKey: String = HotKeyManager.Shortcut.optionCommandN.rawValue {
+        didSet {
+            save(hotKey, "hotKey")
+            HotKeyManager.shared.apply(
+                HotKeyManager.Shortcut(rawValue: hotKey) ?? .disabled
+            )
+        }
+    }
+
+    /// Which display hosts the notch. Empty means "wherever the notch is,
+    /// else the main display".
+    var preferredScreenName = "" {
+        didSet {
+            save(preferredScreenName, "preferredScreenName")
+            onScreenPreferenceChanged?()
+        }
+    }
+    var onScreenPreferenceChanged: (() -> Void)?
+
+    /// Quick action row on the Tools screen.
+    var showQuickActions = true { didSet { save(showQuickActions, "showQuickActions") } }
+
     // MARK: - Notch dimensions (manual overrides)
 
     /// Trims or extends the detected notch width, in points. Useful when the
@@ -324,6 +347,12 @@ final class NotchSettings {
             ("hoverPadding", { v in self.hoverPadding = v }),
         ] where defaults.object(forKey: key) != nil {
             apply(defaults.double(forKey: key))
+        }
+        hotKey = defaults.string(forKey: "hotKey")
+            ?? HotKeyManager.Shortcut.optionCommandN.rawValue
+        preferredScreenName = defaults.string(forKey: "preferredScreenName") ?? ""
+        if defaults.object(forKey: "showQuickActions") != nil {
+            showQuickActions = defaults.bool(forKey: "showQuickActions")
         }
         lastTab = defaults.string(forKey: "lastTab") ?? ""
         hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")

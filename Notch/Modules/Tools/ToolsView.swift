@@ -16,6 +16,11 @@ struct ToolsView: View {
 
             timerColumn
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+            if state.settings.showQuickActions {
+                quickActionsColumn
+                    .fixedSize(horizontal: true, vertical: false)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
@@ -290,6 +295,73 @@ struct ToolsView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Quick actions
+
+    private var quickActionsColumn: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            sectionLabel("QUICK ACTIONS")
+
+            VStack(alignment: .leading, spacing: 4) {
+                actionButton(
+                    state.quickActions.isDarkMode ? "sun.max.fill" : "moon.fill",
+                    state.quickActions.isDarkMode ? "Light Mode" : "Dark Mode"
+                ) {
+                    state.quickActions.toggleAppearance()
+                }
+
+                actionButton("lock.fill", "Lock Screen") {
+                    state.quickActions.lockScreen()
+                }
+
+                actionButton("display", "Sleep Display") {
+                    state.quickActions.sleepDisplay()
+                }
+
+                actionButton(
+                    "trash.fill",
+                    state.quickActions.trashItemCount > 0
+                        ? "Empty Trash (\(state.quickActions.trashItemCount))"
+                        : "Trash Empty",
+                    isEnabled: state.quickActions.trashItemCount > 0
+                ) {
+                    state.quickActions.emptyTrash()
+                }
+            }
+        }
+        .onAppear { state.quickActions.refresh() }
+    }
+
+    private func actionButton(
+        _ systemImage: String,
+        _ title: String,
+        isEnabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 10.5))
+                    .frame(width: 14)
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(isEnabled ? NotchTheme.inkSecondary : NotchTheme.inkMuted)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .frame(width: 148, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(NotchTheme.surface)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .disabled(!isEnabled)
+        .accessibilityLabel(title)
     }
 
     // MARK: - Shared bits

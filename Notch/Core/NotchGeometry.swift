@@ -35,6 +35,12 @@ struct NotchGeometry {
     /// The screen the panel should live on: prefer a display with a physical
     /// notch, otherwise the main display.
     static var preferredScreen: NSScreen? {
-        NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main
+        // An explicit choice wins, when that display is still attached.
+        let chosen = NotchSettings.shared.preferredScreenName
+        if !chosen.isEmpty,
+           let match = NSScreen.screens.first(where: { $0.localizedName == chosen }) {
+            return match
+        }
+        return NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main
     }
 }

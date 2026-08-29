@@ -235,6 +235,25 @@ private struct NotchSettingsPane: View {
                 }
             }
 
+            Section {
+                Picker("Toggle shortcut", selection: $settings.hotKey) {
+                    ForEach(HotKeyManager.Shortcut.allCases) { shortcut in
+                        Text(shortcut.title).tag(shortcut.rawValue)
+                    }
+                }
+
+                Picker("Show notch on", selection: $settings.preferredScreenName) {
+                    Text("Automatic").tag("")
+                    ForEach(NSScreen.screens, id: \.localizedName) { screen in
+                        Text(screen.localizedName).tag(screen.localizedName)
+                    }
+                }
+            } header: {
+                Label("Shortcut & Display", systemImage: "keyboard")
+            } footer: {
+                Text("The shortcut works system-wide without Accessibility access. Automatic picks the display with a real notch, falling back to the main display.")
+            }
+
             DimensionSliders()
         }
         .formStyle(.grouped)
@@ -431,6 +450,7 @@ private struct ActivitiesSettingsPane: View {
                 Toggle("Volume change HUD", isOn: $settings.volumeHUDEnabled)
                 Toggle("Desktop & Spaces switches", isOn: $settings.desktopChangeEnabled)
                 Toggle("Bluetooth accessories battery levels", isOn: $settings.showAccessoryBattery)
+                Toggle("Quick actions in Tools", isOn: $settings.showQuickActions)
                 Toggle("Eye break reminders (20-20-20)", isOn: $settings.eyeBreakEnabled)
                 Toggle("Battery percentage beside the battery glyph", isOn: $settings.showBatteryPercentage)
 

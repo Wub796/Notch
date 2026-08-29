@@ -45,6 +45,24 @@ final class BrightnessController {
         CGMainDisplayID()
     }
 
+    private var pollTimer: Timer?
+
+    /// The system gives no brightness-change notification, so while the notch
+    /// is open the level is sampled to keep the bar in step with the F1/F2
+    /// keys. Nothing runs once it closes.
+    func startTracking() {
+        guard isAvailable, pollTimer == nil else { return }
+        refresh()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
+            self?.refresh()
+        }
+    }
+
+    func stopTracking() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+
     func refresh() {
         if let getBrightnessFunc {
             var level: Float = 0
