@@ -199,56 +199,6 @@ struct TrackChangeActivityView: View {
     }
 }
 
-/// Lyric live activity: the closed notch grows a slim bar underneath showing
-/// the current synced lyric line in the artwork accent (the reference demo's
-/// signature moment).
-struct LyricActivityView: View {
-    let notchWidth: CGFloat
-    let notchHeight: CGFloat
-    let line: String
-    let artwork: NSImage?
-    let accent: Color
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ActivityWingLayout(
-                notchWidth: notchWidth,
-                leading: Group {
-                    if let artwork {
-                        Image(nsImage: artwork)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 18, height: 18)
-                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                    } else {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(accent)
-                    }
-                },
-                trailing: Circle()
-                    .fill(accent)
-                    .frame(width: 6, height: 6)
-            )
-            .frame(height: notchHeight)
-
-            Text(line)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(accent)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .padding(.horizontal, 16)
-                .frame(maxWidth: .infinity)
-                .frame(height: 24)
-                .contentTransition(.opacity)
-                .animation(NotchAnimations.activity, value: line)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Lyric")
-        .accessibilityValue(line)
-    }
-}
-
 /// Session lock/unlock moment.
 struct ScreenLockActivityView: View {
     let notchWidth: CGFloat

@@ -59,7 +59,7 @@ final class NotchState {
         // height = top bar (38) + vertical padding (32) + the module's real
         // content height. These were previously guessed high, which left a
         // slab of dead black under every screen.
-        case .home: CGSize(width: 980, height: 158)
+        case .home: CGSize(width: 940, height: 172)
         case .media: CGSize(width: 880, height: 296)
         case .weather: CGSize(width: 800, height: 272)
         case .calendar: CGSize(width: 760, height: 296)
@@ -267,7 +267,7 @@ final class NotchState {
         size.width += activityWingWidth
         // The lyric activity grows a slim bar under the hardware notch.
         if case .lyrics = collapsedActivity {
-            size.height += 24
+            size.height += 26
         }
         return size
     }

@@ -15,13 +15,22 @@ struct CollapsedNotchView: View {
             case .music:
                 musicWings
             case let .lyrics(line):
-                LyricActivityView(
-                    notchWidth: state.notchSize.width,
-                    notchHeight: state.notchSize.height,
-                    line: line,
-                    artwork: state.media.artwork,
-                    accent: state.media.accent
-                )
+                VStack(spacing: 0) {
+                    musicWings
+                        .frame(height: state.notchSize.height)
+                    Text(line)
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(state.media.accent)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.horizontal, 18)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 26)
+                        .contentTransition(.opacity)
+                        .animation(NotchAnimations.activity, value: line)
+                        .accessibilityLabel("Lyric")
+                        .accessibilityValue(line)
+                }
             case let .trackChange(title, artist):
                 TrackChangeActivityView(
                     notchWidth: state.notchSize.width,
@@ -115,11 +124,11 @@ struct CollapsedNotchView: View {
                     for: weather.weatherCode,
                     isDay: weather.isDay
                 ))
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .symbolRenderingMode(.multicolor)
             } else {
                 Image(systemName: "cloud.sun.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(NotchTheme.inkMuted)
             }
         }
@@ -131,12 +140,12 @@ struct CollapsedNotchView: View {
         Group {
             if let weather = state.weather.snapshot {
                 Text(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
-                    .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: 15, weight: .bold, design: .rounded).monospacedDigit())
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .contentTransition(.numericText())
             } else {
                 Text("--°")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundStyle(NotchTheme.inkMuted)
             }
         }
@@ -150,13 +159,26 @@ struct CollapsedNotchView: View {
         )
     }
 
+    /// Weather always flanks the hardware notch — the glyph on the left, the
+    /// temperature on the right — with the artwork joining the left wing
+    /// while something is playing.
     private var musicWings: some View {
         ActivityWingLayout(
             notchWidth: state.notchSize.width,
-            leading: HStack(spacing: 8) {
+            leading: HStack(spacing: 9) {
                 miniArtwork
                 weatherIcon
             },
+            trailing: weatherTemperature
+        )
+    }
+
+    /// The lyric and sneak-peek states keep the weather readout too, so the
+    /// left and right wings never go empty.
+    private var weatherFlank: some View {
+        ActivityWingLayout(
+            notchWidth: state.notchSize.width,
+            leading: weatherIcon,
             trailing: weatherTemperature
         )
     }

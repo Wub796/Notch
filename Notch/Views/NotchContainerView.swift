@@ -33,10 +33,15 @@ struct NotchContainerView: View {
             CollapsedNotchView(state: state, namespace: notchNamespace)
                 .opacity(state.mode == .expanded ? 0 : 1)
                 .allowsHitTesting(state.mode != .expanded)
+                // Swap instantly rather than cross-fading: two half-visible
+                // layers overlapping mid-morph is what read as the notch
+                // fading. The solid black shape covers the switch.
+                .animation(nil, value: state.mode)
 
             ExpandedNotchView(state: state, namespace: notchNamespace)
                 .opacity(state.mode == .expanded ? 1 : 0)
                 .allowsHitTesting(state.mode == .expanded)
+                .animation(nil, value: state.mode)
         }
         .frame(width: state.currentSize.width, height: state.currentSize.height, alignment: .top)
         // Completely black base in every state — the slab always hides the
@@ -45,11 +50,9 @@ struct NotchContainerView: View {
             shape.fill(.black)
         }
         .clipShape(shape)
-        .shadow(
-            color: .black.opacity(state.mode == .expanded ? 0.5 : (state.mode == .peek ? 0.28 : 0)),
-            radius: state.mode == .expanded ? 22 : 8,
-            y: state.mode == .expanded ? 9 : 3
-        )
+        // A single fixed shadow: animating radius and opacity alongside the
+        // geometry made the edge look like it was dissolving.
+        .shadow(color: .black.opacity(0.45), radius: 14, y: 6)
         // Hit testing — and therefore hover — is limited to the physical
         // notch while closed, so the pointer must actually be on the notch
         // rather than merely near it. Expanded, the whole slab stays live so

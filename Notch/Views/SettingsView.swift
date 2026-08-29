@@ -74,9 +74,9 @@ struct SettingsView: View {
         .frame(width: 760, height: 560)
         // Match the notch's dark aesthetic.
         .preferredColorScheme(.dark)
-        .onAppear {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        // Without this the window renders but never becomes key, so every
+        // control in it looks live and does nothing.
+        .activatesAsRegularApp()
     }
 
     @ViewBuilder

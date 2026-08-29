@@ -33,24 +33,26 @@ enum NotchAnimations {
 
     private static let reduced = Animation.easeOut(duration: 0.15)
 
-    /// Opening into the full panel — a glide with a soft settle and just a
-    /// hint of overshoot.
+    /// Opening into the full panel. Timing curves rather than springs: a
+    /// spring accelerates and settles at a varying rate, which reads as the
+    /// notch speeding up and easing off. These hold an even pace so the
+    /// shape simply grows.
     static var expand: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.34, dampingFraction: 0.82)
-        case .bouncy: return .spring(response: 0.38, dampingFraction: 0.62)
-        case .calm: return .spring(response: 0.5, dampingFraction: 0.95)
+        case .snappy: return .easeInOut(duration: 0.30)
+        case .bouncy: return .spring(response: 0.36, dampingFraction: 0.66)
+        case .calm: return .easeInOut(duration: 0.45)
         }
     }
 
-    /// Closing back into the hardware notch — settles without bounce.
+    /// Closing back into the hardware notch — the same pace, in reverse.
     static var collapse: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.26, dampingFraction: 1.0)
-        case .bouncy: return .spring(response: 0.3, dampingFraction: 0.88)
-        case .calm: return .spring(response: 0.42, dampingFraction: 1.0)
+        case .snappy: return .easeInOut(duration: 0.28)
+        case .bouncy: return .spring(response: 0.3, dampingFraction: 0.85)
+        case .calm: return .easeInOut(duration: 0.42)
         }
     }
 
@@ -58,9 +60,9 @@ enum NotchAnimations {
     static var hover: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.2, dampingFraction: 0.86)
+        case .snappy: return .easeInOut(duration: 0.18)
         case .bouncy: return .spring(response: 0.22, dampingFraction: 0.66)
-        case .calm: return .spring(response: 0.32, dampingFraction: 1.0)
+        case .calm: return .easeInOut(duration: 0.28)
         }
     }
 
@@ -68,9 +70,9 @@ enum NotchAnimations {
     static var content: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.3, dampingFraction: 0.95)
+        case .snappy: return .easeInOut(duration: 0.26)
         case .bouncy: return .spring(response: 0.36, dampingFraction: 0.86)
-        case .calm: return .spring(response: 0.46, dampingFraction: 0.98)
+        case .calm: return .easeInOut(duration: 0.4)
         }
     }
 
@@ -78,9 +80,9 @@ enum NotchAnimations {
     static var activity: Animation {
         guard !reduceMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.45, dampingFraction: 0.95)
+        case .snappy: return .easeInOut(duration: 0.32)
         case .bouncy: return .spring(response: 0.45, dampingFraction: 0.8)
-        case .calm: return .spring(response: 0.6, dampingFraction: 0.98)
+        case .calm: return .easeInOut(duration: 0.45)
         }
     }
 

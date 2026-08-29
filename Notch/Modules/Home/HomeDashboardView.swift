@@ -39,22 +39,19 @@ struct HomeDashboardView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { state.select(.media) }
 
-            VStack(alignment: .leading, spacing: 3) {
-                VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 5) {
+                // Title and artist only — the album line was a third string
+                // competing for the same glance.
+                VStack(alignment: .leading, spacing: 2) {
                     MarqueeText(
                         text: state.media.track?.title ?? "Nothing Playing",
-                        font: .system(size: 15, weight: .black, design: .rounded),
-                        width: 200
+                        font: .system(size: 18, weight: .black, design: .rounded),
+                        width: 210
                     )
                     .foregroundStyle(NotchTheme.inkPrimary)
 
-                    Text(state.media.track?.album ?? "Unknown Album")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(NotchTheme.inkPrimary.opacity(0.92))
-                        .lineLimit(1)
-
-                    Text(state.media.track?.artist ?? "Play music in Spotify or Apple Music")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                    Text(state.media.track?.artist ?? "Nothing is playing")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundStyle(NotchTheme.inkSecondary)
                         .lineLimit(1)
                 }
@@ -96,7 +93,7 @@ struct HomeDashboardView: View {
                     }
             }
         }
-        .frame(width: 58, height: 58)
+        .frame(width: 66, height: 66)
         .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: state.media.accent.opacity(0.45), radius: 10, y: 4)
@@ -121,9 +118,9 @@ struct HomeDashboardView: View {
             state.media.togglePlayPause()
         } label: {
             Image(systemName: state.media.isPlaying ? "pause.fill" : "play.fill")
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(NotchTheme.inkPrimary)
-                .frame(width: 30, height: 30)
+                .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressableButtonStyle())
@@ -140,9 +137,9 @@ struct HomeDashboardView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(NotchTheme.inkPrimary)
-                .frame(width: 28, height: 28)
+                .frame(width: 30, height: 30)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressableButtonStyle())
@@ -158,43 +155,26 @@ struct HomeDashboardView: View {
             if let weather = state.weather.snapshot {
                 // Icon beside a column of temperature / place / condition,
                 // with the metric stack riding on the right.
-                HStack(alignment: .center, spacing: 10) {
+                HStack(alignment: .center, spacing: 12) {
                     Image(systemName: WeatherService.symbol(
                         for: weather.weatherCode,
                         isDay: weather.isDay
                     ))
-                    .font(.system(size: 30))
+                    .font(.system(size: 38))
                     .symbolRenderingMode(.multicolor)
 
-                    VStack(alignment: .leading, spacing: 0) {
+                    VStack(alignment: .leading, spacing: -2) {
                         Text(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
-                            .font(.system(size: 30, weight: .heavy, design: .rounded).monospacedDigit())
+                            .font(.system(size: 38, weight: .heavy, design: .rounded).monospacedDigit())
                             .foregroundStyle(NotchTheme.inkPrimary)
                             .contentTransition(.numericText())
 
-                        // Bounded so a long city name can't widen the whole
-                        // column and squeeze the music section.
                         Text(state.weather.placeName ?? "Your Location")
-                            .font(.system(size: 12, weight: .heavy, design: .rounded))
-                            .foregroundStyle(NotchTheme.inkPrimary.opacity(0.9))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: 116, alignment: .leading)
-
-                        Text(WeatherService.condition(for: weather.weatherCode))
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundStyle(NotchTheme.inkSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .frame(maxWidth: 116, alignment: .leading)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        metricRow("wind", text: WeatherService.windString(kmh: weather.windKmh))
-                        metricRow("drop.fill", text: "\(weather.precipitationChancePercent)%")
-                        metricRow("humidity", text: "\(weather.humidityPercent)%")
+                            .frame(maxWidth: 130, alignment: .leading)
                     }
                 }
                 .contentShape(Rectangle())
@@ -240,17 +220,6 @@ struct HomeDashboardView: View {
         return "Getting weather…"
     }
 
-    private func metricRow(_ systemImage: String, text: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(NotchTheme.inkPrimary.opacity(0.85))
-                .frame(width: 13)
-            Text(text)
-                .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(NotchTheme.inkPrimary)
-        }
-    }
 
     // MARK: - Calendar
 
@@ -264,34 +233,21 @@ struct HomeDashboardView: View {
             !$0.isAllDay && $0.start > today
         }
 
-        // Month beside the strip, with the next-item line spanning the full
-        // column beneath so it has room to read without truncating.
-        return VStack(alignment: .leading, spacing: 8) {
-            monthAndStrip(today: today, strip: strip)
-
-            HStack(spacing: 5) {
-                Image(systemName: "calendar.badge.checkmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(NotchTheme.inkMuted)
-                Text(remaining?.title ?? "No more items today")
-                    .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                    .foregroundStyle(NotchTheme.inkMuted)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { state.select(.calendar) }
-        .help("Open the calendar")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Calendar")
-        .accessibilityValue(remaining?.title ?? "No more items today")
+        // Month and the day strip only; the next-event line moved to the
+        // Calendar screen where there is room to read it.
+        return monthAndStrip(today: today, strip: strip)
+            .contentShape(Rectangle())
+            .onTapGesture { state.select(.calendar) }
+            .help("Open the calendar")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Calendar")
+            .accessibilityValue(remaining?.title ?? "No more items today")
     }
 
     private func monthAndStrip(today: Date, strip: [Date]) -> some View {
         HStack(alignment: .bottom, spacing: 10) {
             Text(monthAbbreviation(Calendar.current.component(.month, from: today)))
-                .font(.system(size: 22, weight: .heavy, design: .rounded))
+                .font(.system(size: 28, weight: .heavy, design: .rounded))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .accessibilityHidden(true)
 
@@ -311,17 +267,17 @@ struct HomeDashboardView: View {
 
         return VStack(spacing: 0) {
             Text(isToday ? weekdayAbbreviation(for: day) : weekdayLetter(for: day))
-                .font(.system(size: isToday ? 9 : 8, weight: .heavy, design: .rounded))
+                .font(.system(size: isToday ? 11 : 10, weight: .heavy, design: .rounded))
                 .foregroundStyle(isToday ? .blue : weekdayColor(for: day).opacity(0.7))
             Text("\(calendar.component(.day, from: day))")
                 .font(.system(
-                    size: isToday ? 19 : 14,
+                    size: isToday ? 23 : 18,
                     weight: isToday ? .heavy : .semibold,
                     design: .rounded
                 ).monospacedDigit())
                 .foregroundStyle(isToday ? .blue : weekdayColor(for: day))
         }
-        .frame(minWidth: isToday ? 27 : 17)
+        .frame(minWidth: isToday ? 32 : 22)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(day.formatted(.dateTime.weekday(.wide).day().month(.wide)))
         .accessibilityAddTraits(isToday ? [.isSelected] : [])
