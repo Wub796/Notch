@@ -111,7 +111,13 @@ struct CollapsedNotchView: View {
                     compactWeatherWing
                         .transition(NotchAnimations.activitySwap)
                 } else {
-                    Color.clear
+                    // Weather off still leaves the charging badge, which is a
+                    // condition of the machine rather than a weather readout.
+                    ActivityWingLayout(
+                        notchWidth: state.adjustedNotchSize.width,
+                        leading: Color.clear.frame(width: 0),
+                        trailing: chargingBadge
+                    )
                 }
             }
         }
@@ -147,7 +153,10 @@ struct CollapsedNotchView: View {
         ActivityWingLayout(
             notchWidth: state.adjustedNotchSize.width,
             leading: weatherIcon,
-            trailing: weatherTemperature
+            trailing: HStack(spacing: 9) {
+                chargingBadge
+                weatherTemperature
+            }
         )
     }
 
@@ -155,7 +164,10 @@ struct CollapsedNotchView: View {
         ActivityWingLayout(
             notchWidth: state.adjustedNotchSize.width,
             leading: weatherIcon,
-            trailing: weatherTemperature
+            trailing: HStack(spacing: 9) {
+                chargingBadge
+                weatherTemperature
+            }
         )
     }
 
@@ -176,6 +188,32 @@ struct CollapsedNotchView: View {
             }
         }
         .accessibilityHidden(true)
+    }
+
+    /// A bolt on the trailing wing for as long as the Mac is plugged in.
+    ///
+    /// Distinct from the plug/unplug activity, which is a moment that passes.
+    /// Being on power is a condition, so it stays up — and it distinguishes
+    /// charging from merely connected, which is what you see at 100% or under
+    /// optimised charging.
+    @ViewBuilder
+    private var chargingBadge: some View {
+        if state.settings.showChargingIndicator,
+           let power = state.activities.power,
+           power.onACPower {
+            HStack(spacing: 3) {
+                Image(systemName: power.isCharging ? "bolt.fill" : "powerplug.fill")
+                    .font(.system(size: 10, weight: .black))
+                Text("\(power.percent)%")
+                    .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
+                    .contentTransition(.numericText())
+            }
+            .foregroundStyle(NotchTheme.battery)
+            .transition(NotchAnimations.activitySwap)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(power.isCharging ? "Charging" : "Plugged in")
+            .accessibilityValue("\(power.percent) percent")
+        }
     }
 
     /// The bold temperature readout, on the right of the hardware notch.
@@ -209,10 +247,13 @@ struct CollapsedNotchView: View {
         ActivityWingLayout(
             notchWidth: state.adjustedNotchSize.width,
             leading: miniArtwork,
-            trailing: MusicVisualizerView(
-                accent: state.media.accent,
-                isPlaying: state.media.isPlaying
-            )
+            trailing: HStack(spacing: 9) {
+                chargingBadge
+                MusicVisualizerView(
+                    accent: state.media.accent,
+                    isPlaying: state.media.isPlaying
+                )
+            }
         )
     }
 

@@ -30,6 +30,11 @@ final class LiveActivityManager {
     private(set) var transient: LiveActivity?
 
     private let volumeMonitor = VolumeMonitor()
+    /// Current power state, kept live for the collapsed notch's charging
+    /// indicator. Separate from the transient plug/unplug activity: that one
+    /// is a moment, this is a condition.
+    private(set) var power: PowerMonitor.Snapshot?
+
     private let powerMonitor = PowerMonitor()
     private var dismissWork: DispatchWorkItem?
     private var lastPowerSnapshot: PowerMonitor.Snapshot?
@@ -50,14 +55,21 @@ final class LiveActivityManager {
             volumeMonitor.start()
         }
 
-        if NotchSettings.shared.liveActivitiesEnabled {
-            lastPowerSnapshot = PowerMonitor.snapshot()
-            wasLowBattery = (lastPowerSnapshot?.percent ?? 100) <= Self.lowBatteryThreshold
-            powerMonitor.onChange = { [weak self] snapshot in
-                self?.handlePowerChange(snapshot)
-            }
-            powerMonitor.start()
+        // The power monitor always runs: it is a run-loop source that fires on
+        // plug and unplug, so it costs nothing while idle, and the charging
+        // indicator has to be right whether or not the plug/unplug *activity*
+        // is switched on.
+        power = PowerMonitor.snapshot()
+        lastPowerSnapshot = power
+        wasLowBattery = (power?.percent ?? 100) <= Self.lowBatteryThreshold
+        powerMonitor.onChange = { [weak self] snapshot in
+            self?.power = snapshot
+            guard NotchSettings.shared.liveActivitiesEnabled else { return }
+            self?.handlePowerChange(snapshot)
+        }
+        powerMonitor.start()
 
+        if NotchSettings.shared.liveActivitiesEnabled {
             // Session lock/unlock, announced by the system over the
             // distributed notification center (DynamicNotch's approach).
             let center = DistributedNotificationCenter.default()

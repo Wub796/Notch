@@ -294,6 +294,15 @@ final class NotchState {
 
     /// Extra width added around the hardware notch for the active activity —
     /// split evenly into two wings, so each side must fit half of this.
+    /// Extra room the charging badge needs on the trailing wing. Without it
+    /// the badge would push the temperature or the visualiser into the notch.
+    private var chargingBadgeWidth: CGFloat {
+        guard settings.showChargingIndicator,
+              activities.power?.onACPower == true
+        else { return 0 }
+        return 54
+    }
+
     private var activityWingWidth: CGFloat {
         switch collapsedActivity {
         // Cover on one side, visualiser on the other: neither needs the width
@@ -330,7 +339,7 @@ final class NotchState {
 
     var collapsedSize: CGSize {
         var size = adjustedNotchSize
-        size.width += activityWingWidth
+        size.width += activityWingWidth + chargingBadgeWidth
         size.height += activityDropHeight
         return size
     }

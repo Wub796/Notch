@@ -616,6 +616,8 @@ private struct ActivitiesSettingsPane: View {
                           $settings.showQuickActions)
                 toggleRow("battery.75percent", .green, "Battery Percentage in the Notch",
                           $settings.showBatteryPercentage)
+                toggleRow("bolt.fill", .yellow, "Charging Indicator While Plugged In",
+                          $settings.showChargingIndicator)
                 SettingsRow(
                     systemImage: "exclamationmark.triangle.fill",
                     tint: .red,
