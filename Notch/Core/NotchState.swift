@@ -296,7 +296,9 @@ final class NotchState {
     /// split evenly into two wings, so each side must fit half of this.
     private var activityWingWidth: CGFloat {
         switch collapsedActivity {
-        case .music: 140
+        // Cover on one side, visualiser on the other: neither needs the width
+        // the old glyph-and-temperature pair did.
+        case .music: 112
         case .lyrics: 150
         case .timer: 130
         case .trackChange: 240

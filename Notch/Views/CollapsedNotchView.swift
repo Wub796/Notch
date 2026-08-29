@@ -17,6 +17,7 @@ struct CollapsedNotchView: View {
             switch state.collapsedActivity {
             case .music:
                 musicWings
+                    .transition(NotchAnimations.activitySwap)
             case let .lyrics(line):
                 VStack(spacing: 0) {
                     musicWings
@@ -108,6 +109,7 @@ struct CollapsedNotchView: View {
             case nil:
                 if state.settings.showCompactWeather {
                     compactWeatherWing
+                        .transition(NotchAnimations.activitySwap)
                 } else {
                     Color.clear
                 }
@@ -200,17 +202,17 @@ struct CollapsedNotchView: View {
         )
     }
 
-    /// Weather always flanks the hardware notch — the glyph on the left, the
-    /// temperature on the right — with the artwork joining the left wing
-    /// while something is playing.
+    /// While music is playing the wings belong to the music: the cover on the
+    /// left, a visualiser tinted from it on the right. The weather takes them
+    /// back the moment playback stops.
     private var musicWings: some View {
         ActivityWingLayout(
             notchWidth: state.adjustedNotchSize.width,
-            leading: HStack(spacing: 9) {
-                miniArtwork
-                weatherIcon
-            },
-            trailing: weatherTemperature
+            leading: miniArtwork,
+            trailing: MusicVisualizerView(
+                accent: state.media.accent,
+                isPlaying: state.media.isPlaying
+            )
         )
     }
 
@@ -230,8 +232,12 @@ struct CollapsedNotchView: View {
                     }
             }
         }
-        .frame(width: 20, height: 20)
-        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .frame(width: 22, height: 22)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(state.media.accent.opacity(0.5), lineWidth: 1)
+        }
         .accessibilityHidden(true)
     }
 }

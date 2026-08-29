@@ -289,6 +289,14 @@ struct ScrubberBar: View {
         hovering || dragFraction != nil
     }
 
+    /// While dragging, the readout follows the drag rather than playback, so
+    /// the number under the thumb is the position you are about to seek to.
+    private var remaining: TimeInterval {
+        guard duration > 0 else { return 0 }
+        let position = dragFraction.map { $0 * duration } ?? elapsed
+        return max(duration - min(position, duration), 0)
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             Text(MediaPlayerView.timeString(dragFraction.map { $0 * duration } ?? elapsed))
@@ -336,7 +344,7 @@ struct ScrubberBar: View {
             .onHover { hovering = $0 }
 
             Text(showRemaining
-                ? "−" + MediaPlayerView.timeString(max(duration - elapsed, 0))
+                ? "−" + MediaPlayerView.timeString(remaining)
                 : MediaPlayerView.timeString(duration))
                 .font(.system(size: 10, weight: .medium).monospacedDigit())
                 .foregroundStyle(NotchTheme.inkPrimary)

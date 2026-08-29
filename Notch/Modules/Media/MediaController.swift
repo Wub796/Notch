@@ -96,10 +96,20 @@ final class MediaController {
         hasTrack || selectedProvider != .automatic
     }
 
+    /// Live position, extrapolated from the last anchor.
+    ///
+    /// Clamped to the track's length. Without the clamp the extrapolation runs
+    /// straight past the end — MediaRemote's timestamp is when the info was
+    /// captured, not when it was read, so between updates the position can
+    /// overshoot by a long way. That is what made the remaining time read
+    /// 0:00 well before the track ended and the scrubber sit pinned at full.
     var currentElapsed: TimeInterval {
-        guard track != nil else { return 0 }
-        guard isPlaying else { return elapsedAnchor }
-        return elapsedAnchor + Date().timeIntervalSince(anchorDate)
+        guard let track else { return 0 }
+        let raw = isPlaying
+            ? elapsedAnchor + Date().timeIntervalSince(anchorDate)
+            : elapsedAnchor
+        guard track.duration > 0 else { return max(raw, 0) }
+        return min(max(raw, 0), track.duration)
     }
 
     init() {
@@ -490,8 +500,16 @@ final class MediaController {
         anchorDate = Date()
         isPlaying = parts[5] == "playing"
 
+        let isNewTrack = newTrack != track
         updateTrackIfChanged(newTrack)
         updateLyricActivityTimer()
+
+        // MediaRemote hands artwork over with the rest of the info; Apple
+        // Events do not, so on this path it has to be asked for separately —
+        // otherwise a Mac where MediaRemote is gated never shows a cover.
+        if isNewTrack {
+            loadFallbackArtwork()
+        }
 
         // The AppleScript path only ever talks to the selected provider.
         if sourceAppName == nil,
@@ -499,6 +517,59 @@ final class MediaController {
                .runningApplications(withBundleIdentifier: fallbackBundleID).first {
             sourceAppName = app.localizedName
             sourceAppIcon = app.icon
+        }
+    }
+
+    /// Pulls cover art from the player itself.
+    ///
+    /// Music returns the bytes directly; Spotify only exposes a URL, so that
+    /// one is fetched. Both run off the main thread — an Apple Event to a busy
+    /// player can take a while to come back.
+    private func loadFallbackArtwork() {
+        let appName = fallbackAppName
+        let isSpotify = selectedProvider == .spotify
+            || fallbackBundleID == MusicProvider.spotify.bundleID
+        let expected = track
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var image: NSImage?
+            var data: Data?
+
+            if isSpotify {
+                let script = NSAppleScript(
+                    source: "tell application \"\(appName)\" to return artwork url of current track"
+                )
+                var error: NSDictionary?
+                if let raw = script?.executeAndReturnError(&error).stringValue,
+                   let url = URL(string: raw),
+                   let fetched = try? Data(contentsOf: url) {
+                    data = fetched
+                    image = NSImage(data: fetched)
+                }
+            } else {
+                let script = NSAppleScript(
+                    source: "tell application \"\(appName)\" to "
+                        + "return (get raw data of artwork 1 of current track)"
+                )
+                var error: NSDictionary?
+                if let descriptor = script?.executeAndReturnError(&error),
+                   let raw = descriptor.data as Data?,
+                   !raw.isEmpty {
+                    data = raw
+                    image = NSImage(data: raw)
+                }
+            }
+
+            DispatchQueue.main.async {
+                guard let self, self.track == expected else { return }
+                self.artwork = image
+                if let data {
+                    self.updateAccentIfNeeded(for: data)
+                } else {
+                    self.accent = .white
+                    self.accentSourceHash = nil
+                }
+            }
         }
     }
 
