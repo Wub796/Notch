@@ -49,13 +49,26 @@ struct NotchTopBarView: View {
         }
     }
 
+    /// Three status controls, as in the reference: the battery pill, the
+    /// active Focus, and keep-awake.
     private var trailingControls: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
             if state.telemetry.hasBattery {
-                battery
+                BatteryPill(
+                    percent: Int((state.telemetry.batteryPercent * 100).rounded()),
+                    isCharging: state.telemetry.isCharging,
+                    showsPercentage: state.settings.showBatteryPercentage
+                )
             }
 
-            audioOutput
+            NotchIconButton(
+                systemImage: state.activeFocus?.symbolName ?? "theatermasks",
+                isActive: state.activeFocus != nil,
+                help: state.activeFocus.map { "Focus: \($0.name)" } ?? "No Focus active",
+                activeTint: .purple
+            ) {
+                state.select(.tools)
+            }
 
             NotchIconButton(
                 systemImage: state.keepAwake.isActive ? "cup.and.saucer.fill" : "cup.and.saucer",
@@ -68,63 +81,67 @@ struct NotchTopBarView: View {
                     state.keepAwake.toggle()
                 }
             }
-
-            // Charging state — a status indicator, not a control.
-            Image(systemName: "battery.100percent.bolt")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(
-                    state.telemetry.isCharging ? NotchTheme.battery : NotchTheme.inkMuted
-                )
-                .frame(width: 28, height: 28)
-                .help(state.telemetry.isCharging ? "Battery charging" : "On battery")
-                .accessibilityLabel(state.telemetry.isCharging ? "Battery charging" : "On battery")
         }
     }
+}
 
-    private var audioOutput: some View {
-        let device = state.audio.devices.first {
-            $0.id == state.audio.currentDeviceID
-        }
-        return NotchIconButton(
-            systemImage: state.audio.currentSymbol,
-            isActive: false,
-            help: device.map { "Audio: \($0.name)" } ?? "Audio output"
-        ) {
-            state.audio.cycleToNextDevice()
-        }
+/// Battery drawn as an outlined pill with the level inside and a terminal
+/// nub, mirroring the system menu bar treatment in the reference.
+struct BatteryPill: View {
+    let percent: Int
+    let isCharging: Bool
+    let showsPercentage: Bool
+
+    private var fillColor: Color {
+        if isCharging { return NotchTheme.battery }
+        if percent <= 20 { return .red }
+        return .white
     }
 
-    private var battery: some View {
-        HStack(spacing: 3) {
-            if state.settings.showBatteryPercentage {
-                Text("\(Int((state.telemetry.batteryPercent * 100).rounded()))")
-                    .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(NotchTheme.inkPrimary)
-                    .contentTransition(.numericText())
+    var body: some View {
+        HStack(spacing: 1.5) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                    .stroke(.white.opacity(0.5), lineWidth: 1.2)
+
+                // Level fill, inset inside the outline.
+                GeometryReader { proxy in
+                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                        .fill(fillColor.opacity(showsPercentage ? 0.3 : 0.85))
+                        .frame(width: max(proxy.size.width * CGFloat(percent) / 100, 2))
+                        .animation(NotchAnimations.content, value: percent)
+                }
+                .padding(1.8)
+
+                if showsPercentage {
+                    Text("\(percent)")
+                        .font(.system(size: 9.5, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(NotchTheme.inkPrimary)
+                        .contentTransition(.numericText())
+                } else if isCharging {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 7.5, weight: .black))
+                        .foregroundStyle(.black)
+                }
             }
-            Image(systemName: batterySymbol)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(
-                    state.telemetry.isCharging ? NotchTheme.battery : NotchTheme.inkSecondary
-                )
+            .frame(width: 29, height: 15)
+
+            Capsule()
+                .fill(.white.opacity(0.5))
+                .frame(width: 2, height: 5.5)
         }
-        .padding(.horizontal, 5)
+        .overlay(alignment: .leading) {
+            // Charging bolt rides outside the pill when the number is inside.
+            if isCharging, showsPercentage {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 8, weight: .black))
+                    .foregroundStyle(NotchTheme.battery)
+                    .offset(x: -8)
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Battery")
-        .accessibilityValue(
-            "\(Int((state.telemetry.batteryPercent * 100).rounded())) percent"
-            + (state.telemetry.isCharging ? ", charging" : "")
-        )
-    }
-
-    private var batterySymbol: String {
-        switch state.telemetry.batteryPercent {
-        case ..<0.15: "battery.0percent"
-        case ..<0.4: "battery.25percent"
-        case ..<0.65: "battery.50percent"
-        case ..<0.9: "battery.75percent"
-        default: "battery.100percent"
-        }
+        .accessibilityValue("\(percent) percent" + (isCharging ? ", charging" : ""))
     }
 }
 

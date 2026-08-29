@@ -49,9 +49,6 @@ live lyrics, a file shelf, your next 24 hours of events, and hardware telemetry.
   a **meeting-soon countdown** starting 15 minutes before your next event, and
   otherwise the now-playing artwork + equalizer. Every source is push-based — no
   polling while collapsed.
-- **Idle face** — an homage to boring.notch's animated face: a tiny blinking
-  companion in the wing when nothing else is happening (PhaseAnimator, no
-  timers; still under Reduce Motion; toggleable).
 - **Scroll gesture** (DynamicNotch-style) — a two-finger scroll over the closed
   notch springs it open.
 - **Hover peek** — hovering scales the closed pill 1.10× (Sapphire's signature

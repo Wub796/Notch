@@ -12,13 +12,14 @@ struct HomeDashboardView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 34) {
             mediaPlayerSection
-                .frame(width: 410, alignment: .leading)
+                .frame(width: 372, alignment: .leading)
 
             weatherWidget
-                .frame(width: 190, alignment: .leading)
+                .frame(width: 206, alignment: .leading)
 
+            // Wide enough for the month label plus the five-day strip.
             calendarWidget
-                .frame(width: 170, alignment: .leading)
+                .frame(width: 214, alignment: .leading)
         }
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -42,8 +43,8 @@ struct HomeDashboardView: View {
                     .foregroundStyle(NotchTheme.inkPrimary)
 
                     Text(state.media.track?.album ?? "Unknown Album")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(NotchTheme.inkSecondary)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(NotchTheme.inkPrimary.opacity(0.92))
                         .lineLimit(1)
 
                     Text(state.media.track?.artist ?? "Play music in Spotify or Apple Music")
@@ -87,7 +88,7 @@ struct HomeDashboardView: View {
             }
         }
         .frame(width: 58, height: 58)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: state.media.accent.opacity(0.45), radius: 10, y: 4)
         .overlay(alignment: .bottomLeading) {
@@ -146,41 +147,40 @@ struct HomeDashboardView: View {
     private var weatherWidget: some View {
         Group {
             if let weather = state.weather.snapshot {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .center, spacing: 14) {
-                        Image(systemName: WeatherService.symbol(
-                            for: weather.weatherCode,
-                            isDay: weather.isDay
-                        ))
-                        .font(.system(size: 26))
-                        .symbolRenderingMode(.multicolor)
+                // Icon beside a column of temperature / place / condition,
+                // with the metric stack riding on the right.
+                HStack(alignment: .center, spacing: 10) {
+                    Image(systemName: WeatherService.symbol(
+                        for: weather.weatherCode,
+                        isDay: weather.isDay
+                    ))
+                    .font(.system(size: 30))
+                    .symbolRenderingMode(.multicolor)
 
+                    VStack(alignment: .leading, spacing: 0) {
                         Text(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
                             .font(.system(size: 30, weight: .heavy, design: .rounded).monospacedDigit())
                             .foregroundStyle(NotchTheme.inkPrimary)
                             .contentTransition(.numericText())
 
-                        Spacer(minLength: 4)
+                        Text(state.weather.placeName ?? "Your Location")
+                            .font(.system(size: 12, weight: .heavy, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkPrimary.opacity(0.9))
+                            .lineLimit(1)
 
-                        VStack(alignment: .trailing, spacing: 4) {
-                            metricRow("wind", text: WeatherService.windString(kmh: weather.windKmh))
-                            metricRow(
-                                "drop.fill",
-                                text: "\(weather.precipitationChancePercent)%"
-                            )
-                            metricRow("humidity", text: "\(weather.humidityPercent)%")
-                        }
+                        Text(WeatherService.condition(for: weather.weatherCode))
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkSecondary)
+                            .lineLimit(1)
                     }
 
-                    Text(state.weather.placeName ?? "Your Location")
-                        .font(.system(size: 12, weight: .heavy, design: .rounded))
-                        .foregroundStyle(NotchTheme.inkPrimary.opacity(0.9))
-                        .lineLimit(1)
+                    Spacer(minLength: 4)
 
-                    Text(WeatherService.condition(for: weather.weatherCode))
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(NotchTheme.inkSecondary)
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 4) {
+                        metricRow("wind", text: WeatherService.windString(kmh: weather.windKmh))
+                        metricRow("drop.fill", text: "\(weather.precipitationChancePercent)%")
+                        metricRow("humidity", text: "\(weather.humidityPercent)%")
+                    }
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { state.select(.weather) }
@@ -208,13 +208,14 @@ struct HomeDashboardView: View {
     }
 
     private func metricRow(_ systemImage: String, text: String) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             Image(systemName: systemImage)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Color.cyan.opacity(0.85))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(NotchTheme.inkPrimary.opacity(0.85))
+                .frame(width: 13)
             Text(text)
-                .font(.system(size: 9, weight: .semibold, design: .rounded).monospacedDigit())
-                .foregroundStyle(NotchTheme.inkSecondary)
+                .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
+                .foregroundStyle(NotchTheme.inkPrimary)
         }
     }
 
@@ -230,26 +231,29 @@ struct HomeDashboardView: View {
             !$0.isAllDay && $0.start > today
         }
 
-        return VStack(alignment: .leading, spacing: 8) {
+        // Month sits beside the strip, as in the reference — not above it.
+        return HStack(alignment: .top, spacing: 12) {
             Text(monthAbbreviation(Calendar.current.component(.month, from: today)))
                 .font(.system(size: 26, weight: .heavy, design: .rounded))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .accessibilityHidden(true)
 
-            HStack(spacing: 6) {
-                ForEach(Array(strip.enumerated()), id: \.offset) { _, day in
-                    dayCell(day)
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(alignment: .bottom, spacing: 9) {
+                    ForEach(Array(strip.enumerated()), id: \.offset) { _, day in
+                        dayCell(day)
+                    }
                 }
-            }
 
-            HStack(spacing: 5) {
-                Image(systemName: "calendar.badge.checkmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.blue.opacity(0.8))
-                Text(remaining?.title ?? "No more items today")
-                    .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                    .foregroundStyle(NotchTheme.inkMuted)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Image(systemName: "calendar.badge.checkmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(NotchTheme.inkMuted)
+                    Text(remaining?.title ?? "No more items today")
+                        .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(NotchTheme.inkMuted)
+                        .lineLimit(1)
+                }
             }
         }
         .contentShape(Rectangle())
@@ -260,28 +264,36 @@ struct HomeDashboardView: View {
         .accessibilityValue(remaining?.title ?? "No more items today")
     }
 
+    /// Today is set in blue and spelled out ("FRI"); the surrounding days are
+    /// single muted letters. No filled chip — the emphasis is typographic.
     private func dayCell(_ day: Date) -> some View {
         let calendar = Calendar.current
         let isToday = calendar.isDateInToday(day)
-        let letter = weekdayLetter(for: day)
 
-        return VStack(spacing: 2) {
-            Text(letter)
-                .font(.system(size: 7.5, weight: .bold, design: .rounded))
-                .foregroundStyle(isToday ? .white : weekdayColor(for: day))
+        return VStack(spacing: 0) {
+            Text(isToday ? weekdayAbbreviation(for: day) : weekdayLetter(for: day))
+                .font(.system(size: isToday ? 9 : 8, weight: .heavy, design: .rounded))
+                .foregroundStyle(isToday ? .blue : weekdayColor(for: day).opacity(0.7))
             Text("\(calendar.component(.day, from: day))")
-                .font(.system(size: 13, weight: isToday ? .heavy : .bold, design: .rounded))
-                .foregroundStyle(isToday ? .white : NotchTheme.inkPrimary)
+                .font(.system(
+                    size: isToday ? 19 : 14,
+                    weight: isToday ? .heavy : .semibold,
+                    design: .rounded
+                ).monospacedDigit())
+                .foregroundStyle(isToday ? .blue : weekdayColor(for: day))
         }
-        .frame(width: 30, height: 34)
-        .background {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isToday ? Color.blue : Color.clear)
-        }
+        .frame(minWidth: isToday ? 30 : 20)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(day.formatted(.dateTime.weekday(.wide).day().month(.wide)))
+        .accessibilityAddTraits(isToday ? [.isSelected] : [])
     }
 
     private func weekdayLetter(for day: Date) -> String {
         ["S", "M", "T", "W", "T", "F", "S"][Calendar.current.component(.weekday, from: day) - 1]
+    }
+
+    private func weekdayAbbreviation(for day: Date) -> String {
+        day.formatted(.dateTime.weekday(.abbreviated)).uppercased()
     }
 
     /// A soft hue per weekday for the calendar letters, echoing the reference's
