@@ -29,10 +29,21 @@ struct MediaPlayerView: View {
 
                     artistRow
 
-                    Text(media.track?.album ?? "Unknown Album")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(NotchTheme.inkSecondary)
-                        .lineLimit(1)
+                    if let reason = media.emptyStateReason {
+                        // Nothing is showing for a reason the user can act on;
+                        // "Unknown Album" under "Nothing Playing" told them
+                        // nothing at all.
+                        Text(reason)
+                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(3)
+                    } else {
+                        Text(media.track?.album ?? "")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkSecondary)
+                            .lineLimit(1)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 

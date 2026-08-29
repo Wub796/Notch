@@ -10,6 +10,12 @@ final class QuickActions {
     private(set) var isDarkMode = true
     private(set) var trashItemCount = 0
 
+    /// Why the last action didn't work, if it didn't. These all go through
+    /// AppleScript, which fails silently when the one-time Automation consent
+    /// was declined — a button that does nothing and says nothing is worse
+    /// than one that explains itself.
+    private(set) var lastError: String?
+
     init() {
         refresh()
     }
@@ -31,7 +37,7 @@ final class QuickActions {
             end tell
         end tell
         """
-        run(script) { [weak self] in
+        run(script, describing: "change the appearance") { [weak self] in
             self?.refresh()
         }
         NotchTheme.Haptics.generic()
@@ -48,21 +54,27 @@ final class QuickActions {
         try? process.run()
     }
 
-    /// Locks the screen via the Keychain menu's lock command.
+    /// Locks the screen with the system's Control-Command-Q shortcut. That
+    /// needs Accessibility consent to post a synthetic keystroke, so when it
+    /// fails this falls back to sleeping the display, which locks the Mac
+    /// wherever "require password after sleep" is set.
     func lockScreen() {
         NotchTheme.Haptics.generic()
         let script = """
         tell application "System Events" to keystroke "q" \
         using {control down, command down}
         """
-        run(script, completion: nil)
+        run(script, describing: "lock the screen", failure: { [weak self] in
+            self?.sleepDisplay()
+            self?.lastError = "Locking needs Accessibility access — slept the display instead."
+        }, completion: nil)
     }
 
     // MARK: - Trash
 
     func emptyTrash() {
         NotchTheme.Haptics.generic()
-        run("tell application \"Finder\" to empty trash") { [weak self] in
+        run("tell application \"Finder\" to empty trash", describing: "empty the Trash") { [weak self] in
             self?.refresh()
         }
     }
@@ -79,12 +91,28 @@ final class QuickActions {
 
     // MARK: - Helpers
 
-    private func run(_ source: String, completion: (() -> Void)?) {
-        DispatchQueue.global(qos: .userInitiated).async {
+    private func run(
+        _ source: String,
+        describing action: String,
+        failure: (() -> Void)? = nil,
+        completion: (() -> Void)?
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var error: NSDictionary?
             NSAppleScript(source: source)?.executeAndReturnError(&error)
-            if let completion {
-                DispatchQueue.main.async(execute: completion)
+            let failed = error != nil
+            DispatchQueue.main.async {
+                if failed {
+                    if let failure {
+                        failure()
+                    } else {
+                        self?.lastError = "Couldn't \(action). Allow Notch under "
+                            + "Privacy & Security → Automation."
+                    }
+                } else {
+                    self?.lastError = nil
+                    completion?()
+                }
             }
         }
     }

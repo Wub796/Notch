@@ -328,6 +328,17 @@ struct ToolsView: View {
                 ) {
                     state.quickActions.emptyTrash()
                 }
+
+                // These all go through AppleScript, which fails silently when
+                // Automation consent was declined; say so rather than letting
+                // the button look inert.
+                if let error = state.quickActions.lastError {
+                    Text(error)
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(width: 148, alignment: .leading)
+                }
             }
         }
         .onAppear { state.quickActions.refresh() }

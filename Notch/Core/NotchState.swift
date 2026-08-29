@@ -61,7 +61,7 @@ final class NotchState {
             // The top bar tracks the hardware notch and the user's height
             // trim, so it cannot be assumed to be 38pt: derive the slab from
             // it instead of hard-coding a total that a taller bar would eat.
-            height: topBarHeight + Self.contentGutters + Self.contentHeight(for: tab)
+            height: topBarHeight + Self.contentGutters + contentHeight
         )
     }
 
@@ -88,22 +88,29 @@ final class NotchState {
         }
     }
 
-    /// The height each module needs for its own content, excluding the top
-    /// bar and gutters. These are budgets the module views are written to and
-    /// document in their own headers — raising one here without widening the
-    /// module, or vice versa, is how content ends up clipped or floating in
-    /// dead black.
-    private static func contentHeight(for tab: NotchTab) -> CGFloat {
+    /// The height the active module needs for its own content, excluding the
+    /// top bar and gutters. These are budgets the module views are written to
+    /// and document in their own headers — raising one here without changing
+    /// the module, or vice versa, is how content ends up clipped or floating
+    /// in dead black.
+    private var contentHeight: CGFloat {
         switch tab {
         case .home: 128
-        case .media: 226
+        // artwork 104, progress 14, lyric line 20, transport 34, actions 26,
+        // and four 10pt gaps.
+        case .media: 250
+        // hero 72, hourly 70, five-day 70, two 12pt gaps.
         case .weather: 260
-        case .calendar: 226
-        case .shelf: 136
+        // The month grid is six 24pt rows plus its weekday header, which is
+        // taller than the week strip and the day's events it replaces.
+        case .calendar: calendar.isMonthView ? 262 : 226
+        // card header 52, then a 97pt tray, the footer, and their gutters.
+        case .shelf: 212
         case .clipboard: 120
-        case .tools: 148
-        case .notes: 136
-        case .telemetry: 110
+        case .tools: 152
+        // Mostly a text editor, so this is how much room there is to write.
+        case .notes: 170
+        case .telemetry: 112
         }
     }
 

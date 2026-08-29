@@ -36,9 +36,9 @@ enum SettingsLauncher {
 /// Makes the Settings window actually usable in an agent app.
 ///
 /// Notch runs with `.accessory` activation policy so it has no Dock icon.
-/// A side effect is that its windows never become key on their own, which
-/// leaves every control in Settings visibly present but unresponsive — the
-/// window renders, and clicks go nowhere. Switching to `.regular` while
+/// An app in that policy has no reliable way to bring itself forward, so the
+/// Settings window can open unfocused behind the frontmost app: every control
+/// renders, and clicks land somewhere else. Switching to `.regular` while
 /// Settings is open gives it a real key window (and a menu bar), and the
 /// policy is restored on close so the Dock icon does not linger.
 struct SettingsWindowActivator: ViewModifier {

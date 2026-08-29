@@ -65,6 +65,19 @@ final class MediaController {
         }
     }
 
+    /// True once MediaRemote has been found to answer every query with
+    /// nothing. macOS 15.4 gated the now-playing entry points for apps
+    /// without an entitlement Apple no longer issues; the symbols still
+    /// resolve and the calls still succeed, they just return empty (the
+    /// console logs "Operation not permitted"), so the only way to detect it
+    /// is to ask and notice the silence.
+    private(set) var isSystemNowPlayingRestricted = false
+
+    /// Consecutive empty MediaRemote replies received while a player the
+    /// Apple Events fallback can read was running.
+    private var consecutiveEmptyReplies = 0
+    private static let emptyRepliesBeforeDemotion = 3
+
     private let bridge = MediaRemoteBridge.shared
     private var useMediaRemote: Bool
     private var mediaRemoteRetryWork: DispatchWorkItem?
@@ -288,6 +301,7 @@ final class MediaController {
 
     private func apply(_ info: [String: Any]) {
         guard !info.isEmpty else {
+            noteEmptyMediaRemoteReply()
             track = nil
             artwork = nil
             isPlaying = false
@@ -295,6 +309,8 @@ final class MediaController {
             updateLyricActivityTimer()
             return
         }
+
+        consecutiveEmptyReplies = 0
 
         var newTrack = Track()
         newTrack.title = info[MediaRemoteBridge.InfoKey.title] as? String ?? ""
@@ -319,6 +335,40 @@ final class MediaController {
         }
 
         updateTrackIfChanged(newTrack)
+    }
+
+    /// An empty MediaRemote reply is ambiguous: either nothing is playing, or
+    /// this macOS refuses to say. Only replies received while a player the
+    /// fallback can actually read is running count towards demotion — an
+    /// empty reply with no such player running is just silence, and switching
+    /// away from MediaRemote then would lose every other source for nothing.
+    private func noteEmptyMediaRemoteReply() {
+        guard useMediaRemote, fallbackAppIsRunning else { return }
+        consecutiveEmptyReplies += 1
+        guard consecutiveEmptyReplies >= Self.emptyRepliesBeforeDemotion else { return }
+
+        useMediaRemote = false
+        isSystemNowPlayingRestricted = true
+        // Rebuild the timers on the Apple Events path.
+        if isActive {
+            setActive(true)
+        }
+    }
+
+    /// Why nothing is showing, when nothing is showing — so the player says
+    /// what is actually wrong instead of claiming nothing is playing.
+    var emptyStateReason: String? {
+        guard track == nil else { return nil }
+        if isSystemNowPlayingRestricted {
+            return "macOS restricts system-wide now-playing for third-party apps on "
+                + "this version. Notch reads \(fallbackAppName) directly; other "
+                + "players, browsers included, can't be seen."
+        }
+        if !bridge.isAvailable {
+            return "System-wide now-playing isn't available here. Notch reads "
+                + "\(fallbackAppName) directly."
+        }
+        return nil
     }
 
     /// Resolves the now-playing app from its PID, once per change.

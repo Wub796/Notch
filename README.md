@@ -88,27 +88,43 @@ Notch/
 │   ├── NotchApp.swift            @main entry, menu bar extra, Settings scene
 │   ├── AppDelegate.swift         Screen selection, panel lifecycle, display changes
 │   ├── NotchPanel.swift          Borderless non-activating NSPanel @ .statusBar level
-│   └── NotchWindowController.swift  Sizes/anchors the panel top-center on the notch screen
+│   ├── NotchWindowController.swift  Sizes/anchors the panel top-center on the notch screen
+│   ├── OnboardingView.swift      First-launch welcome and permission prompts
+│   └── OnboardingWindowController.swift
 ├── Core/
 │   ├── NotchGeometry.swift       Exact notch size from safeAreaInsets + auxiliary areas
-│   ├── NotchState.swift          Root @Observable state; wakes/sleeps modules on expand
+│   ├── NotchState.swift          Root @Observable state; per-tab size budgets;
+│   │                             wakes/sleeps modules on expand
 │   ├── NotchSettings.swift       Preferences (UserDefaults) + SMAppService login item
-│   ├── NotchAnimation.swift      The shared spring: response 0.35, damping 0.65, blend 0.1
-│   ├── NotchTheme.swift          Design tokens, artwork accent extraction, haptics,
-│   │                             micro-interactions, glass transition
+│   ├── NotchAnimation.swift      Per-gesture timing curves, three selectable profiles
+│   ├── NotchTheme.swift          Design tokens, artwork accent extraction, haptics
+│   ├── IntegrationPermissions.swift  Cached, live authorization status per integration
+│   ├── HotKeyManager.swift       Carbon RegisterEventHotKey (no Accessibility needed)
+│   ├── LicenseManager.swift      Offline key validation for the paid tier
 │   └── KeepAwakeController.swift IOKit power assertion toggle
 ├── Views/
 │   ├── NotchShape.swift          Animatable notch silhouette (flared top, curved bottom)
-│   ├── NotchContainerView.swift  Morphing body: black ↔ ultraThinMaterial glass + rim light
-│   ├── CollapsedNotchView.swift  Media wings: mini artwork + accent equalizer
-│   ├── ExpandedNotchView.swift   Header, badged tab bar, module content, drop zone, glow
-│   ├── NotchHeaderView.swift     Clock/date, battery pill, keep-awake, settings gear
-│   └── SettingsView.swift        Grouped-form Settings window
+│   ├── NotchContainerView.swift  The morph: fixed-size layers under a growing clip
+│   ├── CollapsedNotchView.swift  Live-activity wings around the hardware notch
+│   ├── ExpandedNotchView.swift   Top bar / detail headers, module content, drop zone
+│   ├── NotchTopBarView.swift     Module rail, battery pill, focus, keep-awake
+│   ├── WeatherDetailView.swift   Hero band, hourly and five-day strips
+│   ├── CalendarDetailView.swift  Week strip, month grid, day agenda
+│   ├── MarqueeText.swift         Scrolling label for overlong titles
+│   ├── SettingsWindowActivator.swift  Opening and focusing Settings from an agent app
+│   └── SettingsView.swift        Sidebar Settings window
 └── Modules/
+    ├── Home/                     The dashboard: music, weather, calendar
     ├── Media/                    MediaRemote bridge (info + seek), controller, accent,
     │                             LRCLIB lyrics engine, player + lyrics views
+    ├── Weather/                  Open-Meteo current, hourly and daily; IP fallback
     ├── Calendar/                 EventKit next-24h timeline + meeting-link detection
     ├── Shelf/                    Drop delegate, shelf controller (AirDrop/copy/reveal), tray UI
+    ├── Clipboard/                Opt-in history with pinning
+    ├── Notes/                    Autosaving scratchpad
+    ├── Tools/                    Audio routing, timer, eye breaks, Shortcuts, quick actions
+    ├── Activities/              Volume, power, desktop and focus live activities
+    ├── Audio/ Bluetooth/ Display/ Focus/
     └── Telemetry/                host_statistics/host_statistics64, getifaddrs network
                                   throughput, IOKit battery; gauges + sparkline + stat tiles
 ```
@@ -128,13 +144,29 @@ derives the width from the gap between `auxiliaryTopLeftArea` and
 
 ### Animation & feel
 
-Every expansion, contraction, tab change, gauge fill, and lyric transition uses the
-single shared spring `Animation.notchSpring` —
-`.spring(response: 0.35, dampingFraction: 0.65, blendDuration: 0.1)`.
-The album art travels between the collapsed wing and the expanded player via
-`matchedGeometryEffect`; tab content swaps through a custom blur+fade "glass"
-transition; buttons compress on press and lift on hover; numeric readouts roll
-with `.numericText()` content transitions; NSHapticFeedback punctuates expansion,
+The morph is deliberately one moving part. Both content layers — collapsed and
+expanded — are laid out once at the size they have when active, and the only
+things that animate are the body's frame and the notch shape's corner radius;
+the growing clip reveals the content. Letting either layer fill the animated
+frame instead makes SwiftUI re-lay-out the whole module on every frame of the
+expansion, which reads as the notch fading out and coming back rather than
+growing. Opacity is never animated for the same reason: two half-visible layers
+overlapping mid-morph is a dissolve, not a morph.
+
+Timing is a curve, not a spring, by default: a spring accelerates and settles at
+a varying rate, which reads as the notch speeding up and easing off. Snappy and
+Calm use `easeInOut` at fixed durations; Bouncy keeps springs for people who
+want the overshoot. Everything collapses to a short ease under Reduce Motion.
+
+Slab sizes are derived rather than fixed: top bar height (which follows the
+hardware notch and the user's trim) plus gutters plus a per-tab content budget
+that each module view documents in its own header. The panel-size preference is
+a `scaleEffect` on the laid-out slab, so turning it down magnifies rather than
+squeezing content into a shorter box.
+
+Elsewhere: the album art travels between dashboard and player via
+`matchedGeometryEffect`; buttons compress on press and lift on hover; numeric
+readouts roll with `.numericText()`; NSHapticFeedback punctuates expansion,
 drops, and toggles.
 
 ### Media & lyrics
@@ -143,9 +175,18 @@ System-wide now-playing metadata (any player) comes from the private
 **MediaRemote** framework, loaded via `dlopen`/`dlsym` so missing symbols degrade
 gracefully instead of crashing — including seeking through
 `MRMediaRemoteSetElapsedTime`. Updates are push-based notifications — zero polling
-while collapsed. Where MediaRemote is unavailable (macOS 15.4+ restricted it), the
-controller falls back to querying **Music.app over Apple Events**, and only while
-the notch is expanded, never in the background.
+while collapsed.
+
+macOS 15.4 gated those entry points for apps without an entitlement Apple no
+longer issues. The failure is quiet: the symbols still resolve and the calls
+still succeed, they just return nothing while the console logs
+`kMRMediaRemoteFrameworkErrorDomain Code=3 "Operation not permitted"`. So the
+controller detects it empirically — three consecutive empty replies received
+while Music or Spotify is actually running — and demotes itself to querying that
+player over **Apple Events** for the rest of the session, polling only while the
+notch is expanded. Players Apple Events cannot reach, browsers included, cannot
+be shown at all on those systems; the player says so instead of claiming nothing
+is playing.
 
 The artwork accent is a `CIAreaAverage` of the album art pushed into a
 saturation/brightness band that stays legible on black glass, computed off the
@@ -280,8 +321,10 @@ Store out):
   App Store eligible. MusicKit was not used because it only reports Apple
   Music content and requires a developer token, and `MPNowPlayingInfoCenter`
   on macOS is publisher-side (it cannot read other apps' sessions).
-- On **macOS 15.4+** Apple gated the MediaRemote entry points; the app then uses
-  the Apple Events fallback (Music.app only) automatically.
+- On **macOS 15.4+** Apple gated the MediaRemote entry points. The app detects
+  this at runtime and falls back to Apple Events, which reaches the selected
+  player (Music or Spotify) and nothing else — a browser playing audio cannot
+  be read on those systems by any available API.
 - Battery gauges hide themselves on desktop Macs with no `AppleSmartBattery`
   service; network throughput sums the `en*` interfaces.
 - Telemetry refresh-rate changes apply the next time the notch opens.
