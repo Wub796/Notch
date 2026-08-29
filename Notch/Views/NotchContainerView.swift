@@ -48,14 +48,17 @@ struct NotchContainerView: View {
 
     private var notchBody: some View {
         NotchLayoutView(state: state, namespace: notchNamespace, isHovering: isHovering)
-            // Horizontal inset clears the top flare; the extra 12 on the sides
-            // and bottom is the references' open-slab padding.
+            // Open, the horizontal inset clears the top flare and the extra 12
+            // is the references' slab padding. Closed it is zero, which is the
+            // one place this diverges from them: they pad the closed pill too
+            // and compensate by narrowing the camera dead zone by 20, which
+            // draws content under the housing. Keeping the pill exactly as
+            // wide as the notch plus its wings costs nothing and means the
+            // idle pill never overhangs the hardware notch.
             .padding(.horizontal, state.mode == .expanded
-                ? NotchSizing.cornerRadiusInsets.opened.top
-                : NotchSizing.cornerRadiusInsets.closed.bottom)
-            .padding([.horizontal, .bottom], state.mode == .expanded
-                ? NotchSizing.openContentInset
+                ? NotchSizing.cornerRadiusInsets.opened.top + NotchSizing.openContentInset
                 : 0)
+            .padding(.bottom, state.mode == .expanded ? NotchSizing.openContentInset : 0)
             .background(.black)
             .clipShape(shape)
             // A hairline of black across the top, inside the flare, so no

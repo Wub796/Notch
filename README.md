@@ -144,30 +144,58 @@ derives the width from the gap between `auxiliaryTopLeftArea` and
 
 ### Animation & feel
 
-The morph is deliberately one moving part. Both content layers — collapsed and
-expanded — are laid out once at the size they have when active, and the only
-things that animate are the body's frame and the notch shape's corner radius;
-the growing clip reveals the content. Letting either layer fill the animated
-frame instead makes SwiftUI re-lay-out the whole module on every frame of the
-expansion, which reads as the notch fading out and coming back rather than
-growing. Opacity is never animated for the same reason: two half-visible layers
-overlapping mid-morph is a dissolve, not a morph.
+The expansion is boring.notch's and Atoll's, structurally. `NotchLayoutView`
+holds the header strip and the module as siblings in one `VStack` and **nothing
+sets an explicit width**: closed, the layout's intrinsic width is the hardware
+notch plus whatever live activity is showing; open, it is the header and module
+pinned to the open panel. Animating `mode` therefore animates a real layout
+change between two natural sizes, which is what makes the notch look like it
+grows. Animating a fixed frame instead — with both content layers filling it —
+re-flows the module on every frame and reads as a dissolve.
 
-Timing is a curve, not a spring, by default: a spring accelerates and settles at
-a varying rate, which reads as the notch speeding up and easing off. Snappy and
-Calm use `easeInOut` at fixed durations; Bouncy keeps springs for people who
-want the overshoot. Everything collapses to a short ease under Reduce Motion.
+Springs are the references' values: `.spring(response: 0.42, dampingFraction: 1)`
+opening, `0.45` closing, both critically damped, and `.bouncy.speed(1.2)` on
+hover. The module arrives with their `.scale(0.8, anchor: .top)` + opacity
+transition. Hovering the closed pill pads its wings outward rather than scaling
+a fixed layer.
 
-Slab sizes are derived rather than fixed: top bar height (which follows the
-hardware notch and the user's trim) plus gutters plus a per-tab content budget
-that each module view documents in its own header. The panel-size preference is
-a `scaleEffect` on the laid-out slab, so turning it down magnifies rather than
-squeezing content into a shorter box.
+`NotchShape` carries independent top and bottom radii as an `AnimatablePair` —
+closed `(6, 14)`, open `(19, 24)`. A single radius cannot express both a pill
+welded to the hardware notch and a soft open panel. The open header's centre is
+a black rectangle masked by the notch shape itself, so the hardware notch reads
+as continuing through the slab.
 
-Elsewhere: the album art travels between dashboard and player via
-`matchedGeometryEffect`; buttons compress on press and lift on hover; numeric
-readouts roll with `.numericText()`; NSHapticFeedback punctuates expansion,
-drops, and toggles.
+### Sizing
+
+Following `sizing/matters.swift` in both references, and the one idea worth
+copying above all: **every tab opens to the same panel**. Sizing each screen to
+its own content resized the slab on every tab switch, which neither app does.
+`NotchSizing.openNotchSize` is user-set, clamped to the display the way Atoll
+clamps it, and `NotchState.moduleContentSize` is what is left for a module once
+the header and slab insets are taken out. Module views are written to that
+budget and say so in their headers.
+
+The one deliberate divergence: the references pad the closed pill horizontally
+and compensate by narrowing the camera dead zone by 20pt, which draws content
+under the housing. Notch pads only the open slab, so the idle pill is exactly
+the notch plus its wings and never overhangs the hardware.
+
+### System HUD
+
+The volume and brightness bar is their `DraggableProgressBar`: a `.tertiary`
+track under a gradient capsule oriented trailing-to-leading, thickening from 5
+to 8pt while dragged, hidden at zero so muted does not look broken — and
+draggable, writing the system value as it moves. `InlineHUD` places it in their
+fixed 100pt wings (less 12 when not hovered) either side of the notch dead
+zone, so changing digits never shift the glyph.
+
+Driving it is `MediaKeyInterceptor`, ported from theirs: a `CGEvent` tap on
+`systemDefined` events (type 14, subtype 8) reads the key from `data1`, acts on
+key-down only, applies macOS's own 1/16 step (quartered with Option-Shift), and
+returns nil so the system overlay never appears. An event tap needs
+Accessibility access, so this is opt-in; with it off the notch falls back to
+sampling brightness and macOS keeps drawing its own overlay. With the tap
+running, nothing polls — the key press is the event.
 
 ### Media & lyrics
 
