@@ -22,7 +22,7 @@ struct NotchLayoutView: View {
         .animation(.smooth(duration: 0.35))
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .center, spacing: 0) {
             headerStrip
 
             if state.mode == .expanded {
@@ -48,11 +48,14 @@ struct NotchLayoutView: View {
     private var headerStrip: some View {
         if state.mode == .expanded {
             ExpandedNotchView(state: state, namespace: namespace)
-                .frame(height: state.topBarHeight)
+                // Both strips fill their width, so without an explicit one
+                // here the VStack has nothing to size itself from and takes
+                // the whole panel window — which is as wide as the display.
+                .frame(width: state.moduleContentSize.width, height: state.topBarHeight)
                 .zIndex(2)
         } else {
             CollapsedNotchView(state: state, isHovering: isHovering)
-                .frame(height: state.collapsedSize.height)
+                .frame(width: state.collapsedSize.width, height: state.collapsedSize.height)
                 // Hovering the closed pill widens it slightly, the way both
                 // references pad their wings out on hover. The amount is the
                 // user's "hover grow" preference.

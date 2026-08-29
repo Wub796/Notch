@@ -46,7 +46,7 @@ struct NotchTopBarView: View {
                 // Settings is an ordinary window; leaving the panel expanded
                 // over it would float the notch on top of what you opened.
                 state.collapse()
-                SettingsLauncher.open()
+                SettingsWindowController.shared.show()
             }
 
             ForEach(Self.modules, id: \.tab) { module in

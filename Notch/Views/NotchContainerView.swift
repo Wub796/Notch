@@ -59,6 +59,14 @@ struct NotchContainerView: View {
                 ? NotchSizing.cornerRadiusInsets.opened.top + NotchSizing.openContentInset
                 : 0)
             .padding(.bottom, state.mode == .expanded ? NotchSizing.openContentInset : 0)
+            // The height goes on before the background, and top-aligned: a
+            // .frame(height:) applied after clipShape centres the already-drawn
+            // shape inside it, so the slab's top edge drifts down the screen as
+            // the height animates instead of staying welded to the notch.
+            .frame(
+                height: state.mode == .expanded ? state.expandedSize.height : nil,
+                alignment: .top
+            )
             .background(.black)
             .clipShape(shape)
             // A hairline of black across the top, inside the flare, so no
@@ -75,7 +83,6 @@ struct NotchContainerView: View {
                 color: (state.mode == .expanded || isHovering) ? .black.opacity(0.7) : .clear,
                 radius: state.settings.cornerRadiusScaling ? 6 : 4
             )
-            .frame(height: state.mode == .expanded ? state.expandedSize.height : nil)
             .animation(notchAnimation, value: state.mode)
             .animation(Self.hoverAnimation, value: isHovering)
             .animation(notchAnimation, value: state.collapsedActivity)

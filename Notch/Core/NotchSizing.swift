@@ -44,7 +44,7 @@ enum NotchSizing {
     /// Atoll clamps the width to the screen so the slab can never overhang a
     /// scaled display; `maxAllowedOpenWidth` is that rule.
     static let minimumOpenWidth: Double = 520
-    static let defaultOpenWidth: Double = 760
+    static let defaultOpenWidth: Double = 700
     static let minimumOpenHeight: Double = 170
     static let defaultOpenHeight: Double = 210
     static let maximumOpenHeight: Double = 340

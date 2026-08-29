@@ -83,7 +83,6 @@ struct OnboardingView: View {
         }
         .frame(width: 460, height: 620)
         .preferredColorScheme(.dark)
-        .activatesAsRegularApp()
     }
 
     private var appMark: some View {

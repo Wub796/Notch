@@ -5,10 +5,11 @@ struct NotchApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // The notch panel is managed entirely by AppDelegate/NotchWindowController.
-        // The menu bar item carries the app's commands (HIG: every action the
-        // app offers is reachable from the menu bar), and the Settings scene
-        // provides the preferences window.
+        // The notch panel is managed entirely by AppDelegate/NotchWindowController,
+        // and Settings by SettingsWindowController — SwiftUI's Settings scene
+        // opens unfocused behind everything in an LSUIElement app. The menu bar
+        // item carries the app's commands (HIG: every action the app offers is
+        // reachable from the menu bar).
         MenuBarExtra("Notch", systemImage: "sparkles.rectangle.stack") {
             Button(appDelegate.state.mode == .expanded ? "Close Notch" : "Open Notch") {
                 if appDelegate.state.mode == .expanded {
@@ -68,8 +69,8 @@ struct NotchApp: App {
 
             Divider()
 
-            SettingsLink {
-                Text("Settings…")
+            Button("Settings…") {
+                SettingsWindowController.shared.show()
             }
             .keyboardShortcut(",")
 
@@ -84,10 +85,6 @@ struct NotchApp: App {
                 NSApp.terminate(nil)
             }
             .keyboardShortcut("q")
-        }
-
-        Settings {
-            SettingsView()
         }
     }
 }
