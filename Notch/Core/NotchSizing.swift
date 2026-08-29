@@ -47,27 +47,44 @@ enum NotchSizing {
     static let defaultOpenWidth: Double = 900
     static let minimumOpenHeight: Double = 140
     static let defaultOpenHeight: Double = 182
-    static let maximumOpenHeight: Double = 340
+    static let maximumOpenHeight: Double = 420
 
     static func maxAllowedOpenWidth(for screen: NSScreen? = NSScreen.main) -> Double {
         guard let width = screen?.frame.width, width > 0 else { return 900 }
         return max(Double(width) - 60, minimumOpenWidth)
     }
 
-    /// The open slab, from the user's preference clamped to what fits.
+    /// The open slab for a given screen.
     ///
-    /// Reads `NSScreen`, so it is main-thread-only in practice; every caller is
-    /// a SwiftUI body or a `NotchState` property evaluated on the main thread.
-    /// Left un-isolated deliberately: annotating it `@MainActor` warns at every
-    /// one of those call sites, since `NotchState` is a plain observable class.
-    static var openNotchSize: CGSize {
-        let settings = NotchSettings.shared
-        let width = min(
-            max(settings.openNotchWidth, minimumOpenWidth),
-            maxAllowedOpenWidth()
+    /// Per-tab again. Sharing one size across every screen kept the panel from
+    /// resizing on a tab switch, which is what boring.notch and Atoll do — but
+    /// these screens are genuinely different shapes, and forcing a month grid
+    /// and a weather hero into the same box shrank both past legibility. The
+    /// width preference now scales them together rather than setting one.
+    static func openNotchSize(for tab: NotchTab) -> CGSize {
+        let base = baseSize(for: tab)
+        let scale = min(max(NotchSettings.shared.openNotchWidth, minimumOpenWidth),
+                        maxAllowedOpenWidth()) / defaultOpenWidth
+        return CGSize(
+            width: min(base.width * scale, maxAllowedOpenWidth()),
+            height: min(base.height * scale, maximumOpenHeight)
         )
-        let height = min(max(settings.openNotchHeight, minimumOpenHeight), maximumOpenHeight)
-        return CGSize(width: width, height: height)
+    }
+
+    /// Each screen's natural size at the default width.
+    private static func baseSize(for tab: NotchTab) -> CGSize {
+        switch tab {
+        case .home: CGSize(width: 900, height: 182)
+        case .media: CGSize(width: 880, height: 290)
+        case .weather: CGSize(width: 980, height: 300)
+        case .calendar: CGSize(width: 940, height: 340)
+        case .shelf: CGSize(width: 820, height: 220)
+        case .clipboard: CGSize(width: 840, height: 200)
+        case .tools: CGSize(width: 940, height: 210)
+        case .notes: CGSize(width: 760, height: 240)
+        case .telemetry: CGSize(width: 840, height: 190)
+        case .audio: CGSize(width: 860, height: 300)
+        }
     }
 
     /// The window is sized once for the largest slab the sliders allow, plus

@@ -97,55 +97,49 @@ struct ExpandedNotchView: View {
         .accessibilityAddTraits(isActive ? [.isSelected] : [])
     }
 
+    /// The reference separates the view toggle from the day controls with thin
+    /// rules, and spells "Today" out rather than using a pill.
     private var calendarHeaderTrailing: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             NotchIconButton(
-                systemImage: state.calendar.isMonthView ? "square.grid.2x2.fill" : "square.grid.2x2",
+                systemImage: state.calendar.isMonthView ? "calendar" : "square.grid.2x2",
                 isActive: state.calendar.isMonthView,
                 help: state.calendar.isMonthView ? "Show week view" : "Show month view"
             ) {
                 state.calendar.isMonthView.toggle()
             }
+
+            headerDivider
+
             NotchIconButton(systemImage: "chevron.left", help: "Previous day") {
-                state.calendar.moveSelectedDay(by: -1)
+                state.calendar.moveSelectedDay(by: state.calendar.isMonthView ? -7 : -1)
             }
 
-            TodayPillButton {
+            headerDivider
+
+            Button {
                 state.calendar.moveSelectedDay(to: Date())
+            } label: {
+                Text("Today")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(NotchTheme.inkPrimary)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(PressableButtonStyle())
+            .help("Jump to today")
+
+            headerDivider
 
             NotchIconButton(systemImage: "chevron.right", help: "Next day") {
-                state.calendar.moveSelectedDay(by: 1)
+                state.calendar.moveSelectedDay(by: state.calendar.isMonthView ? 7 : 1)
             }
         }
     }
-}
 
-/// Pill button that jumps the calendar selection to today.
-private struct TodayPillButton: View {
-    let action: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Text("Today")
-                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                .foregroundStyle(NotchTheme.inkPrimary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(.white.opacity(isHovering ? 0.2 : 0.12)))
-                .overlay {
-                    Capsule().strokeBorder(.white.opacity(isHovering ? 0.55 : 0.35), lineWidth: 0.75)
-                }
-        }
-        .buttonStyle(PressableButtonStyle())
-        .onHover { hovering in
-            withAnimation(NotchAnimations.content) {
-                isHovering = hovering
-            }
-        }
-        .help("Jump to today")
+    private var headerDivider: some View {
+        Rectangle()
+            .fill(.white.opacity(0.18))
+            .frame(width: 1, height: 16)
     }
 }
 

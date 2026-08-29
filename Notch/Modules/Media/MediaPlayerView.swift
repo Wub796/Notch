@@ -15,64 +15,57 @@ struct MediaPlayerView: View {
     @State private var shuffleOn = false
 
     var body: some View {
-        // Budget: NotchState.moduleContentSize, about 132pt tall at the
-        // default panel size. Artwork 64 plus the progress and transport rows
-        // and their 6pt gaps fills it, so the lyric line and the extra
-        // action row live in the lyrics column beside the artwork rather than
-        // stacking below it.
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 20) {
+        // Budget: `NotchState.moduleContentSize`, about 818 x 240. Metadata
+        // row 84, scrubber 22, transport 52, secondary row 30, with gaps.
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 18) {
                 artwork
 
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 2) {
                     MarqueeText(
                         text: media.track?.title ?? "Nothing Playing",
-                        font: .system(size: 20, weight: .black, design: .rounded),
-                        width: 200
+                        font: .system(size: 24, weight: .bold, design: .rounded),
+                        width: 320
                     )
                     .foregroundStyle(NotchTheme.inkPrimary)
 
                     artistRow
 
                     if let reason = media.emptyStateReason {
-                        // Nothing is showing for a reason the user can act on;
-                        // "Unknown Album" under "Nothing Playing" told them
-                        // nothing at all.
                         Text(reason)
-                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundStyle(NotchTheme.inkMuted)
                             .fixedSize(horizontal: false, vertical: true)
-                            .lineLimit(3)
-                    } else {
-                        Text(media.track?.album ?? "")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .lineLimit(2)
+                    } else if let album = media.track?.album, !album.isEmpty {
+                        Text(album)
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
                             .foregroundStyle(NotchTheme.inkSecondary)
                             .lineLimit(1)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer(minLength: 12)
 
                 if showLyrics {
                     LyricsView(lyrics: media.lyrics, accent: media.accent) { time in
                         media.seek(to: time + 0.05)
                     }
-                    .frame(width: 200)
-                } else {
-                    // Without the lyrics column the current line and the
-                    // secondary actions take its place, so the panel keeps the
-                    // same shape either way.
-                    VStack(alignment: .leading, spacing: 8) {
-                        lyricLine
-                        bottomActions
-                        Spacer(minLength: 0)
-                    }
-                    .frame(width: 200, alignment: .leading)
+                    .frame(width: 210)
                 }
             }
+            .frame(height: 84)
 
             progressRow
 
+            lyricLine
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             transportRow
+                .frame(maxWidth: .infinity)
+
+            bottomActions
+                .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
@@ -95,7 +88,7 @@ struct MediaPlayerView: View {
                     }
             }
         }
-        .frame(width: 64, height: 64)
+        .frame(width: 84, height: 84)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: media.accent.opacity(0.5), radius: 16, y: 6)
@@ -185,7 +178,7 @@ struct MediaPlayerView: View {
                 Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(NotchTheme.inkPrimary)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 42, height: 42)
                     .contentShape(Rectangle())
             }
             .buttonStyle(PressableButtonStyle())

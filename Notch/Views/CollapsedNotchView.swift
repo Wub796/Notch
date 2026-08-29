@@ -36,13 +36,14 @@ struct CollapsedNotchView: View {
                         .accessibilityValue(line)
                 }
             case let .trackChange(title, artist):
-                TrackChangeActivityView(
-                    notchWidth: state.adjustedNotchSize.width,
-                    title: title,
-                    artist: artist,
-                    artwork: state.media.artwork,
-                    accent: state.media.accent
-                )
+                dropped {
+                    droppedRow(
+                        symbol: "music.note",
+                        tint: state.media.accent,
+                        label: artist.isEmpty ? title : "\(title) — \(artist)",
+                        value: nil
+                    )
+                }
             case let .volume(level, muted):
                 droppedHUD(
                     kind: .volume(muted: muted),
@@ -60,51 +61,73 @@ struct CollapsedNotchView: View {
                     )
                 )
             case let .battery(percent, charging, low):
-                BatteryActivityView(
-                    notchWidth: state.adjustedNotchSize.width,
-                    percent: percent,
-                    charging: charging,
-                    low: low
-                )
+                dropped {
+                    droppedRow(
+                        symbol: charging ? "battery.100percent.bolt"
+                            : (low ? "battery.25percent" : "battery.75percent"),
+                        tint: low ? .red : NotchTheme.battery,
+                        label: charging ? "Charging" : (low ? "Low Battery" : "On Battery"),
+                        value: "\(percent)%"
+                    )
+                }
             case let .screenLock(locked):
-                ScreenLockActivityView(
-                    notchWidth: state.adjustedNotchSize.width,
-                    locked: locked
-                )
+                dropped {
+                    droppedRow(
+                        symbol: locked ? "lock.fill" : "lock.open.fill",
+                        label: locked ? "Locked" : "Unlocked",
+                        value: nil
+                    )
+                }
             case let .timer(remaining, progress):
-                TimerActivityView(
-                    notchWidth: state.adjustedNotchSize.width,
-                    remaining: remaining,
-                    progress: progress
-                )
+                dropped {
+                    VStack(spacing: 5) {
+                        droppedRow(
+                            symbol: "timer",
+                            tint: .orange,
+                            label: "Timer",
+                            value: TimerManager.timeString(remaining)
+                        )
+                        DraggableProgressBar(
+                            value: .constant(CGFloat(progress)),
+                            tint: .orange,
+                            inline: true
+                        )
+                    }
+                }
             case let .focusMode(name, symbol):
-                FocusActivityView(
-                    notchWidth: state.adjustedNotchSize.width,
-                    name: name,
-                    symbol: symbol
-                )
+                dropped {
+                    droppedRow(symbol: symbol, tint: .purple, label: name, value: nil)
+                }
             case let .eyeBreak(active):
-                EyeBreakActivityView(
-                    notchWidth: state.adjustedNotchSize.width,
-                    active: active
-                )
+                dropped {
+                    droppedRow(
+                        symbol: active ? "eye.fill" : "eye",
+                        tint: .green,
+                        label: active ? "Look 20 feet away" : "Eye break over",
+                        value: nil
+                    )
+                }
             case .desktopChange:
                 DesktopChangeActivityView(notchWidth: state.adjustedNotchSize.width)
             case let .accessoryBattery(name, symbol, percent):
-                AccessoryBatteryActivityView(
-                    notchWidth: state.adjustedNotchSize.width,
-                    name: name,
-                    symbol: symbol,
-                    percent: percent
-                )
+                dropped {
+                    droppedRow(
+                        symbol: symbol,
+                        tint: percent <= 20 ? .red : NotchTheme.battery,
+                        label: name,
+                        value: "\(percent)%"
+                    )
+                }
             case let .meetingSoon(title, start):
                 TimelineView(.everyMinute) { context in
-                    MeetingActivityView(
-                        notchWidth: state.adjustedNotchSize.width,
-                        title: title,
-                        start: start,
-                        now: context.date
-                    )
+                    dropped {
+                        droppedRow(
+                            symbol: "calendar",
+                            tint: .blue,
+                            label: title,
+                            value: Self.countdown(to: start, from: context.date)
+                        )
+                    }
                 }
             case nil:
                 if state.settings.showCompactWeather {
@@ -122,6 +145,65 @@ struct CollapsedNotchView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// "in 12m" / "now", for the meeting activity's trailing reading.
+    private static func countdown(to start: Date, from now: Date) -> String {
+        let minutes = Int(start.timeIntervalSince(now) / 60)
+        if minutes <= 0 { return "now" }
+        if minutes < 60 { return "in \(minutes)m" }
+        return "in \(minutes / 60)h \(minutes % 60)m"
+    }
+
+    /// Wraps any activity content in the dropped form: the notch's own row
+    /// keeps its weather wings, and the activity gets the full width beneath.
+    private func dropped<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(spacing: 0) {
+            weatherFlank
+                .frame(height: state.adjustedNotchSize.height)
+
+            content()
+                .frame(maxWidth: .infinity)
+                .frame(height: 34)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+        }
+    }
+
+    /// The shape every dropped activity uses: glyph, label, trailing reading.
+    private func droppedRow(
+        symbol: String,
+        tint: Color = NotchTheme.inkPrimary,
+        label: String,
+        value: String?
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 20)
+
+            Text(label)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 8)
+
+            if let value {
+                Text(value)
+                    .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(tint)
+                    .contentTransition(.numericText())
+                    .fixedSize()
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(value ?? "")
     }
 
     /// Volume and brightness drop a full-width bar beneath the hardware notch

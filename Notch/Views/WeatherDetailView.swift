@@ -4,25 +4,32 @@ import SwiftUI
 /// six-cell metric grid), then hourly and five-day forecast strips.
 ///
 /// Every tab shares one open panel (as in boring.notch and Atoll), which at
-/// the default size leaves about 132pt for a module. Hero 58 + one 60pt strip
-/// + an 8pt gap fits that, so the hourly and five-day forecasts share the
-/// strip; the chips that swap between them live in the header, where there is
-/// room the panel body does not have.
+/// Budget: `NotchState.moduleContentSize`, about 918 x 250. Hero 130 + label
+/// 18 + strip 86 with 14 and 8pt gaps. The hourly and five-day forecasts share
+/// the strip; the chips that swap between them live in the header.
 struct WeatherDetailView: View {
     let state: NotchState
 
     var body: some View {
         Group {
             if let weather = state.weather.snapshot {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 14) {
                     hero(weather)
-                    if state.showsDailyForecast {
-                        dailyStrip(weather)
-                    } else {
-                        hourlyStrip(weather)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(state.showsDailyForecast ? "5-DAY FORECAST" : "HOURLY FORECAST")
+                            .font(.system(size: 12, weight: .heavy, design: .rounded))
+                            .tracking(1.2)
+                            .foregroundStyle(NotchTheme.inkSecondary)
+
+                        if state.showsDailyForecast {
+                            dailyStrip(weather)
+                        } else {
+                            hourlyStrip(weather)
+                        }
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             } else {
                 unavailable
             }
@@ -66,117 +73,78 @@ struct WeatherDetailView: View {
     // MARK: - Hero
 
     private func hero(_ weather: WeatherService.Snapshot) -> some View {
-        HStack(alignment: .center, spacing: 22) {
+        HStack(alignment: .center, spacing: 28) {
             illustration(for: weather)
 
             VStack(alignment: .leading, spacing: 0) {
+                Text(state.weather.placeName ?? "Your Location")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundStyle(NotchTheme.inkPrimary)
+                    .lineLimit(1)
+
                 Text(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
-                    .font(.system(size: 40, weight: .heavy, design: .rounded).monospacedDigit())
+                    .font(.system(size: 58, weight: .heavy, design: .rounded).monospacedDigit())
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .contentTransition(.numericText())
+                    .fixedSize()
 
-                Text((state.weather.placeName ?? "Your Location")
-                     + " · " + WeatherService.condition(for: weather.weatherCode))
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(NotchTheme.inkSecondary)
+                Text(WeatherService.condition(for: weather.weatherCode))
+                    .font(.system(size: 21, weight: .bold, design: .rounded))
+                    .foregroundStyle(NotchTheme.inkPrimary)
                     .lineLimit(1)
-                    .truncationMode(.tail)
+                    .padding(.top, 2)
+
+                Text("H: \(WeatherService.temperatureString(celsius: weather.highCelsius))  "
+                     + "L: \(WeatherService.temperatureString(celsius: weather.lowCelsius))")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .fixedSize()
+                    .padding(.top, 8)
+
+                HStack(spacing: 22) {
+                    metric("thermometer.medium",
+                           "Feels: " + WeatherService.temperatureString(celsius: weather.apparentCelsius))
+                    metric("wind", "Wind: " + WeatherService.windString(kmh: weather.windKmh))
+                }
+                .padding(.top, 4)
             }
-            .fixedSize(horizontal: true, vertical: false)
 
-            Spacer(minLength: 12)
-
-            metrics(weather)
+            Spacer(minLength: 0)
         }
-        .frame(height: 58)
+    }
+
+    private func metric(_ systemImage: String, _ text: String) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14))
+                .symbolRenderingMode(.multicolor)
+            Text(text)
+                .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(NotchTheme.inkSecondary)
+                .fixedSize()
+        }
         .accessibilityElement(children: .combine)
     }
 
-    /// Two rows of three chips. A grid keeps the six readings on one glance
-    /// without a scrolling column of labelled rows.
-    private func metrics(_ weather: WeatherService.Snapshot) -> some View {
-        Grid(horizontalSpacing: 20, verticalSpacing: 8) {
-            GridRow {
-                metric("thermometer.medium", "Feels",
-                       WeatherService.temperatureString(celsius: weather.apparentCelsius))
-                metric("arrow.up.arrow.down", "High / Low",
-                       WeatherService.temperatureString(celsius: weather.highCelsius)
-                       + " / " + WeatherService.temperatureString(celsius: weather.lowCelsius))
-                metric("wind", "Wind", WeatherService.windString(kmh: weather.windKmh))
-            }
-            GridRow {
-                metric("humidity.fill", "Humidity", "\(weather.humidityPercent)%")
-                metric("umbrella.fill", "Rain", "\(weather.precipitationChancePercent)%")
-                if let sunset = weather.sunset {
-                    metric("sunset.fill", "Sunset", WeatherService.timeLabel(for: sunset))
-                } else {
-                    metric("sun.max.trianglebadge.exclamationmark.fill", "UV Index",
-                           "\(Int(weather.uvIndex.rounded()))")
-                }
-            }
-        }
-    }
-
-    private func metric(_ systemImage: String, _ label: String, _ value: String) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(NotchTheme.inkSecondary)
-                .frame(width: 16)
-
-            VStack(alignment: .leading, spacing: -1) {
-                Text(label)
-                    .font(.system(size: 9, weight: .heavy, design: .rounded))
-                    .tracking(0.5)
-                    .foregroundStyle(NotchTheme.inkMuted)
-                Text(value)
-                    .font(.system(size: 12.5, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(NotchTheme.inkPrimary)
-                    .lineLimit(1)
-            }
-        }
-        .gridColumnAlignment(.leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        .accessibilityValue(value)
-    }
-
-    /// The reference's illustration: a yellow sun with rays and a white cloud
-    /// overlapping it. Other conditions fall back to the large multicolor
-    /// symbol for the code.
+    /// The reference's illustration: a large flat sun with separate rays for
+    /// clear weather, the multicolor symbol for everything else.
     @ViewBuilder
     private func illustration(for weather: WeatherService.Snapshot) -> some View {
-        switch weather.weatherCode {
-        case 1, 2:
-            ZStack {
-                Image(systemName: "sun.max.fill")
-                    .font(.system(size: 38))
-                    .foregroundStyle(.yellow)
-                Image(systemName: "cloud.fill")
-                    .font(.system(size: 42))
-                    .foregroundStyle(.white)
-                    .offset(x: 12, y: 9)
-            }
-            .symbolRenderingMode(.multicolor)
-            .frame(width: 58)
-            .accessibilityHidden(true)
-        default:
-            Image(systemName: WeatherService.symbol(
-                for: weather.weatherCode,
-                isDay: weather.isDay
-            ))
-            .font(.system(size: 42))
-            .symbolRenderingMode(.multicolor)
-            .frame(width: 58)
-            .accessibilityHidden(true)
-        }
+        Image(systemName: WeatherService.symbol(
+            for: weather.weatherCode,
+            isDay: weather.isDay
+        ))
+        .font(.system(size: 96))
+        .symbolRenderingMode(.multicolor)
+        .frame(width: 150, height: 130)
+        .accessibilityHidden(true)
     }
 
     // MARK: - Forecast strips
 
     private func hourlyStrip(_ weather: WeatherService.Snapshot) -> some View {
         forecastCard {
-            ForEach(Array(weather.hourly.prefix(9).enumerated()), id: \.offset) { _, hour in
+            ForEach(Array(weather.hourly.prefix(8).enumerated()), id: \.offset) { _, hour in
                 forecastColumn(
                     caption: WeatherService.hourLabel(for: hour.time),
                     symbol: WeatherService.symbol(for: hour.weatherCode, isDay: hour.isDay),
@@ -210,15 +178,11 @@ struct WeatherDetailView: View {
     private func forecastCard<Content: View>(
         @ViewBuilder content: () -> Content
     ) -> some View {
-        HStack(alignment: .center, spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             content()
         }
-        .frame(height: 60)
+        .frame(height: 86)
         .frame(maxWidth: .infinity)
-        .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(NotchTheme.surface)
-        }
     }
 
     private func forecastColumn(
@@ -227,24 +191,27 @@ struct WeatherDetailView: View {
         value: String,
         secondary: String?
     ) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 8) {
             Text(caption)
-                .font(.system(size: 10, weight: .heavy, design: .rounded))
-                .foregroundStyle(NotchTheme.inkSecondary)
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .fixedSize()
 
             Image(systemName: symbol)
-                .font(.system(size: 16))
+                .font(.system(size: 24))
                 .symbolRenderingMode(.multicolor)
-                .frame(height: 20)
+                .frame(height: 28)
 
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Text(value)
-                    .font(.system(size: 11.5, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: 16, weight: .bold, design: .rounded).monospacedDigit())
                     .foregroundStyle(NotchTheme.inkPrimary)
+                    .fixedSize()
                 if let secondary {
                     Text(secondary)
-                        .font(.system(size: 11.5, weight: .semibold, design: .rounded).monospacedDigit())
+                        .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
                         .foregroundStyle(NotchTheme.inkMuted)
+                        .fixedSize()
                 }
             }
         }

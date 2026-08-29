@@ -53,11 +53,12 @@ final class NotchState {
     /// Physical notch size, injected by NotchWindowController at launch.
     var notchSize: CGSize = NotchGeometry.fallbackSize
 
-    /// The open slab. One size for every tab, as in boring.notch and Atoll:
-    /// sizing each screen to its own content made the slab resize on every tab
-    /// switch, and each module now fits this panel instead.
+    /// The open slab, sized for the screen showing. Switching tabs resizes the
+    /// panel, which the references avoid — but a month grid and a weather hero
+    /// are genuinely different shapes, and forcing both into one box shrank
+    /// each past legibility.
     var expandedSize: CGSize {
-        NotchSizing.openNotchSize
+        NotchSizing.openNotchSize(for: tab)
     }
 
     /// Room left for a module once the header and the slab's own insets are
@@ -309,18 +310,13 @@ final class NotchState {
         // the old glyph-and-temperature pair did.
         case .music: 112
         case .lyrics: 150
-        case .timer: 130
-        case .trackChange: 240
-        // Narrower than the other activities: these grow the notch downward
-        // rather than sideways, so the wings only carry the glyph.
-        case .volume, .brightness: 132
-        case .battery: 116
-        case .screenLock: 180
-        case .focusMode: 190
-        case .eyeBreak: 210
+        // These all drop a bar beneath the notch rather than splitting across
+        // the wings, so the wings only carry what stays on the notch's own
+        // row — the weather glyph and its temperature.
+        case .timer, .trackChange, .volume, .brightness, .battery,
+             .screenLock, .focusMode, .eyeBreak, .accessoryBattery, .meetingSoon:
+            132
         case .desktopChange: 150
-        case .accessoryBattery: 240
-        case .meetingSoon: 260
         case nil: settings.showCompactWeather ? 120 : 0
         }
     }

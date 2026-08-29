@@ -91,20 +91,18 @@ struct CalendarDetailView: View {
                 calendar.date(byAdding: .day, value: $0, to: gridStart)
             }
 
-            // Six 17pt rows plus the weekday strip is 130, which fits the
-            // panel; at 24 it was 164 and the last two weeks were clipped.
-            VStack(spacing: 5) {
-                HStack(spacing: 3) {
+            VStack(spacing: 6) {
+                HStack(spacing: 4) {
                     ForEach(Array("MTWTFSS".enumerated()), id: \.offset) { _, letter in
                         Text(String(letter))
-                            .font(.system(size: 8, weight: .bold, design: .rounded))
-                            .foregroundStyle(NotchTheme.inkMuted)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkSecondary)
                             .frame(maxWidth: .infinity)
                     }
                 }
 
                 LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 7),
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7),
                     spacing: 2
                 ) {
                     ForEach(days, id: \.self) { day in
@@ -130,17 +128,23 @@ struct CalendarDetailView: View {
         let events = state.calendar.itemsOnSelectedDay
 
         if events.isEmpty {
-            HStack(spacing: 10) {
+            VStack(spacing: 10) {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 15, weight: .heavy))
+                    .font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(.black)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 46, height: 46)
                     .background(Circle().fill(calendarGreen))
                     .accessibilityHidden(true)
 
                 Text("All Clear")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundStyle(NotchTheme.inkPrimary)
+
+                Text(state.calendar.accessState == .granted
+                     ? "You have no events or reminders scheduled."
+                     : "Calendar access is off, so nothing can be shown.")
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(NotchTheme.inkSecondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         } else {
@@ -201,39 +205,39 @@ private struct WeekDayCell: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 3) {
+            VStack(spacing: 4) {
                 Text(day.formatted(.dateTime.weekday(.abbreviated)).uppercased())
-                    .font(.system(size: 8.5, weight: .semibold, design: .rounded))
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
                     .foregroundStyle(isSelected ? .white : NotchTheme.inkSecondary)
+                    .fixedSize()
                 Text("\(Calendar.current.component(.day, from: day))")
-                    .font(.system(
-                        size: 15,
-                        weight: isSelected ? .heavy : .bold,
-                        design: .rounded
-                    ).monospacedDigit())
+                    .font(.system(size: 22, weight: .heavy, design: .rounded).monospacedDigit())
                     .foregroundStyle(isSelected ? .white : NotchTheme.inkPrimary)
+                    .fixedSize()
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
+            .padding(.vertical, 12)
             .background {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(isSelected ? Color.blue : (isHovering ? NotchTheme.surfaceHover : Color.clear))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelected
+                          ? Color.blue
+                          : (isHovering ? NotchTheme.surfaceHover : Color.clear))
             }
-            .overlay(alignment: .topTrailing) {
+            .overlay(alignment: .top) {
+                // Today, when it is not the day being looked at, keeps a dot
+                // so the strip still says where "now" is.
                 if isToday && !isSelected {
                     Circle()
-                        .fill(NotchTheme.battery)
-                        .frame(width: 4, height: 4)
-                        .offset(x: -2, y: 2)
+                        .fill(.blue)
+                        .frame(width: 5, height: 5)
+                        .offset(y: 3)
                 }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableButtonStyle())
         .onHover { hovering in
-            withAnimation(NotchAnimations.content) {
-                isHovering = hovering
-            }
+            withAnimation(NotchAnimations.content) { isHovering = hovering }
         }
         .accessibilityLabel(day.formatted(date: .complete, time: .omitted))
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
@@ -254,26 +258,30 @@ private struct MonthDayCell: View {
         Button(action: action) {
             Text("\(Calendar.current.component(.day, from: day))")
                 .font(.system(
-                    size: 11,
-                    weight: isSelected ? .heavy : .medium,
+                    size: 16,
+                    weight: isSelected ? .heavy : .semibold,
                     design: .rounded
                 ).monospacedDigit())
+                .fixedSize()
                 .foregroundStyle(
                     isInMonth ? (isSelected ? .white : NotchTheme.inkPrimary) : NotchTheme.inkMuted
                 )
                 .frame(maxWidth: .infinity)
-                .frame(height: 17)
+                .frame(height: 32)
                 .background {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    // The reference marks the selected day with a circle, not
+                    // a rounded rectangle as the week strip does.
+                    Circle()
                         .fill(isSelected ? Color.blue : (isHovering ? NotchTheme.surfaceHover : Color.clear))
+                        .frame(width: 32, height: 32)
                 }
                 .overlay {
                     if isToday && !isSelected {
                         // Sized, not stretched: a Circle filling a cell that is
                         // wider than it is tall draws as an ellipse.
                         Circle()
-                            .strokeBorder(NotchTheme.battery, lineWidth: 1)
-                            .frame(width: 17, height: 17)
+                            .strokeBorder(Color.blue, lineWidth: 1.5)
+                            .frame(width: 32, height: 32)
                             .padding(1)
                     }
                 }
