@@ -5,10 +5,12 @@ import SwiftUI
 /// Apps / Devices switch over a list of rows, each with an icon, a name and
 /// status, a wide blue level bar, and a trailing cluster of round buttons.
 ///
-/// Only the Devices tab can be fully live. Per-application volume has no
-/// public API on macOS — Sapphire ships an audio HAL plug-in to do it — so the
-/// Apps tab lists what is really playing and says plainly that its level is
-/// read-only, rather than drawing a slider that moves and changes nothing.
+/// Both tabs report real state. Devices is fully interactive. Apps lists every
+/// process CoreAudio says is running output — any device audio, not just the
+/// now-playing app — but its level is read-only: macOS exposes observing a
+/// process's audio, never setting its volume. Sapphire ships an audio HAL
+/// plug-in for that; drawing a slider that moves and changes nothing would be
+/// worse than saying so.
 struct AudioDevicesView: View {
     let state: NotchState
 
@@ -35,9 +37,17 @@ struct AudioDevicesView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear {
-            state.audio.refresh()
-            state.audioApps.refresh()
+        .onAppear { state.audio.refresh() }
+        // Whether a process is running output changes constantly, and CoreAudio
+        // posts no notification for it. This polls only while the Apps tab is
+        // on screen — the task is cancelled the moment the view goes away, so
+        // the closed notch still does nothing.
+        .task(id: state.audioTab) {
+            guard state.audioTab == .apps else { return }
+            while !Task.isCancelled {
+                state.refreshAudioApps()
+                try? await Task.sleep(for: .seconds(1))
+            }
         }
     }
 
@@ -125,7 +135,7 @@ struct AudioDevicesView: View {
     @ViewBuilder
     private var appRows: some View {
         if state.audioApps.apps.isEmpty {
-            emptyRow("Nothing is playing")
+            emptyRow("No apps are using audio")
         } else {
             ForEach(state.audioApps.apps) { app in
                 AudioRow(
@@ -164,9 +174,13 @@ struct AudioDevicesView: View {
                 }
             }
 
-            Text("Levels shown are the system output. macOS has no public "
-                 + "per-application volume — that needs an audio driver Notch "
-                 + "doesn't install.")
+            Text(state.audioApps.canObserveProcesses
+                 ? "Playing is read from CoreAudio, so this covers any app "
+                    + "making sound. The level is the system output — macOS "
+                    + "has no per-application volume without an audio driver."
+                 : "macOS 14.4 or later is needed to tell which apps are "
+                    + "actually making sound; this lists media apps that are "
+                    + "running.")
                 .font(.system(size: 10.5, weight: .medium, design: .rounded))
                 .foregroundStyle(NotchTheme.inkMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)

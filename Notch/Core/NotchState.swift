@@ -251,6 +251,16 @@ final class NotchState {
         }
     }
 
+    /// Re-reads which apps are putting audio out. Cheap — one CoreAudio
+    /// property read plus a process lookup each — and only called while the
+    /// audio screen is open or the notch is being woken.
+    func refreshAudioApps() {
+        audioApps.refresh(
+            nowPlayingBundleID: media.sourceAppBundleID,
+            isPlaying: media.isPlaying
+        )
+    }
+
     /// The focus mode currently active, for the dashboard.
     var activeFocus: FocusModeMonitor.Mode? {
         focusMonitor.activeMode
@@ -430,10 +440,7 @@ final class NotchState {
         telemetry.start()
         weather.refresh()
         audio.refresh()
-        audioApps.refresh(
-            nowPlayingBundleID: media.sourceAppBundleID,
-            isPlaying: media.isPlaying
-        )
+        refreshAudioApps()
         bluetooth.start()
         shortcuts.refresh()
     }

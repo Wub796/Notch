@@ -40,12 +40,22 @@ enum NotchAnimations {
     }
 
     /// Opening into the full panel.
+    ///
+    /// A timing curve rather than a spring, and this is the one place the two
+    /// differ on purpose. A spring applies its full restoring force from the
+    /// first frame: it leaves at speed and spends its length decelerating,
+    /// which is why opening felt abrupt however long the response got. These
+    /// control points hold the opening almost still for the first tenth and
+    /// only reach a quarter of the way by the time a third of the duration has
+    /// passed, so the panel eases away from the notch before it travels, then
+    /// glides the rest. Closing keeps its spring — leaving briskly is the
+    /// right behaviour on the way out.
     static var open: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.88, dampingFraction: 1, blendDuration: 0)
+        case .snappy: return .timingCurve(0.6, 0, 0.35, 1, duration: 0.8)
         case .bouncy: return .spring(response: 0.9, dampingFraction: 0.82, blendDuration: 0)
-        case .calm: return .spring(response: 1.15, dampingFraction: 1, blendDuration: 0)
+        case .calm: return .timingCurve(0.65, 0, 0.3, 1, duration: 1.05)
         }
     }
 
