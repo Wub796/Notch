@@ -478,13 +478,34 @@ final class MediaController {
         return result?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Transport over Apple Events, off the main thread.
+    ///
+    /// `executeAndReturnError` is a synchronous Apple Event with a long
+    /// default timeout: run it on the main thread and a player that is busy
+    /// launching, or stuck, freezes the whole UI mid-click. Nothing here needs
+    /// its result, so it goes to a background queue and the state is re-read
+    /// afterwards.
     private func runProviderCommand(appName: String, command: String) {
-        guard fallbackAppIsRunning,
-              let script = NSAppleScript(source: "tell application \"\(appName)\" to \(command)")
-        else { return }
-        var error: NSDictionary?
-        script.executeAndReturnError(&error)
-        refreshFromAppleScript()
+        guard fallbackAppIsRunning else { return }
+        let source = "tell application \"\(appName)\" to \(command)"
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var error: NSDictionary?
+            NSAppleScript(source: source)?.executeAndReturnError(&error)
+            // Players need a beat to settle before they report the new state.
+            let snapshot = self?.appleScriptSnapshot()
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if let snapshot {
+                    self.pendingClearWork?.cancel()
+                    self.pendingClearWork = nil
+                    self.apply(snapshot)
+                } else {
+                    self.clearTrackAfterGrace()
+                }
+            }
+        }
     }
 
     // MARK: - MediaRemote source
@@ -798,15 +819,37 @@ final class MediaController {
         }
     }
 
+    /// Reads the player's state on a background queue and applies it on the
+    /// main one.
+    ///
+    /// This runs from a timer every couple of seconds; done inline it is a
+    /// blocking Apple Event on the main thread at that cadence, which is a
+    /// stutter at best and a beachball whenever the player is slow to answer.
     private func refreshFromAppleScript() {
-        guard let snapshot = appleScriptSnapshot() else {
-            clearTrackAfterGrace()
-            return
+        guard !isReadingAppleScript else { return }
+        isReadingAppleScript = true
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let snapshot = self?.appleScriptSnapshot()
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.isReadingAppleScript = false
+
+                guard let snapshot else {
+                    self.clearTrackAfterGrace()
+                    return
+                }
+                self.pendingClearWork?.cancel()
+                self.pendingClearWork = nil
+                self.apply(snapshot)
+            }
         }
-        pendingClearWork?.cancel()
-        pendingClearWork = nil
-        apply(snapshot)
     }
+
+    /// One read in flight at a time: a slow player must not let the timer
+    /// stack requests behind it.
+    private var isReadingAppleScript = false
 
     /// Waits a beat before blanking the player.
     ///

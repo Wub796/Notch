@@ -515,6 +515,39 @@ final class NotchState {
         settings.lastTab = newTab.rawValue
     }
 
+    // MARK: - App lifecycle
+
+    /// Everything this app holds that the system would rather it gave back:
+    /// the capture stream, the CoreAudio listeners, the event tap and the
+    /// module timers. Called on termination — a screen-capture stream that
+    /// outlives the app keeps the recording indicator lit, and an event tap
+    /// left enabled is a keystroke the next app does not get.
+    func shutdown() {
+        audioMeter.stop()
+        audioApps.stopObserving()
+        activities.stop()
+        MediaKeyInterceptor.shared.stop()
+        timer.cancel()
+        sleepModules()
+    }
+
+    /// After a sleep/wake cycle the world has moved: CoreAudio re-enumerates
+    /// its devices, so listeners attached before the sleep are pointed at
+    /// objects that no longer exist, and the weather is however old the sleep
+    /// was. Everything that is normally push-driven is re-armed here.
+    func refreshAfterWake() {
+        audioApps.restartObserving()
+        audio.refresh()
+        weather.refresh()
+        calendar.refresh()
+        shortcuts.refresh()
+        syncAudioMeter()
+        media.updateLyricActivityTimer()
+        if mode == .expanded {
+            wakeModules()
+        }
+    }
+
     // MARK: - Module lifecycle (zero background work while collapsed)
 
     private func wakeModules() {

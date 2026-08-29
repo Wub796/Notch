@@ -10,6 +10,7 @@ final class VolumeMonitor {
 
     private var deviceID = AudioObjectID(kAudioObjectUnknown)
     private var listenerBlock: AudioObjectPropertyListenerBlock?
+    private var defaultDeviceBlock: AudioObjectPropertyListenerBlock?
     private var isRunning = false
 
     private static var volumeAddress = AudioObjectPropertyAddress(
@@ -38,16 +39,47 @@ final class VolumeMonitor {
         listenerBlock = block
 
         // Track default-device swaps (AirPods connect, display speakers…)
-        // so the volume listeners always follow the active output.
+        // so the volume listeners always follow the active output. The block
+        // is held rather than passed anonymously: a listener that cannot be
+        // named cannot be removed.
+        let deviceBlock: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.attachToDefaultDevice(reportInitial: false)
+        }
+        defaultDeviceBlock = deviceBlock
         AudioObjectAddPropertyListenerBlock(
             AudioObjectID(kAudioObjectSystemObject),
             &Self.defaultDeviceAddress,
-            .main
-        ) { [weak self] _, _ in
-            self?.attachToDefaultDevice(reportInitial: false)
-        }
+            .main,
+            deviceBlock
+        )
 
         attachToDefaultDevice(reportInitial: false)
+    }
+
+    func stop() {
+        guard isRunning else { return }
+        isRunning = false
+
+        if let deviceBlock = defaultDeviceBlock {
+            AudioObjectRemovePropertyListenerBlock(
+                AudioObjectID(kAudioObjectSystemObject),
+                &Self.defaultDeviceAddress,
+                .main,
+                deviceBlock
+            )
+            defaultDeviceBlock = nil
+        }
+
+        if let block = listenerBlock, deviceID != kAudioObjectUnknown {
+            AudioObjectRemovePropertyListenerBlock(deviceID, &Self.volumeAddress, .main, block)
+            AudioObjectRemovePropertyListenerBlock(deviceID, &Self.muteAddress, .main, block)
+        }
+        deviceID = AudioObjectID(kAudioObjectUnknown)
+        listenerBlock = nil
+    }
+
+    deinit {
+        stop()
     }
 
     private func attachToDefaultDevice(reportInitial: Bool) {

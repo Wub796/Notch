@@ -71,24 +71,48 @@ final class LiveActivityManager {
 
         if NotchSettings.shared.liveActivitiesEnabled {
             // Session lock/unlock, announced by the system over the
-            // distributed notification center (DynamicNotch's approach).
+            // distributed notification center (DynamicNotch's approach). The
+            // tokens are kept so these can be taken back off at shutdown.
             let center = DistributedNotificationCenter.default()
-            center.addObserver(
-                forName: Notification.Name("com.apple.screenIsLocked"),
-                object: nil, queue: .main
-            ) { [weak self] _ in
-                guard NotchSettings.shared.liveActivitiesEnabled else { return }
-                self?.show(.screenLock(locked: true), for: Self.lockEventDuration)
-            }
-            center.addObserver(
-                forName: Notification.Name("com.apple.screenIsUnlocked"),
-                object: nil, queue: .main
-            ) { [weak self] _ in
-                guard NotchSettings.shared.liveActivitiesEnabled else { return }
-                self?.show(.screenLock(locked: false), for: Self.lockEventDuration)
-            }
+            lockObservers = [
+                center.addObserver(
+                    forName: Notification.Name("com.apple.screenIsLocked"),
+                    object: nil, queue: .main
+                ) { [weak self] _ in
+                    guard NotchSettings.shared.liveActivitiesEnabled else { return }
+                    self?.show(.screenLock(locked: true), for: Self.lockEventDuration)
+                },
+                center.addObserver(
+                    forName: Notification.Name("com.apple.screenIsUnlocked"),
+                    object: nil, queue: .main
+                ) { [weak self] _ in
+                    guard NotchSettings.shared.liveActivitiesEnabled else { return }
+                    self?.show(.screenLock(locked: false), for: Self.lockEventDuration)
+                },
+            ]
         }
     }
+
+    /// Gives back everything this holds of the system's: the CoreAudio volume
+    /// listeners, the IOKit power run-loop source, and the distributed
+    /// notification observers.
+    func stop() {
+        volumeMonitor.stop()
+        powerMonitor.stop()
+        for observer in lockObservers {
+            DistributedNotificationCenter.default().removeObserver(observer)
+        }
+        lockObservers = []
+        dismissWork?.cancel()
+        dismissWork = nil
+        transient = nil
+    }
+
+    deinit {
+        stop()
+    }
+
+    private var lockObservers: [NSObjectProtocol] = []
 
     /// Sneak peek (boring.notch-style): a new track briefly announces itself
     /// in the collapsed notch.

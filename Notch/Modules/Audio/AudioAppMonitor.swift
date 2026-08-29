@@ -95,11 +95,8 @@ final class AudioAppMonitor {
         isObserving = true
 
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            // CoreAudio may deliver on its own queue even when .main is asked
-            // for, and coalescing here keeps a burst of per-process
-            // notifications to one refresh.
             DispatchQueue.main.async { [weak self] in
-                self?.handleActivityChange()
+                self?.scheduleActivityChange()
             }
         }
         listenerBlock = block
@@ -120,7 +117,22 @@ final class AudioAppMonitor {
         handleActivityChange()
     }
 
+    /// Tears the listeners down and puts them back. After a sleep/wake cycle
+    /// the audio objects this was watching may no longer exist — CoreAudio
+    /// re-enumerates devices on wake — and listeners on a dead object never
+    /// fire again, which would leave the screen quietly stale forever.
+    func restartObserving() {
+        stopObserving()
+        startObserving()
+    }
+
+    deinit {
+        stopObserving()
+    }
+
     func stopObserving() {
+        pendingChange?.cancel()
+        pendingChange = nil
         guard isObserving, let block = listenerBlock else { return }
         isObserving = false
 
@@ -179,6 +191,27 @@ final class AudioAppMonitor {
         }
         observedDevices = []
     }
+
+    /// One pass per burst.
+    ///
+    /// A single "audio started" is several notifications — the process list
+    /// changes, then that process reports output, then the device reports it
+    /// is running — and each pass re-attaches every per-object listener and
+    /// rebuilds the app list. Answering all of them individually would turn a
+    /// browser opening tabs into a stream of redundant work. A tenth of a
+    /// second is below the threshold of feeling delayed and collapses the
+    /// burst into one update.
+    private func scheduleActivityChange() {
+        pendingChange?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.pendingChange = nil
+            self?.handleActivityChange()
+        }
+        pendingChange = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
+    }
+
+    private var pendingChange: DispatchWorkItem?
 
     private func handleActivityChange() {
         attachPerObjectListeners()

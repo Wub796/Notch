@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingController: OnboardingWindowController?
     private var scrollMonitor: Any?
     private var outsideClickMonitor: Any?
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var screenChangeWork: DispatchWorkItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -28,6 +30,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+        installWakeObservers()
+    }
+
+    /// Waking is not a quiet event for this app: CoreAudio re-enumerates its
+    /// devices, so listeners attached before the sleep are watching objects
+    /// that no longer exist, and the weather is as old as the sleep was.
+    /// Without this the notch comes back looking alive and quietly isn't.
+    private func installWakeObservers() {
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers = [
+            center.addObserver(
+                forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                self?.state.refreshAfterWake()
+                self?.scheduleScreenReattach()
+            },
+            center.addObserver(
+                forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                self?.scheduleScreenReattach()
+            },
+        ]
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -43,17 +67,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        screenChangeWork?.cancel()
+
         if let scrollMonitor {
             NSEvent.removeMonitor(scrollMonitor)
         }
         if let outsideClickMonitor {
             NSEvent.removeMonitor(outsideClickMonitor)
         }
+        for observer in workspaceObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        workspaceObservers = []
+        NotificationCenter.default.removeObserver(self)
+
+        HotKeyManager.shared.apply(.disabled)
+        state.shutdown()
     }
 
     /// Rebuilds the panel on the screen that physically has a notch,
     /// falling back to the main display on non-notched Macs.
     private func attachToBestScreen() {
+        screenChangeWork = nil
         guard let screen = NotchGeometry.preferredScreen else { return }
         // Never carry an expanded panel across a display change — the new
         // geometry starts from the resting state.
@@ -64,8 +99,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func screenParametersDidChange() {
-        // Display was plugged/unplugged or resolution changed: re-anchor the panel.
-        attachToBestScreen()
+        scheduleScreenReattach()
+    }
+
+    /// A display change is not one notification: plugging in a monitor,
+    /// changing resolution or waking a lid fires several in a row, and
+    /// rebuilding the panel on each one flickers — and can leave it anchored
+    /// to a screen that is about to disappear. One rebuild, after it settles.
+    private func scheduleScreenReattach() {
+        screenChangeWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.attachToBestScreen()
+        }
+        screenChangeWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
     /// Two-finger scroll over the notch opens it (DynamicNotch-style

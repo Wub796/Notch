@@ -120,6 +120,13 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
+    /// A capture stream that outlives its owner keeps the screen-recording
+    /// indicator lit, so this is not optional bookkeeping.
+    deinit {
+        guard let capture = stream else { return }
+        Task { try? await capture.stopCapture() }
+    }
+
     func stop() {
         let capture = stream
         stream = nil

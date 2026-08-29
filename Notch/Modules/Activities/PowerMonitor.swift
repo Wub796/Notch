@@ -33,6 +33,19 @@ final class PowerMonitor {
         runLoopSource = source
     }
 
+    /// The run-loop source holds an unretained pointer back to this object,
+    /// so it has to come off the run loop before the object goes away —
+    /// otherwise the next power event calls through a dangling pointer.
+    func stop() {
+        guard let source = runLoopSource else { return }
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .defaultMode)
+        runLoopSource = nil
+    }
+
+    deinit {
+        stop()
+    }
+
     private func publish() {
         guard let snapshot = Self.snapshot() else { return }
         DispatchQueue.main.async { [weak self] in

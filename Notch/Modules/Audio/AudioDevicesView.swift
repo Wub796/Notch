@@ -58,6 +58,8 @@ struct AudioDevicesView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: NotchTheme.Space.s) {
+                meterFailureNotice
+
                 switch state.audioTab {
                 case .spotify: spotifyRows
                 case .airplay: airplayRows
@@ -86,6 +88,44 @@ struct AudioDevicesView: View {
                 spotify.refreshDevices()
                 try? await Task.sleep(for: .seconds(4))
             }
+        }
+    }
+
+    /// The real-time meter is opt-in and can fail for reasons the user can
+    /// fix — the permission was revoked, or there is no display to capture.
+    /// It used to fail silently, leaving the visualiser quietly back on its
+    /// fallback with nothing to say why.
+    @ViewBuilder
+    private var meterFailureNotice: some View {
+        if state.settings.realtimeAudioMeter, let reason = state.audioMeter.failureReason {
+            HStack(spacing: NotchTheme.Space.s) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.orange)
+
+                Text(reason)
+                    .font(.notchCaption)
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: NotchTheme.Space.s)
+
+                Button("Open Settings") {
+                    let path = "x-apple.systempreferences:com.apple.preference"
+                        + ".security?Privacy_ScreenCapture"
+                    if let url = URL(string: path) {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(PressableButtonStyle())
+                .font(.notchCaption.weight(.bold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .fixedSize()
+            }
+            .padding(.horizontal, NotchTheme.Space.m)
+            .padding(.vertical, 10)
+            .notchCard(radius: NotchTheme.Radius.tile, isHighlighted: true, tint: .orange)
+            .transition(.opacity)
         }
     }
 

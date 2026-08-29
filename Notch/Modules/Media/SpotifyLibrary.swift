@@ -58,8 +58,16 @@ final class SpotifyLibrary {
 
     /// Downloaded covers, keyed by URL. `@Observable` sees the assignment, so
     /// a card redraws as soon as its image lands.
+    ///
+    /// Bounded: a long session that scrolls through search results would
+    /// otherwise hold every cover it ever drew for the life of the app. The
+    /// oldest are dropped once the cache is full — they cost one request to
+    /// fetch again, and only if they are looked at again.
     private(set) var images: [String: NSImage] = [:]
+    private var imageOrder: [String] = []
     private var imageTasks: Set<String> = []
+
+    private static let imageCacheLimit = 120
 
     private var searchTask: Task<Void, Never>?
     private var lastLibraryLoad = Date.distantPast
@@ -173,6 +181,7 @@ final class SpotifyLibrary {
         forYou = []
         searchResults = []
         images = [:]
+        imageOrder = []
         activeContextURI = nil
         lastLibraryLoad = .distantPast
     }
@@ -351,6 +360,11 @@ final class SpotifyLibrary {
                 self.imageTasks.remove(key)
                 guard let loaded else { return }
                 self.images[key] = loaded
+                self.imageOrder.append(key)
+                while self.imageOrder.count > Self.imageCacheLimit {
+                    let oldest = self.imageOrder.removeFirst()
+                    self.images.removeValue(forKey: oldest)
+                }
             }
         }
         return nil
