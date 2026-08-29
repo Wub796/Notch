@@ -54,8 +54,9 @@ struct NotchLayoutView: View {
             CollapsedNotchView(state: state, isHovering: isHovering)
                 .frame(height: state.collapsedSize.height)
                 // Hovering the closed pill widens it slightly, the way both
-                // references pad their wings out on hover.
-                .padding(.horizontal, isHovering ? 6 : 0)
+                // references pad their wings out on hover. The amount is the
+                // user's "hover grow" preference.
+                .padding(.horizontal, isHovering ? state.hoverExpansion : 0)
                 .zIndex(2)
         }
     }

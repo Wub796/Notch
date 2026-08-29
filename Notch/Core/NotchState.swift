@@ -74,6 +74,17 @@ final class NotchState {
         )
     }
 
+    /// How far the closed pill's wings ease outward on hover.
+    ///
+    /// The references pad by a fixed amount; deriving it from the user's
+    /// "hover grow" preference keeps that slider meaningful now that peek is a
+    /// padding rather than a scale. The 1.10 default lands on 6pt, which is
+    /// what the fixed value was.
+    var hoverExpansion: CGFloat {
+        let scale = min(max(settings.peekScale, 1.0), 1.4)
+        return (scale - 1) * 60
+    }
+
     /// Height of the icon strip that flanks the hardware notch.
     var topBarHeight: CGFloat {
         max(adjustedNotchSize.height, 38)

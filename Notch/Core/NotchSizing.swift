@@ -35,19 +35,24 @@ enum NotchSizing {
     /// on the sides and bottom.
     static let openContentInset: CGFloat = 12
 
-    /// Smallest and largest open widths. Atoll clamps to the screen so the
-    /// slab can never overhang a scaled display.
-    static let minimumOpenWidth: CGFloat = 520
-    static let defaultOpenWidth: CGFloat = 760
-    static let minimumOpenHeight: CGFloat = 170
-    static let defaultOpenHeight: CGFloat = 210
+    /// Bounds for the two size preferences. These are `Double`, not `CGFloat`:
+    /// they are slider bounds before they are geometry, and `NotchSettings`
+    /// stores every preference as a `Double`. Mixing the two only forces a
+    /// conversion at each `Binding` in Settings. The geometry below converts
+    /// once, at the point it becomes a `CGSize`.
+    ///
+    /// Atoll clamps the width to the screen so the slab can never overhang a
+    /// scaled display; `maxAllowedOpenWidth` is that rule.
+    static let minimumOpenWidth: Double = 520
+    static let defaultOpenWidth: Double = 760
+    static let minimumOpenHeight: Double = 170
+    static let defaultOpenHeight: Double = 210
+    static let maximumOpenHeight: Double = 340
 
-    static func maxAllowedOpenWidth(for screen: NSScreen? = NSScreen.main) -> CGFloat {
+    static func maxAllowedOpenWidth(for screen: NSScreen? = NSScreen.main) -> Double {
         guard let width = screen?.frame.width, width > 0 else { return 900 }
-        return max(width - 60, minimumOpenWidth)
+        return max(Double(width) - 60, minimumOpenWidth)
     }
-
-    static let maximumOpenHeight: CGFloat = 340
 
     /// The open slab, from the user's preference clamped to what fits.
     ///
@@ -69,8 +74,8 @@ enum NotchSizing {
     /// the shadow margin, so growing the panel never clips against its window.
     static var windowSize: CGSize {
         CGSize(
-            width: maxAllowedOpenWidth() + shadowPadding * 2,
-            height: maximumOpenHeight + shadowPadding * 2
+            width: maxAllowedOpenWidth() + Double(shadowPadding) * 2,
+            height: maximumOpenHeight + Double(shadowPadding) * 2
         )
     }
 }
