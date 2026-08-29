@@ -7,38 +7,70 @@ struct ShelfView: View {
     let shelf: ShelfController
 
     var body: some View {
-        if shelf.items.isEmpty {
-            emptyState
-        } else {
-            VStack(spacing: 10) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(shelf.items) { item in
-                            ShelfItemCard(item: item, shelf: shelf)
+        VStack(spacing: 0) {
+            cardHeader
+
+            if shelf.items.isEmpty {
+                emptyState
+            } else {
+                VStack(spacing: 10) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(shelf.items) { item in
+                                ShelfItemCard(item: item, shelf: shelf)
+                            }
                         }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 2)
                     }
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 2)
+                    footer
                 }
-                footer
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .animation(.notchSpring, value: shelf.items)
         }
+        .background {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.white.opacity(0.035))
+        }
+        .animation(.notchSpring, value: shelf.items)
+    }
+
+    /// Titled card header for the File Drops panel.
+    private var cardHeader: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "person.crop.circle.dashed")
+                .font(.system(size: 23, weight: .light))
+                .foregroundStyle(NotchTheme.inkSecondary)
+
+            Text("File Drops")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "tray.full")
+                .font(.system(size: 17))
+                .foregroundStyle(NotchTheme.inkSecondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.white.opacity(0.05))
+        }
+        .accessibilityAddTraits(.isHeader)
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "tray.and.arrow.down")
-                .font(.system(size: 26, weight: .light))
+        VStack(spacing: 12) {
+            Image(systemName: "tray")
+                .font(.system(size: 36, weight: .ultraLight))
                 .foregroundStyle(NotchTheme.inkMuted)
-            Text("Shelf is empty")
-                .font(.system(size: 12, weight: .semibold))
+            Text("No Active Files or Shelf Items")
+                .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(NotchTheme.inkSecondary)
-            Text("Drop files onto the notch to keep them here,\nthen drag them out or AirDrop them")
-                .font(.system(size: 10.5))
-                .foregroundStyle(NotchTheme.inkMuted)
-                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
