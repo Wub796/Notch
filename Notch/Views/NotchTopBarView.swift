@@ -92,7 +92,6 @@ struct NotchTopBarView: View {
                 help: state.keepAwake.isActive ? "Allow sleep" : "Keep Mac awake",
                 activeTint: NotchTheme.battery
             ) {
-                NotchTheme.Haptics.generic()
                 withAnimation(NotchAnimations.content) {
                     state.keepAwake.toggle()
                 }

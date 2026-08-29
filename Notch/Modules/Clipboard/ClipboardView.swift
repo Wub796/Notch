@@ -56,6 +56,7 @@ struct ClipboardView: View {
                 .padding(.horizontal, 2)
                 .padding(.vertical, 3)
             }
+                .notchScrollFadeHorizontal(10)
         }
     }
 }

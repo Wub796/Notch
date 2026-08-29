@@ -61,6 +61,17 @@ struct DevicesScreenView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // Screens rise a few points as they arrive rather than cutting.
+            // The panel is already open here, so this is free to be its own
+            // motion — nothing is racing the expansion spring.
+            .transition(
+                .asymmetric(
+                    insertion: .opacity.combined(with: .offset(y: 8)),
+                    removal: .opacity
+                )
+            )
+            .id(state.devicesSection)
+            .animation(NotchAnimations.content, value: state.devicesSection)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { spotify.refresh() }
@@ -73,14 +84,55 @@ struct DevicesScreenView: View {
 
     // MARK: - Title
 
-    /// Just the name: the back button lives in the header strip directly
-    /// above it, where every other detail screen keeps its own.
+    /// The name, and what is making sound right now. The back button lives in
+    /// the header strip directly above it, where every other detail screen
+    /// keeps its own.
     private var titleRow: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .lastTextBaseline, spacing: NotchTheme.Space.m) {
             Text("Devices")
                 .font(.notchDisplay)
                 .foregroundStyle(NotchTheme.inkPrimary)
+
+            liveAudioBadge
+
             Spacer(minLength: 0)
+        }
+    }
+
+    /// A live readout of what CoreAudio says is playing. It appears the
+    /// instant sound starts, which is the whole point of the listeners behind
+    /// it — the section is never stale by the time you look at it.
+    @ViewBuilder
+    private var liveAudioBadge: some View {
+        let playing = state.audioApps.apps.filter(\.isPlaying)
+
+        if state.audioApps.isAnyAudioPlaying || !playing.isEmpty {
+            HStack(spacing: 6) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.green)
+                    .symbolEffect(.variableColor.iterative, options: .repeating)
+
+                Text(Self.playingLabel(playing))
+                    .font(.notchCaption.weight(.semibold))
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 24)
+            .background(Capsule().fill(Color.green.opacity(0.14)))
+            .overlay(Capsule().strokeBorder(Color.green.opacity(0.28), lineWidth: 1))
+            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            .accessibilityLabel("Audio playing")
+            .accessibilityValue(Self.playingLabel(playing))
+        }
+    }
+
+    private static func playingLabel(_ playing: [AudioAppMonitor.App]) -> String {
+        switch playing.count {
+        case 0: "Audio playing"
+        case 1: playing[0].name
+        default: "\(playing[0].name) +\(playing.count - 1)"
         }
     }
 
@@ -156,7 +208,7 @@ struct DevicesScreenView: View {
                     title: section.title,
                     symbol: section.symbol,
                     isActive: state.devicesSection == section,
-                    tint: .accentColor
+                    geometryID: "sectionPill"
                 ) {
                     withAnimation(NotchAnimations.content) {
                         state.devicesSection = section
@@ -169,17 +221,19 @@ struct DevicesScreenView: View {
                     .fill(.white.opacity(0.14))
                     .frame(width: 1, height: 20)
                     .padding(.horizontal, 4)
+                    .transition(.opacity)
 
                 ForEach(AudioScreenTab.allCases) { tab in
                     pill(
                         title: tab.title,
                         symbol: tab.symbol,
                         isActive: state.audioTab == tab,
-                        tint: .accentColor
+                        geometryID: "audioPill"
                     ) {
                         withAnimation(NotchAnimations.content) { state.audioTab = tab }
                     }
                 }
+                .transition(.opacity)
             }
         }
         .padding(3)
@@ -188,11 +242,14 @@ struct DevicesScreenView: View {
         .fixedSize()
     }
 
+    /// The selected capsule is one view that moves between the pills rather
+    /// than a fill switching off here and on there — the difference between a
+    /// switch that slides and one that blinks.
     private func pill(
         title: String,
         symbol: String,
         isActive: Bool,
-        tint: Color,
+        geometryID: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -208,7 +265,13 @@ struct DevicesScreenView: View {
             .foregroundStyle(isActive ? .white : NotchTheme.inkSecondary)
             .padding(.horizontal, 10)
             .frame(height: 30)
-            .background(Capsule().fill(isActive ? tint : .clear))
+            .background {
+                if isActive {
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .matchedGeometryEffect(id: geometryID, in: namespace)
+                }
+            }
             .contentShape(Capsule())
         }
         .buttonStyle(PressableButtonStyle())
@@ -246,7 +309,7 @@ struct SpotifyLibraryScreen: View {
                     .frame(maxWidth: .infinity, minHeight: 80)
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
-                    LazyVGrid(columns: Self.columns, spacing: 12) {
+                    LazyVGrid(columns: Self.columns, spacing: NotchTheme.Space.m) {
                         ForEach(spotify.sortedPlaylists) { playlist in
                             PlaylistCard(
                                 playlist: playlist,
@@ -257,7 +320,9 @@ struct SpotifyLibraryScreen: View {
                         }
                     }
                     .padding(.bottom, 4)
+                    .animation(.notchSpring, value: spotify.sortedPlaylists)
                 }
+                .notchScrollFade(12)
             }
         }
     }
@@ -471,7 +536,7 @@ struct SpotifyDiscoverScreen: View {
                         .frame(height: 60)
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(alignment: .top, spacing: 14) {
+                        HStack(alignment: .top, spacing: NotchTheme.Space.l) {
                             ForEach(spotify.forYou) { item in
                                 DiscoverTile(
                                     item: item,
@@ -482,6 +547,7 @@ struct SpotifyDiscoverScreen: View {
                         }
                         .padding(.horizontal, 2)
                     }
+                    .notchScrollFadeHorizontal(10)
                 }
             }
             .padding(NotchTheme.Space.l)

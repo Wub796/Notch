@@ -57,7 +57,7 @@ struct AudioDevicesView: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 10) {
+            VStack(spacing: NotchTheme.Space.s) {
                 switch state.audioTab {
                 case .spotify: spotifyRows
                 case .airplay: airplayRows
@@ -66,28 +66,25 @@ struct AudioDevicesView: View {
                 }
             }
             .padding(.bottom, 2)
+            // Rows arrive and leave as an app starts or stops making sound,
+            // which now happens the instant CoreAudio says so — so they slide
+            // rather than appear.
+            .animation(.notchSpring, value: state.audioApps.apps)
+            .animation(.notchSpring, value: state.audio.devices)
+            .animation(.notchSpring, value: spotify.devices)
         }
+        .notchScrollFade(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { state.audio.refresh() }
-        // Neither of these pushes: CoreAudio posts no notification for whether
-        // a process is running output, and a Connect device appearing is only
-        // visible by asking. Both poll strictly while their own tab is up —
-        // the task is cancelled the moment the view goes away, so the closed
-        // notch still does nothing.
+        // Apps needs no timer at all any more: `AudioAppMonitor` listens to
+        // CoreAudio and the list is already current when this appears. A
+        // Connect device waking on the other side of the house is the one
+        // thing nothing pushes, so that tab — and only that tab — asks.
         .task(id: state.audioTab) {
-            switch state.audioTab {
-            case .apps:
-                while !Task.isCancelled {
-                    state.refreshAudioApps()
-                    try? await Task.sleep(for: .seconds(1))
-                }
-            case .spotify:
-                while !Task.isCancelled {
-                    spotify.refreshDevices()
-                    try? await Task.sleep(for: .seconds(4))
-                }
-            default:
-                break
+            guard state.audioTab == .spotify else { return }
+            while !Task.isCancelled {
+                spotify.refreshDevices()
+                try? await Task.sleep(for: .seconds(4))
             }
         }
     }
@@ -314,9 +311,25 @@ struct AudioRow<Actions: View>: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                         if let status {
-                            Text(status)
-                                .font(.notchFootnote.weight(.bold))
-                                .foregroundStyle(statusIsLive ? .green : NotchTheme.inkMuted)
+                            HStack(spacing: 5) {
+                                Text(status)
+                                    .font(.notchFootnote.weight(.bold))
+                                    .foregroundStyle(statusIsLive ? .green : NotchTheme.inkMuted)
+
+                                // A glyph that is actually moving while the
+                                // row is live, so "Playing" is something you
+                                // see rather than something you read.
+                                if statusIsLive {
+                                    Image(systemName: "waveform")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(.green)
+                                        .symbolEffect(
+                                            .variableColor.iterative,
+                                            options: .repeating
+                                        )
+                                        .transition(.opacity)
+                                }
+                            }
                         }
                     }
                     .frame(width: 110, alignment: .leading)
@@ -342,6 +355,13 @@ struct AudioRow<Actions: View>: View {
         .padding(.horizontal, NotchTheme.Space.m)
         .padding(.vertical, 10)
         .notchCard(isHighlighted: isHighlighted)
+        .transition(
+            .asymmetric(
+                insertion: .scale(scale: 0.97).combined(with: .opacity),
+                removal: .opacity
+            )
+        )
+        .animation(.notchSpring, value: isHighlighted)
     }
 
     @ViewBuilder

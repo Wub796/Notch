@@ -40,14 +40,12 @@ final class QuickActions {
         run(script, describing: "change the appearance") { [weak self] in
             self?.refresh()
         }
-        NotchTheme.Haptics.generic()
     }
 
     // MARK: - Session
 
     /// Sleeps the display immediately — the usual way people "lock" a Mac.
     func sleepDisplay() {
-        NotchTheme.Haptics.generic()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
         process.arguments = ["displaysleepnow"]
@@ -59,7 +57,6 @@ final class QuickActions {
     /// fails this falls back to sleeping the display, which locks the Mac
     /// wherever "require password after sleep" is set.
     func lockScreen() {
-        NotchTheme.Haptics.generic()
         let script = """
         tell application "System Events" to keystroke "q" \
         using {control down, command down}
@@ -73,7 +70,6 @@ final class QuickActions {
     // MARK: - Trash
 
     func emptyTrash() {
-        NotchTheme.Haptics.generic()
         run("tell application \"Finder\" to empty trash", describing: "empty the Trash") { [weak self] in
             self?.refresh()
         }

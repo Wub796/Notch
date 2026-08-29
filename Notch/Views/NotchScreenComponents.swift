@@ -74,6 +74,59 @@ extension View {
     }
 }
 
+extension View {
+    /// Softens the hard edge where a scrolling list runs into the panel.
+    ///
+    /// A list that is cut off mid-row at the bottom of the slab reads as
+    /// broken; the same list dissolving into the glass reads as more of it
+    /// being down there. The band is a fixed height rather than a fraction so
+    /// a short list is not faded end to end.
+    func notchScrollFade(_ length: CGFloat = 16) -> some View {
+        mask {
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [.black.opacity(0), .black],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: length)
+
+                Color.black
+
+                LinearGradient(
+                    colors: [.black, .black.opacity(0)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: length)
+            }
+        }
+    }
+
+    /// The same, across a horizontal tray.
+    func notchScrollFadeHorizontal(_ length: CGFloat = 16) -> some View {
+        mask {
+            HStack(spacing: 0) {
+                LinearGradient(
+                    colors: [.black.opacity(0), .black],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: length)
+
+                Color.black
+
+                LinearGradient(
+                    colors: [.black, .black.opacity(0)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: length)
+            }
+        }
+    }
+}
+
 /// Every screen's opening line: what it is, optionally a word about the state
 /// it is in, and whatever controls belong to it on the right.
 ///

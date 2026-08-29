@@ -95,7 +95,6 @@ final class ClipboardManager {
         pasteboard.clearContents()
         pasteboard.setString(entry.text, forType: .string)
         lastChangeCount = pasteboard.changeCount
-        NotchTheme.Haptics.generic()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.isSelfCopying = false
         }

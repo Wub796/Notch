@@ -292,21 +292,10 @@ private struct GeneralSettingsPane: View {
                     systemImage: "power",
                     tint: .green,
                     title: "Launch at Login",
-                    subtitle: "Start Notch automatically when you log in to your Mac."
-                ) {
-                    Toggle("", isOn: $settings.launchAtLogin)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                }
-
-                SettingsRow(
-                    systemImage: "hand.tap.fill",
-                    tint: .pink,
-                    title: "Enable Haptic Feedback",
-                    subtitle: "Provide tactile feedback for certain interactions.",
+                    subtitle: "Start Notch automatically when you log in to your Mac.",
                     showsDivider: false
                 ) {
-                    Toggle("", isOn: $settings.hapticsEnabled)
+                    Toggle("", isOn: $settings.launchAtLogin)
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
@@ -529,6 +518,18 @@ private struct MediaSettingsPane: View {
             SettingsCard(title: "Closed Notch") {
                 toggleRow("rectangle.on.rectangle", .blue,
                           "Cover and Visualiser While Playing", $settings.showMediaWings)
+                if settings.showMediaWings {
+                    SettingsRow(
+                        systemImage: "waveform",
+                        tint: .green,
+                        title: "For Any App Making Sound",
+                        subtitle: "Browsers, games and calls too — not only the "
+                            + "player holding the now-playing session."
+                    ) {
+                        Toggle("", isOn: $settings.showWingsForAnyAudio)
+                            .labelsHidden().toggleStyle(.switch)
+                    }
+                }
                 toggleRow("quote.bubble.fill", .purple,
                           "Live Lyric Line", $settings.lyricActivityEnabled)
                 SettingsRow(

@@ -35,7 +35,6 @@ struct NotchDropDelegate: DropDelegate {
         let providers = info.itemProviders(for: ShelfController.acceptedTypes)
         guard !providers.isEmpty else { return false }
 
-        NotchTheme.Haptics.generic()
         state.shelf.handleDrop(providers) { accepted in
             // Land the user on the shelf so they see their items arrive.
             if accepted > 0, !NotchSettings.shared.instantAirDrop {

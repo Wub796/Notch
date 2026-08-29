@@ -184,6 +184,18 @@ final class NotchState {
         media.onPlaybackStateChange = { [weak self] _ in
             self?.syncAudioMeter()
         }
+
+        // Audio activity is push, not polled: CoreAudio says the moment any
+        // process starts or stops making sound, so the Audio screen is right
+        // before it is opened rather than up to a second later.
+        audioApps.onAudioActivityChange = { [weak self] in
+            guard let self else { return }
+            withAnimation(NotchAnimations.content) {
+                self.refreshAudioApps()
+            }
+            self.syncAudioMeter()
+        }
+        audioApps.startObserving()
         settings.onRealtimeAudioMeterChanged = { [weak self] _ in
             self?.syncAudioMeter()
         }
@@ -229,7 +241,9 @@ final class NotchState {
 
     /// Starts or stops the real-time meter to match the setting and playback.
     func syncAudioMeter() {
-        if settings.realtimeAudioMeter, media.isPlaying {
+        // Any audio, not only the now-playing track: a video in a browser or
+        // a game is exactly what the meter should be following too.
+        if settings.realtimeAudioMeter, media.isPlaying || audioApps.isAnyAudioPlaying {
             audioMeter.start()
         } else {
             audioMeter.stop()
@@ -322,6 +336,15 @@ final class NotchState {
             return .lyrics(line: line)
         }
         if media.hasTrack, settings.showMediaWings {
+            return .music
+        }
+        // Nothing holds the now-playing session, but something is making
+        // sound — a video in a browser, a game, a call. The wings show it
+        // too: CoreAudio tells us the instant it starts, and the visualiser
+        // beside the notch is the honest answer to "what is that noise".
+        if settings.showMediaWings, settings.showWingsForAnyAudio,
+           audioApps.isAnyAudioPlaying,
+           audioApps.apps.contains(where: \.isPlaying) {
             return .music
         }
         return nil
@@ -441,7 +464,6 @@ final class NotchState {
     }
 
     func togglePin() {
-        NotchTheme.Haptics.generic()
         withAnimation(NotchAnimations.content) {
             isPinned.toggle()
         }
@@ -462,7 +484,6 @@ final class NotchState {
     func expand() {
         guard mode != .expanded else { return }
         pendingHoverWork?.cancel()
-        NotchTheme.Haptics.alignment()
         // No withAnimation here: NotchContainerView drives the open/close
         // springs. Two animations on the same transition fight each other.
         mode = .expanded
@@ -472,7 +493,6 @@ final class NotchState {
 
     func collapse() {
         guard mode == .expanded else { return }
-        NotchTheme.Haptics.alignment()
         mode = .collapsed
         isDropTargeted = false
         isPinned = false

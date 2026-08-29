@@ -41,7 +41,6 @@ final class ShortcutsManager {
     func run(_ name: String) {
         guard isAvailable else { return }
         runningName = name
-        NotchTheme.Haptics.generic()
 
         Task.detached { [weak self] in
             _ = Self.run(arguments: ["run", name])

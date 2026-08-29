@@ -42,7 +42,6 @@ final class TimerManager {
         deadline = Date().addingTimeInterval(duration)
         isPaused = false
         scheduleTick()
-        NotchTheme.Haptics.generic()
     }
 
     func addMinutes(_ minutes: Int) {
@@ -96,7 +95,6 @@ final class TimerManager {
         tickTimer = nil
         deadline = nil
         totalDuration = 0
-        NotchTheme.Haptics.generic()
         onFinished?()
         Self.postNotification(
             title: "Timer finished",

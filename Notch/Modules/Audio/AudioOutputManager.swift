@@ -288,7 +288,6 @@ final class AudioOutputManager {
             return
         }
         isMuted = newValue != 0
-        NotchTheme.Haptics.generic()
     }
 
     private func performSoftwareMuteToggle() {
@@ -310,7 +309,6 @@ final class AudioOutputManager {
             softwareMuted = true
         }
         isMuted = softwareMuted
-        NotchTheme.Haptics.generic()
     }
 
     /// The current output device's name, for the dashboard chip.
@@ -359,7 +357,6 @@ final class AudioOutputManager {
         currentDeviceID = device.id
         attachVolumeListener()
         readVolume()
-        NotchTheme.Haptics.generic()
     }
 
     // MARK: - CoreAudio queries

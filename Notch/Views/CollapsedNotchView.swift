@@ -342,19 +342,26 @@ struct CollapsedNotchView: View {
             leading: miniArtwork,
             trailing: MusicVisualizerView(
                 accent: state.media.accent,
-                isPlaying: state.media.isPlaying,
+                isPlaying: state.media.isPlaying || state.audioApps.isAnyAudioPlaying,
                 level: state.audio.isMuted ? 0 : state.audio.volume,
                 bands: state.visualizerBands
             )
         )
     }
 
+    /// The cover, or — when the sound is not coming from a player with a
+    /// now-playing session — the icon of whatever app CoreAudio says is
+    /// making it.
     private var miniArtwork: some View {
         Group {
             if let artwork = state.media.artwork {
                 Image(nsImage: artwork)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
+            } else if let icon = state.audioApps.apps.first(where: \.isPlaying)?.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
             } else {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(NotchTheme.surfaceHover)

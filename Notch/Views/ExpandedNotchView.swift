@@ -12,6 +12,12 @@ struct ExpandedNotchView: View {
     var body: some View {
         header
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The rail and a detail screen's back button are different views,
+            // so without this the strip cuts from one to the other in the
+            // middle of the panel's own resize.
+            .id(state.tab)
+            .transition(.opacity)
+            .animation(NotchAnimations.content, value: state.tab)
     }
 
     @ViewBuilder

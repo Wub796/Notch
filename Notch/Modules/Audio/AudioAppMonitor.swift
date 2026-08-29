@@ -40,6 +40,22 @@ final class AudioAppMonitor {
 
     private(set) var apps: [App] = []
 
+    /// True the instant anything on this Mac is putting audio out, whatever
+    /// it is. On 14.4+ this is the union of the per-process flags; below that
+    /// it is CoreAudio's own `deviceIsRunningSomewhere`, which every macOS
+    /// has and which is just as immediate — it simply cannot say *who*.
+    private(set) var isAnyAudioPlaying = false
+
+    /// Called on the main queue the moment CoreAudio reports that the set of
+    /// audio processes, or whether one of them is running output, changed.
+    /// The owner re-reads the list from here; nothing polls.
+    var onAudioActivityChange: (() -> Void)?
+
+    private var isObserving = false
+    private var listenerBlock: AudioObjectPropertyListenerBlock?
+    private var observedProcessObjects: [AudioObjectID] = []
+    private var observedDevices: [AudioObjectID] = []
+
     /// True when this macOS can report audio processes; the UI says so rather
     /// than silently showing a thinner list.
     var canObserveProcesses: Bool {
@@ -60,6 +76,172 @@ final class AudioAppMonitor {
         apps = Self.fallbackApps(nowPlayingBundleID: nowPlayingBundleID, isPlaying: isPlaying)
     }
 
+    // MARK: - Push notifications
+
+    /// Starts listening. Three things are watched, all of them push:
+    ///
+    /// * `'prs#'` on the system object — a process appearing or leaving.
+    /// * `'piro'` on each of those processes — that process starting or
+    ///   stopping output. This is the one that makes a browser tab, a game or
+    ///   a call show up the moment it makes a sound.
+    /// * `deviceIsRunningSomewhere` on every output device — the same fact at
+    ///   device granularity, which is all that exists before macOS 14.4.
+    ///
+    /// Listeners cost nothing while quiet, so unlike the old one-second poll
+    /// this runs for the life of the app rather than only while the Audio
+    /// screen happens to be open.
+    func startObserving() {
+        guard !isObserving else { return }
+        isObserving = true
+
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            // CoreAudio may deliver on its own queue even when .main is asked
+            // for, and coalescing here keeps a burst of per-process
+            // notifications to one refresh.
+            DispatchQueue.main.async { [weak self] in
+                self?.handleActivityChange()
+            }
+        }
+        listenerBlock = block
+
+        if #available(macOS 14.4, *) {
+            var address = Self.address(Self.processObjectListSelector)
+            AudioObjectAddPropertyListenerBlock(
+                AudioObjectID(kAudioObjectSystemObject), &address, .main, block
+            )
+        }
+
+        var deviceList = Self.address(kAudioHardwarePropertyDevices)
+        AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &deviceList, .main, block
+        )
+
+        attachPerObjectListeners()
+        handleActivityChange()
+    }
+
+    func stopObserving() {
+        guard isObserving, let block = listenerBlock else { return }
+        isObserving = false
+
+        if #available(macOS 14.4, *) {
+            var address = Self.address(Self.processObjectListSelector)
+            AudioObjectRemovePropertyListenerBlock(
+                AudioObjectID(kAudioObjectSystemObject), &address, .main, block
+            )
+        }
+        var deviceList = Self.address(kAudioHardwarePropertyDevices)
+        AudioObjectRemovePropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &deviceList, .main, block
+        )
+
+        detachPerObjectListeners()
+        listenerBlock = nil
+    }
+
+    /// The set of processes and devices changes underneath us, so the
+    /// per-object listeners are torn down and re-attached whenever anything
+    /// fires. That is a handful of CoreAudio calls on a real change, not a
+    /// timer.
+    private func attachPerObjectListeners() {
+        guard let block = listenerBlock else { return }
+        detachPerObjectListeners()
+
+        if #available(macOS 14.4, *) {
+            observedProcessObjects = Self.audioProcessObjects()
+            var running = Self.address(Self.processIsRunningOutputSelector)
+            for object in observedProcessObjects {
+                AudioObjectAddPropertyListenerBlock(object, &running, .main, block)
+            }
+        }
+
+        observedDevices = Self.outputDeviceObjects()
+        var isRunning = Self.address(kAudioDevicePropertyDeviceIsRunningSomewhere)
+        for device in observedDevices {
+            AudioObjectAddPropertyListenerBlock(device, &isRunning, .main, block)
+        }
+    }
+
+    private func detachPerObjectListeners() {
+        guard let block = listenerBlock else { return }
+
+        if #available(macOS 14.4, *) {
+            var running = Self.address(Self.processIsRunningOutputSelector)
+            for object in observedProcessObjects {
+                AudioObjectRemovePropertyListenerBlock(object, &running, .main, block)
+            }
+        }
+        observedProcessObjects = []
+
+        var isRunning = Self.address(kAudioDevicePropertyDeviceIsRunningSomewhere)
+        for device in observedDevices {
+            AudioObjectRemovePropertyListenerBlock(device, &isRunning, .main, block)
+        }
+        observedDevices = []
+    }
+
+    private func handleActivityChange() {
+        attachPerObjectListeners()
+
+        let playing: Bool
+        if #available(macOS 14.4, *), !observedProcessObjects.isEmpty {
+            playing = observedProcessObjects.contains { Self.isRunningOutput($0) }
+        } else {
+            playing = observedDevices.contains { Self.deviceIsRunningSomewhere($0) }
+        }
+        if isAnyAudioPlaying != playing {
+            isAnyAudioPlaying = playing
+        }
+
+        onAudioActivityChange?()
+    }
+
+    private static func address(
+        _ selector: AudioObjectPropertySelector
+    ) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(
+            mSelector: selector,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+    }
+
+    /// Every device with at least one output stream.
+    private static func outputDeviceObjects() -> [AudioObjectID] {
+        var address = address(kAudioHardwarePropertyDevices)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size
+        ) == noErr, size > 0 else { return [] }
+
+        let count = Int(size) / MemoryLayout<AudioObjectID>.size
+        var devices = [AudioObjectID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &devices
+        ) == noErr else { return [] }
+
+        return devices.filter { device in
+            var streams = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreams,
+                mScope: kAudioObjectPropertyScopeOutput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var streamSize: UInt32 = 0
+            return AudioObjectGetPropertyDataSize(
+                device, &streams, 0, nil, &streamSize
+            ) == noErr && streamSize > 0
+        }
+    }
+
+    private static func deviceIsRunningSomewhere(_ device: AudioObjectID) -> Bool {
+        var address = address(kAudioDevicePropertyDeviceIsRunningSomewhere)
+        var running: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &running) == noErr
+        else { return false }
+        return running != 0
+    }
+
     // MARK: - CoreAudio process list
 
     /// `'prs#'`, `'ppid'` and `'piro'` from AudioHardware.h.
@@ -72,12 +254,8 @@ final class AudioAppMonitor {
     }
 
     @available(macOS 14.4, *)
-    private static func audioProcesses() -> [(pid: pid_t, isRunningOutput: Bool)] {
-        var address = AudioObjectPropertyAddress(
-            mSelector: processObjectListSelector,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
+    private static func audioProcessObjects() -> [AudioObjectID] {
+        var address = self.address(processObjectListSelector)
 
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(
@@ -89,8 +267,12 @@ final class AudioAppMonitor {
         guard AudioObjectGetPropertyData(
             AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &objects
         ) == noErr else { return [] }
+        return objects
+    }
 
-        return objects.compactMap { object in
+    @available(macOS 14.4, *)
+    private static func audioProcesses() -> [(pid: pid_t, isRunningOutput: Bool)] {
+        audioProcessObjects().compactMap { object in
             guard let pid = processID(of: object) else { return nil }
             return (pid, isRunningOutput(object))
         }

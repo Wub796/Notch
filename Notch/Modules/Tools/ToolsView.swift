@@ -105,7 +105,6 @@ struct ToolsView: View {
             withAnimation(NotchAnimations.content) {
                 state.audio.select(device)
             }
-            NotchTheme.Haptics.generic()
         } label: {
             HStack(spacing: 7) {
                 Image(systemName: device.symbolName)

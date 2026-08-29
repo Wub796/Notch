@@ -43,6 +43,7 @@ struct ShelfView: View {
                     .padding(.vertical, 4)
                     .padding(.horizontal, 2)
                 }
+                .notchScrollFadeHorizontal(10)
                 .frame(maxHeight: .infinity, alignment: .top)
             }
         }

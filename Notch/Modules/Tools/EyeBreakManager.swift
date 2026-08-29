@@ -66,7 +66,6 @@ final class EyeBreakManager {
         nextBreakAt = nil
         breakEndsAt = Date().addingTimeInterval(Self.breakDuration)
         onBreakChange?(true)
-        NotchTheme.Haptics.generic()
 
         timer = Timer.scheduledTimer(
             withTimeInterval: Self.breakDuration, repeats: false

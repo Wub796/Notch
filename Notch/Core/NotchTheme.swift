@@ -30,20 +30,6 @@ enum NotchTheme {
     static let surfaceHover = Color.white.opacity(0.11)
     static let hairline = Color.white.opacity(0.08)
 
-    // MARK: Haptics
-
-    enum Haptics {
-        static func alignment() {
-            guard NotchSettings.shared.hapticsEnabled else { return }
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
-        }
-
-        static func generic() {
-            guard NotchSettings.shared.hapticsEnabled else { return }
-            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
-        }
-    }
-
     /// Accent derived from album artwork: the average color pushed into a
     /// saturation/brightness band that stays legible on black glass.
     /// Near-grayscale artwork falls back to a neutral white accent.

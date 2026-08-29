@@ -124,6 +124,14 @@ final class NotchSettings {
 
     var showMediaWings = true { didSet { save(showMediaWings, "showMediaWings") } }
 
+    /// Whether the closed notch also wears the cover-and-visualiser wings for
+    /// audio that has no now-playing session — a video in a browser, a game,
+    /// a call. CoreAudio reports the stream, not the sound, so an app that
+    /// holds one open keeps this on; turn it off if that gets in the way.
+    var showWingsForAnyAudio = true {
+        didSet { save(showWingsForAnyAudio, "showWingsForAnyAudio") }
+    }
+
     /// Which player the notch follows and controls.
     var musicProvider: MusicProvider = .automatic {
         didSet { save(musicProvider.rawValue, "musicProvider") }
@@ -198,7 +206,6 @@ final class NotchSettings {
 
     var autoScrollLyrics = true { didSet { save(autoScrollLyrics, "autoScrollLyrics") } }
 
-    var hapticsEnabled = true { didSet { save(hapticsEnabled, "hapticsEnabled") } }
     var telemetryInterval = 1.0 { didSet { save(telemetryInterval, "telemetryInterval") } }
 
     /// Show telemetry gauges in System view.
@@ -318,6 +325,9 @@ final class NotchSettings {
         if defaults.object(forKey: "autoClearShelf") != nil {
             autoClearShelf = defaults.bool(forKey: "autoClearShelf")
         }
+        if defaults.object(forKey: "showWingsForAnyAudio") != nil {
+            showWingsForAnyAudio = defaults.bool(forKey: "showWingsForAnyAudio")
+        }
         if defaults.object(forKey: "showMediaWings") != nil {
             showMediaWings = defaults.bool(forKey: "showMediaWings")
         }
@@ -390,9 +400,6 @@ final class NotchSettings {
         }
         if defaults.object(forKey: "autoScrollLyrics") != nil {
             autoScrollLyrics = defaults.bool(forKey: "autoScrollLyrics")
-        }
-        if defaults.object(forKey: "hapticsEnabled") != nil {
-            hapticsEnabled = defaults.bool(forKey: "hapticsEnabled")
         }
         if defaults.object(forKey: "telemetryInterval") != nil {
             telemetryInterval = defaults.double(forKey: "telemetryInterval")

@@ -90,8 +90,26 @@ struct NotchLayoutView: View {
         }
     }
 
+    /// The screen itself. Keyed on the tab so switching screens is a
+    /// substitution with a transition rather than a hard replacement — the
+    /// panel is already open here, and it resizes on the same `content`
+    /// animation, so the two move together instead of one cutting under the
+    /// other.
     @ViewBuilder
     private var tabContent: some View {
+        tabScreen
+            .id(state.tab)
+            .transition(
+                .asymmetric(
+                    insertion: .opacity.combined(with: .offset(y: 10)),
+                    removal: .opacity
+                )
+            )
+            .animation(NotchAnimations.content, value: state.tab)
+    }
+
+    @ViewBuilder
+    private var tabScreen: some View {
         switch state.tab {
         case .home:
             HomeDashboardView(state: state, namespace: namespace)
