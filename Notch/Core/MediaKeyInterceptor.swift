@@ -15,7 +15,12 @@ import Foundation
 /// This needs Accessibility access — an event tap always does — so it is
 /// opt-in, and everything degrades to the system HUD when it is off or the
 /// permission is missing.
-@MainActor
+///
+/// Not actor-isolated, matching `HotKeyManager`: both are singletons whose
+/// public surface is driven from the main thread and whose C callback arrives
+/// on a tap thread and hops to main explicitly. Marking it `@MainActor` makes
+/// every call from `NotchState` — which is a plain observable class — an
+/// isolation error.
 final class MediaKeyInterceptor {
     static let shared = MediaKeyInterceptor()
 
@@ -112,13 +117,13 @@ final class MediaKeyInterceptor {
     // MARK: - Event handling
 
     /// Runs on the event-tap thread, so every action is hopped to the main
-    /// actor. Returns nil to swallow a key we handled, or the event untouched
+    /// queue. Returns nil to swallow a key we handled, or the event untouched
     /// for anything else.
-    private nonisolated func handle(_ event: CGEvent) -> Unmanaged<CGEvent>? {
+    private func handle(_ event: CGEvent) -> Unmanaged<CGEvent>? {
         // A disabled tap (timeout, or user input while it was blocked) has to
         // be re-armed or the keys stop working entirely.
         if event.type == .tapDisabledByTimeout || event.type == .tapDisabledByUserInput {
-            Task { @MainActor in MediaKeyInterceptor.shared.reenable() }
+            DispatchQueue.main.async { MediaKeyInterceptor.shared.reenable() }
             return Unmanaged.passRetained(event)
         }
 
@@ -145,7 +150,7 @@ final class MediaKeyInterceptor {
         }
         let fineStep = flags.contains(.option) && flags.contains(.shift)
 
-        Task { @MainActor in
+        DispatchQueue.main.async {
             MediaKeyInterceptor.shared.apply(key: key, fineStep: fineStep)
         }
         return nil
