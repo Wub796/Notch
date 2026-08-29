@@ -66,12 +66,6 @@ final class AudioOutputManager {
         mElement: kAudioObjectPropertyElementMain
     )
 
-    private static var volumeAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyVirtualMainVolume,
-        mScope: kAudioDevicePropertyScopeOutput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
     private static var muteAddress = AudioObjectPropertyAddress(
         mSelector: kAudioDevicePropertyMute,
         mScope: kAudioDevicePropertyScopeOutput,
@@ -137,9 +131,6 @@ final class AudioOutputManager {
                 AudioObjectRemovePropertyListenerBlock(volumeDeviceID, &address, .main, block)
             }
             AudioObjectRemovePropertyListenerBlock(
-                volumeDeviceID, &Self.volumeAddress, .main, block
-            )
-            AudioObjectRemovePropertyListenerBlock(
                 volumeDeviceID, &Self.muteAddress, .main, block
             )
         }
@@ -152,11 +143,6 @@ final class AudioOutputManager {
             if AudioObjectHasProperty(volumeDeviceID, &address) {
                 AudioObjectAddPropertyListenerBlock(volumeDeviceID, &address, .main, block)
             }
-        }
-        if AudioObjectHasProperty(volumeDeviceID, &Self.volumeAddress) {
-            AudioObjectAddPropertyListenerBlock(
-                volumeDeviceID, &Self.volumeAddress, .main, block
-            )
         }
         if AudioObjectHasProperty(volumeDeviceID, &Self.muteAddress) {
             AudioObjectAddPropertyListenerBlock(

@@ -50,7 +50,11 @@ enum NotchSizing {
     static let maximumOpenHeight: CGFloat = 340
 
     /// The open slab, from the user's preference clamped to what fits.
-    @MainActor
+    ///
+    /// Reads `NSScreen`, so it is main-thread-only in practice; every caller is
+    /// a SwiftUI body or a `NotchState` property evaluated on the main thread.
+    /// Left un-isolated deliberately: annotating it `@MainActor` warns at every
+    /// one of those call sites, since `NotchState` is a plain observable class.
     static var openNotchSize: CGSize {
         let settings = NotchSettings.shared
         let width = min(
@@ -63,7 +67,6 @@ enum NotchSizing {
 
     /// The window is sized once for the largest slab the sliders allow, plus
     /// the shadow margin, so growing the panel never clips against its window.
-    @MainActor
     static var windowSize: CGSize {
         CGSize(
             width: maxAllowedOpenWidth() + shadowPadding * 2,
