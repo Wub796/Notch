@@ -80,7 +80,68 @@ struct DraggableProgressBar: View {
     }
 }
 
-/// The closed-notch HUD: a labelled glyph on the left wing, the reserved
+/// The dropped HUD bar: glyph, a full-width level bar, and the reading.
+///
+/// This is the layout the notch actually uses. `InlineHUD` below is the
+/// references' wing arrangement, kept because it is the right shape when the
+/// bar has to sit beside the camera housing rather than under it.
+struct DroppedHUDBar: View {
+    let kind: InlineHUD.Kind
+    @Binding var value: CGFloat
+    var showsPercentage: Bool = true
+    var onChange: ((CGFloat) -> Void)?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            glyph
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .symbolVariant(.fill)
+                .frame(width: 18)
+
+            DraggableProgressBar(
+                value: $value,
+                tint: kind.tint,
+                inline: false,
+                onChange: onChange
+            )
+
+            if showsPercentage {
+                Text(reading)
+                    .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .frame(width: 38, alignment: .trailing)
+                    .contentTransition(.numericText())
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(kind.title)
+        .accessibilityValue(reading)
+    }
+
+    private var reading: String {
+        if case let .volume(muted) = kind, muted || value.isZero { return "Muted" }
+        return "\(Int(value * 100))%"
+    }
+
+    @ViewBuilder
+    private var glyph: some View {
+        switch kind {
+        case let .volume(muted):
+            Image(systemName: InlineHUD.speakerSymbol(value))
+                .symbolVariant(muted || value.isZero ? .slash : .none)
+                .contentTransition(.interpolate)
+        case .brightness:
+            Image(systemName: value > 0.6 ? "sun.max" : "sun.min")
+                .contentTransition(.interpolate)
+        }
+    }
+}
+
+/// The references' wing HUD: a labelled glyph on the left wing, the reserved
 /// camera dead zone, and the bar with its percentage on the right.
 ///
 /// Layout is boring.notch's `InlineHUD`: each wing is a fixed 100pt (less 12

@@ -284,7 +284,9 @@ final class NotchState {
         case .lyrics: 150
         case .timer: 130
         case .trackChange: 240
-        case .volume, .brightness: 176
+        // Narrower than the other activities: these grow the notch downward
+        // rather than sideways, so the wings only carry the glyph.
+        case .volume, .brightness: 132
         case .battery: 116
         case .screenLock: 180
         case .focusMode: 190
@@ -296,13 +298,22 @@ final class NotchState {
         }
     }
 
+    /// Extra height an activity adds beneath the hardware notch. The volume
+    /// and brightness HUDs live here rather than in the wings: a level bar
+    /// squeezed beside the camera housing is unreadable, and dropping the
+    /// notch down to hold it is what the system overlay does too.
+    private var activityDropHeight: CGFloat {
+        switch collapsedActivity {
+        case .lyrics: 26
+        case .volume, .brightness: 34
+        default: 0
+        }
+    }
+
     var collapsedSize: CGSize {
         var size = adjustedNotchSize
         size.width += activityWingWidth
-        // The lyric activity grows a slim bar under the hardware notch.
-        if case .lyrics = collapsedActivity {
-            size.height += 26
-        }
+        size.height += activityDropHeight
         return size
     }
 

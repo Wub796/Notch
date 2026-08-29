@@ -98,7 +98,14 @@ struct NotchContainerView: View {
                 radius: state.settings.cornerRadiusScaling ? 6 : 4
             )
             .animation(notchAnimation, value: state.mode)
-            .animation(NotchAnimations.hover, value: state.isHovering)
+            // Hover motion is fast and the expansion is slow; leaving the fast
+            // one live across the transition let it grab the same geometry
+            // change for a frame, which is the jolt at the start of an
+            // expansion. Hover only animates while the notch is closed.
+            .animation(
+                state.mode == .expanded ? nil : NotchAnimations.hover,
+                value: state.isHovering
+            )
             .animation(notchAnimation, value: state.collapsedActivity)
             // Closed, the slab is purely visual — the probe above owns hover
             // and clicks, so the wings beside the notch are not a target.

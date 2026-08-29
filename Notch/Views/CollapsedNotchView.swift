@@ -43,28 +43,20 @@ struct CollapsedNotchView: View {
                     accent: state.media.accent
                 )
             case let .volume(level, muted):
-                InlineHUD(
+                droppedHUD(
                     kind: .volume(muted: muted),
                     value: Binding(
                         get: { CGFloat(muted ? 0 : level) },
                         set: { state.audio.setVolume(Float($0)) }
-                    ),
-                    isHovering: isHovering,
-                    notchWidth: state.adjustedNotchSize.width,
-                    notchHeight: state.adjustedNotchSize.height,
-                    showsPercentage: state.settings.showHUDPercentage
+                    )
                 )
             case let .brightness(level):
-                InlineHUD(
+                droppedHUD(
                     kind: .brightness,
                     value: Binding(
                         get: { CGFloat(level) },
                         set: { state.brightness.setBrightness(Float($0)) }
-                    ),
-                    isHovering: isHovering,
-                    notchWidth: state.adjustedNotchSize.width,
-                    notchHeight: state.adjustedNotchSize.height,
-                    showsPercentage: state.settings.showHUDPercentage
+                    )
                 )
             case let .battery(percent, charging, low):
                 BatteryActivityView(
@@ -122,6 +114,39 @@ struct CollapsedNotchView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Volume and brightness drop a full-width bar beneath the hardware notch
+    /// instead of splitting themselves across the wings. A level bar cut in
+    /// half by the camera housing cannot be read at a glance; giving it the
+    /// whole width, with the glyph and percentage flanking it, can.
+    private func droppedHUD(
+        kind: InlineHUD.Kind,
+        value: Binding<CGFloat>
+    ) -> some View {
+        VStack(spacing: 0) {
+            // The notch's own row keeps the weather wings so the pill does not
+            // appear to lose them for the second the HUD is up.
+            weatherFlank
+                .frame(height: state.adjustedNotchSize.height)
+
+            DroppedHUDBar(
+                kind: kind,
+                value: value,
+                showsPercentage: state.settings.showHUDPercentage
+            )
+            .frame(height: 34)
+        }
+    }
+
+    /// The weather glyph and temperature either side of the notch, shared by
+    /// the idle pill and the dropped HUD.
+    private var weatherFlank: some View {
+        ActivityWingLayout(
+            notchWidth: state.adjustedNotchSize.width,
+            leading: weatherIcon,
+            trailing: weatherTemperature
+        )
     }
 
     private var compactWeatherWing: some View {

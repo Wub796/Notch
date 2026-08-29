@@ -14,12 +14,20 @@ struct NotchLayoutView: View {
     let namespace: Namespace.ID
     let isHovering: Bool
 
-    /// The open module swaps in with a slight scale from the top, so it reads
-    /// as unfolding out of the notch. Verbatim from the references.
+    /// The open module unfolds from the top edge.
+    ///
+    /// Deliberately carries no `.animation` of its own. The references pin
+    /// theirs to 0.35s, which matches their 0.42s spring; against the much
+    /// longer spring here it meant the content had finished arriving while the
+    /// shape was still a third of the way open — the content snapping into a
+    /// notch-sized window is the flash before the expansion. Without an
+    /// animation the transition inherits the spring and the two move as one.
+    ///
+    /// The scale is gentler than their 0.8 for the same reason: over a longer
+    /// spring, a deep scale reads as a second, competing motion.
     private static let moduleTransition = AnyTransition
-        .scale(scale: 0.8, anchor: .top)
+        .scale(scale: 0.94, anchor: .top)
         .combined(with: .opacity)
-        .animation(.smooth(duration: 0.35))
 
     var body: some View {
         VStack(alignment: .center, spacing: 0) {
@@ -52,6 +60,9 @@ struct NotchLayoutView: View {
                 // here the VStack has nothing to size itself from and takes
                 // the whole panel window — which is as wide as the display.
                 .frame(width: state.moduleContentSize.width, height: state.topBarHeight)
+                // Swapping the two strips with no transition is a hard cut in
+                // the middle of a slow expansion, which reads as a flash.
+                .transition(.opacity)
                 .zIndex(2)
         } else {
             CollapsedNotchView(state: state, isHovering: isHovering)
@@ -60,6 +71,7 @@ struct NotchLayoutView: View {
                 // references pad their wings out on hover. The amount is the
                 // user's "hover grow" preference.
                 .padding(.horizontal, isHovering ? state.hoverExpansion : 0)
+                .transition(.opacity)
                 .zIndex(2)
         }
     }
