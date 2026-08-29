@@ -105,7 +105,7 @@ private struct WeatherSettingsPane: View {
     @State private var refreshToken = 0
 
     private var locationStatus: IntegrationPermissions.Status {
-        IntegrationPermissions.Integration.location.status
+        IntegrationPermissions.shared.status(for: .location)
     }
 
     var body: some View {
@@ -135,7 +135,7 @@ private struct WeatherSettingsPane: View {
 
                 if locationStatus != .granted {
                     Button("Grant Location Access") {
-                        IntegrationPermissions.Integration.location.request {
+                        IntegrationPermissions.shared.request(.location) {
                             refreshToken += 1
                         }
                     }
@@ -235,6 +235,7 @@ private struct NotchSettingsPane: View {
                 }
             }
 
+            DimensionSliders()
         }
         .formStyle(.grouped)
     }
@@ -258,6 +259,104 @@ private struct NotchSettingsPane: View {
     }
 }
 
+// MARK: - Dimension sliders
+
+/// Manual control over the notch's measured size and shape. Every value is
+/// clamped in NotchState, so a slider can't produce an unusable notch.
+private struct DimensionSliders: View {
+    @Bindable var settings = NotchSettings.shared
+
+    var body: some View {
+        Section {
+            slider(
+                "Notch width",
+                value: $settings.notchWidthAdjustment,
+                range: -40 ... 80,
+                step: 1,
+                format: { String(format: "%+.0f pt", $0) }
+            )
+            slider(
+                "Notch height",
+                value: $settings.notchHeightAdjustment,
+                range: -10 ... 30,
+                step: 1,
+                format: { String(format: "%+.0f pt", $0) }
+            )
+            slider(
+                "Panel size",
+                value: $settings.expandedScale,
+                range: 0.8 ... 1.3,
+                step: 0.05,
+                format: { String(format: "%.0f%%", $0 * 100) }
+            )
+            slider(
+                "Hover grow",
+                value: $settings.peekScale,
+                range: 1.0 ... 1.4,
+                step: 0.02,
+                format: { String(format: "%.0f%%", $0 * 100) }
+            )
+        } header: {
+            Label("Dimensions", systemImage: "ruler")
+        } footer: {
+            Text("Width and height trim the notch the app measured from your display — useful if the drawn pill doesn't quite cover the hardware. Panel size scales every expanded screen.")
+        }
+
+        Section {
+            slider(
+                "Closed corners",
+                value: $settings.collapsedCornerRadius,
+                range: 0 ... 30,
+                step: 1,
+                format: { String(format: "%.0f pt", $0) }
+            )
+            slider(
+                "Open corners",
+                value: $settings.expandedCornerRadius,
+                range: 8 ... 48,
+                step: 1,
+                format: { String(format: "%.0f pt", $0) }
+            )
+            slider(
+                "Hover target",
+                value: $settings.hoverPadding,
+                range: 0 ... 80,
+                step: 2,
+                format: { String(format: "%.0f pt", $0) }
+            )
+
+            Button("Reset Dimensions") {
+                settings.resetNotchDimensions()
+            }
+        } header: {
+            Label("Shape & Targeting", systemImage: "square.on.circle")
+        } footer: {
+            Text("Hover target widens the area around the notch that responds to the pointer. Larger values open it more eagerly; smaller values require aiming at the notch itself.")
+        }
+    }
+
+    private func slider(
+        _ title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double,
+        format: @escaping (Double) -> String
+    ) -> some View {
+        LabeledContent {
+            HStack(spacing: 10) {
+                Slider(value: value, in: range, step: step)
+                    .frame(width: 190)
+                Text(format(value.wrappedValue))
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 62, alignment: .trailing)
+            }
+        } label: {
+            Text(title)
+        }
+    }
+}
+
 // MARK: - Media
 
 private struct MediaSettingsPane: View {
@@ -276,7 +375,7 @@ private struct MediaSettingsPane: View {
                     // Choosing a player asks for control permission up front
                     // so transport works on the first press.
                     guard newValue != .automatic else { return }
-                    IntegrationPermissions.Integration.music.request {}
+                    IntegrationPermissions.shared.request(.music) {}
                 }
             } header: {
                 Label("Integration", systemImage: "music.note")
@@ -381,81 +480,99 @@ private struct ActivitiesSettingsPane: View {
 // MARK: - Privacy / Permissions
 
 private struct PrivacySettingsPane: View {
-    @State private var refreshToken = 0
-    @Environment(\.scenePhase) private var scenePhase
+    private var permissions = IntegrationPermissions.shared
 
     var body: some View {
         Form {
             Section {
                 ForEach(IntegrationPermissions.Integration.allCases) { integration in
-                    PermissionRow(integration: integration) {
-                        integration.request {
-                            refreshToken += 1
-                        }
-                    }
+                    PermissionRow(integration: integration)
                 }
             } header: {
                 Label("Integrations & Permissions", systemImage: "hand.raised.fill")
             } footer: {
-                Text("Each integration asks once. Denied access can be re-enabled in System Settings → Privacy & Security.")
+                Text("Status is read from the system each time this pane appears. Apple Events access can only be verified while the target app is running, so Music control reads Unavailable until Music or Spotify is open.")
+            }
+
+            Section {
+                Button("Re-check Now") {
+                    permissions.refresh()
+                }
             }
         }
         .formStyle(.grouped)
-        .id(refreshToken)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            refreshToken += 1
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                refreshToken += 1
-            }
+        .onAppear { permissions.refresh() }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSApplication.didBecomeActiveNotification
+            )
+        ) { _ in
+            permissions.refresh()
         }
     }
 }
 
 private struct PermissionRow: View {
     let integration: IntegrationPermissions.Integration
-    let action: () -> Void
 
-    var body: some View {
-        let status = integration.status
+    private var permissions = IntegrationPermissions.shared
 
-        HStack(spacing: 10) {
-            Image(systemName: integration.systemImage)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(statusColor(status))
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(integration.title)
-                    .fontWeight(.medium)
-                Text(integration.detail)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Text(status.title)
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(statusColor(status))
-
-            Button(status == .denied ? "Open Settings" : "Allow") {
-                if status == .denied, let url = integration.settingsURL {
-                    NSWorkspace.shared.open(url)
-                } else {
-                    action()
-                }
-            }
-        }
+    init(integration: IntegrationPermissions.Integration) {
+        self.integration = integration
     }
 
-    private func statusColor(_ status: IntegrationPermissions.Status) -> Color {
-        switch status {
-        case .granted: .green
-        case .denied: .red
-        case .undetermined: .secondary
+    var body: some View {
+        let status = permissions.status(for: integration)
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Image(systemName: integration.systemImage)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(status.tint)
+                    .frame(width: 22)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(integration.title)
+                        .fontWeight(.medium)
+                    Text(integration.detail)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(status.tint)
+                        .frame(width: 7, height: 7)
+                    Text(status.title)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(status.tint)
+                }
+
+                switch status {
+                case .granted:
+                    EmptyView()
+                case .denied:
+                    Button("Open Settings") {
+                        if let url = integration.settingsURL {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                case .notDetermined, .unknown:
+                    Button("Allow") {
+                        permissions.request(integration) {}
+                    }
+                }
+            }
+
+            // Say what still works without it, and why it can't be read.
+            Text(permissions.notes[integration] ?? integration.fallbackNote)
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 32)
         }
+        .padding(.vertical, 2)
     }
 }
 

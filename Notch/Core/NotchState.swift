@@ -46,8 +46,15 @@ final class NotchState {
     /// Physical notch size, injected by NotchWindowController at launch.
     var notchSize: CGSize = NotchGeometry.fallbackSize
 
-    /// Each tab sizes the slab to its own content.
+    /// Each tab sizes the slab to its own content, then the user's scale
+    /// preference is applied on top.
     var expandedSize: CGSize {
+        let base = baseExpandedSize
+        let scale = min(max(settings.expandedScale, 0.8), 1.3)
+        return CGSize(width: base.width * scale, height: base.height * scale)
+    }
+
+    private var baseExpandedSize: CGSize {
         switch tab {
         // height = top bar (38) + vertical padding (32) + the module's real
         // content height. These were previously guessed high, which left a
@@ -64,24 +71,38 @@ final class NotchState {
         }
     }
 
+    /// The measured notch, with the user's manual trim applied. Clamped so a
+    /// slider can never drive it to zero or past the slab.
+    var adjustedNotchSize: CGSize {
+        CGSize(
+            width: max(notchSize.width + settings.notchWidthAdjustment, 40),
+            height: max(notchSize.height + settings.notchHeightAdjustment, 20)
+        )
+    }
+
     /// Height of the icon strip that flanks the hardware notch.
     var topBarHeight: CGFloat {
-        max(notchSize.height, 38)
+        max(adjustedNotchSize.height, 38)
     }
 
     /// Largest slab any tab can request; the panel window is sized to this.
-    static let maxExpandedSize = CGSize(width: 980, height: 300)
+    /// The panel window is sized once at launch, so it has to allow for the
+    /// largest slab at the largest user scale (1.3x) — otherwise turning the
+    /// size slider up would clip the panel against its own window.
+    static let maxExpandedSize = CGSize(width: 980 * 1.3, height: 300 * 1.3)
 
     /// Hover is only detected over the physical notch (plus a small margin),
     /// never over the full slab — a wide detection radius made the notch open
     /// when the pointer was merely near the menu bar.
     var hoverProbeSize: CGSize {
         guard mode != .expanded else { return currentSize }
-        return CGSize(width: notchSize.width + 16, height: notchSize.height + 4)
+        let padding = min(max(settings.hoverPadding, 0), 80)
+        return CGSize(
+            width: adjustedNotchSize.width + padding,
+            height: adjustedNotchSize.height + 4
+        )
     }
 
-    /// Hover peek grows the closed pill by this factor (Sapphire's scale).
-    static let peekScale: CGFloat = 1.10
 
     let settings = NotchSettings.shared
     let media = MediaController()
@@ -224,7 +245,7 @@ final class NotchState {
     }
 
     var collapsedSize: CGSize {
-        var size = notchSize
+        var size = adjustedNotchSize
         size.width += activityWingWidth
         // The lyric activity grows a slim bar under the hardware notch.
         if case .lyrics = collapsedActivity {
@@ -238,21 +259,25 @@ final class NotchState {
         case .collapsed:
             return collapsedSize
         case .peek:
+            let peek = min(max(settings.peekScale, 1.0), 1.4)
             return CGSize(
-                width: collapsedSize.width * Self.peekScale,
-                height: collapsedSize.height * Self.peekScale
+                width: collapsedSize.width * peek,
+                height: collapsedSize.height * peek
             )
         case .expanded:
             return expandedSize
         }
     }
 
-    /// Corner radius per state — comfortably rounded.
+    /// Corner radius per state, user-adjustable. Peek sits midway between
+    /// the closed and open radii so the morph reads continuously.
     var cornerRadius: CGFloat {
+        let closed = min(max(settings.collapsedCornerRadius, 0), 30)
+        let open = min(max(settings.expandedCornerRadius, 8), 48)
         switch mode {
-        case .collapsed: 14
-        case .peek: 22
-        case .expanded: 34
+        case .collapsed: return closed
+        case .peek: return closed + (open - closed) * 0.4
+        case .expanded: return open
         }
     }
 

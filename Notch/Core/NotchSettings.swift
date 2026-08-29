@@ -167,6 +167,39 @@ final class NotchSettings {
     var showNetworkSpeed = true { didSet { save(showNetworkSpeed, "showNetworkSpeed") } }
     var showBatteryHealth = true { didSet { save(showBatteryHealth, "showBatteryHealth") } }
 
+    // MARK: - Notch dimensions (manual overrides)
+
+    /// Trims or extends the detected notch width, in points. Useful when the
+    /// measured hardware notch does not match what the display reports.
+    var notchWidthAdjustment = 0.0 { didSet { save(notchWidthAdjustment, "notchWidthAdjustment") } }
+
+    /// Trims or extends the detected notch height, in points.
+    var notchHeightAdjustment = 0.0 { didSet { save(notchHeightAdjustment, "notchHeightAdjustment") } }
+
+    /// Scales every expanded slab, 0.8...1.3.
+    var expandedScale = 1.0 { didSet { save(expandedScale, "expandedScale") } }
+
+    /// How much the closed pill grows on hover.
+    var peekScale = 1.10 { didSet { save(peekScale, "peekScale") } }
+
+    /// Corner radius of the closed pill and the open slab.
+    var collapsedCornerRadius = 10.0 { didSet { save(collapsedCornerRadius, "collapsedCornerRadius") } }
+    var expandedCornerRadius = 26.0 { didSet { save(expandedCornerRadius, "expandedCornerRadius") } }
+
+    /// Extra margin around the notch that still counts as hovering it.
+    var hoverPadding = 16.0 { didSet { save(hoverPadding, "hoverPadding") } }
+
+    /// Restores every dimension above to its shipped value.
+    func resetNotchDimensions() {
+        notchWidthAdjustment = 0
+        notchHeightAdjustment = 0
+        expandedScale = 1.0
+        peekScale = 1.10
+        collapsedCornerRadius = 10
+        expandedCornerRadius = 26
+        hoverPadding = 16
+    }
+
     /// Raw value of the last tab the user opened; restored across launches.
     var lastTab = "" { didSet { save(lastTab, "lastTab") } }
 
@@ -280,6 +313,17 @@ final class NotchSettings {
         }
         if defaults.object(forKey: "showBatteryHealth") != nil {
             showBatteryHealth = defaults.bool(forKey: "showBatteryHealth")
+        }
+        for (key, apply) in [
+            ("notchWidthAdjustment", { (v: Double) in self.notchWidthAdjustment = v }),
+            ("notchHeightAdjustment", { v in self.notchHeightAdjustment = v }),
+            ("expandedScale", { v in self.expandedScale = v }),
+            ("peekScale", { v in self.peekScale = v }),
+            ("collapsedCornerRadius", { v in self.collapsedCornerRadius = v }),
+            ("expandedCornerRadius", { v in self.expandedCornerRadius = v }),
+            ("hoverPadding", { v in self.hoverPadding = v }),
+        ] where defaults.object(forKey: key) != nil {
+            apply(defaults.double(forKey: key))
         }
         lastTab = defaults.string(forKey: "lastTab") ?? ""
         hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")

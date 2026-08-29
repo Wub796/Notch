@@ -1,57 +1,44 @@
 import AppKit
 import CoreLocation
-import CoreServices
+import SwiftUI
 import EventKit
 import Foundation
+import Observation
 
-enum IntegrationPermissions {
+/// Live authorization state for the integrations the notch depends on.
+///
+/// Statuses are cached and refreshed explicitly rather than recomputed on
+/// every view render: creating a `CLLocationManager` per read reports
+/// `.notDetermined` regardless of the real authorization on macOS, which is
+/// why the settings pane used to show wrong values. A single long-lived
+/// manager is the only reliable way to read location authorization.
+@Observable
+final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
+    static let shared = IntegrationPermissions()
+
     enum Status: String {
-        case undetermined
         case granted
         case denied
+        case notDetermined
+        /// Authorization can't be determined right now — for Apple Events,
+        /// the target app has to be running before macOS will answer.
+        case unknown
 
         var title: String {
             switch self {
-            case .undetermined: return "Not requested"
-            case .granted: return "Granted"
-            case .denied: return "Denied"
-            }
-        }
-    }
-
-    private static let musicGrantedKey = "musicAutomationGranted"
-
-    private static var locationRequester: LocationRequester?
-    private static var calendarStore: EKEventStore?
-
-    private final class LocationRequester: NSObject, CLLocationManagerDelegate {
-        private let manager = CLLocationManager()
-        private var completion: (() -> Void)?
-
-        func request(completion: @escaping () -> Void) {
-            self.completion = completion
-            NSApp.activate(ignoringOtherApps: true)
-
-            if manager.authorizationStatus != .notDetermined {
-                finish()
-                return
-            }
-
-            manager.delegate = self
-            manager.requestWhenInUseAuthorization()
-        }
-
-        func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-            if manager.authorizationStatus != .notDetermined {
-                finish()
+            case .granted: "Granted"
+            case .denied: "Denied"
+            case .notDetermined: "Not requested"
+            case .unknown: "Unavailable"
             }
         }
 
-        private func finish() {
-            let comp = completion
-            completion = nil
-            DispatchQueue.main.async {
-                comp?()
+        var tint: Color {
+            switch self {
+            case .granted: .green
+            case .denied: .red
+            case .notDetermined: .orange
+            case .unknown: .secondary
             }
         }
     }
@@ -65,103 +52,42 @@ enum IntegrationPermissions {
 
         var title: String {
             switch self {
-            case .music: return "Music control"
-            case .calendar: return "Calendar"
-            case .location: return "Weather location"
+            case .music: "Music control"
+            case .calendar: "Calendar"
+            case .location: "Location"
             }
         }
 
         var systemImage: String {
             switch self {
-            case .music: return "music.note"
-            case .calendar: return "calendar"
-            case .location: return "location.fill"
+            case .music: "music.note"
+            case .calendar: "calendar"
+            case .location: "location.fill"
             }
         }
 
         var detail: String {
             switch self {
-            case .music: return "Lets the notch play, pause, and skip in Apple Music or Spotify."
-            case .calendar: return "Shows your schedule and upcoming meetings in the notch."
-            case .location: return "Fetches the weather shown in the compact and dashboard widgets."
+            case .music:
+                "Lets the notch play, pause, and skip in Music or Spotify."
+            case .calendar:
+                "Shows your schedule and upcoming meetings."
+            case .location:
+                "Pins weather to your exact city."
             }
         }
 
-        var status: Status {
+        /// What the app still does when this is not granted — so the pane can
+        /// tell the truth about consequences instead of implying breakage.
+        var fallbackNote: String {
             switch self {
             case .music:
-                return checkMusicStatus()
+                "Without it, playback still follows whatever is playing — only direct control needs permission."
             case .calendar:
-                switch EKEventStore.authorizationStatus(for: .event) {
-                case .fullAccess, .authorized:
-                    return .granted
-                case .denied, .restricted:
-                    return .denied
-                default:
-                    return .undetermined
-                }
+                "Without it, the schedule stays empty."
             case .location:
-                switch CLLocationManager().authorizationStatus {
-                case .authorized, .authorizedAlways, .authorizedWhenInUse:
-                    return .granted
-                case .denied, .restricted:
-                    return .denied
-                default:
-                    return .undetermined
-                }
+                "Without it, weather falls back to an approximate location from your network."
             }
-        }
-
-        private func checkMusicStatus() -> Status {
-            let isGranted = UserDefaults.standard.bool(forKey: IntegrationPermissions.musicGrantedKey)
-
-            let provider = NotchSettings.shared.musicProvider
-            let bundleID = (provider == .spotify) ? "com.spotify.client" : "com.apple.Music"
-
-            guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else {
-                return isGranted ? .granted : .undetermined
-            }
-
-            guard let data = bundleID.data(using: .utf8) else {
-                return isGranted ? .granted : .undetermined
-            }
-
-            var targetDesc = AEDesc()
-            let createStatus = (data as NSData).bytes.withMemoryRebound(to: UInt8.self, capacity: data.count) { ptr in
-                AECreateDesc(
-                    DescType(typeApplicationBundleID), // typeApplicationBundleID is 4 chars, bundleId string
-                    ptr,
-                    data.count,
-                    &targetDesc
-                )
-            }
-
-            if createStatus == noErr {
-                let authStatus = AEDeterminePermissionToAutomateTarget(
-                    &targetDesc,
-                    DescType(typeWildCard),
-                    DescType(typeWildCard),
-                    false
-                )
-                AEDisposeDesc(&targetDesc)
-
-                switch authStatus {
-                case noErr:
-                    if !isGranted {
-                        UserDefaults.standard.set(true, forKey: IntegrationPermissions.musicGrantedKey)
-                    }
-                    return .granted
-                                case -1743: // errAEEventNotPermitted
-                    if isGranted {
-                        UserDefaults.standard.set(false, forKey: IntegrationPermissions.musicGrantedKey)
-                    }
-                    return .denied
-                default:
-                    break
-                }
-            }
-
-            return isGranted ? .granted : .undetermined
         }
 
         var settingsURL: URL? {
@@ -172,54 +98,147 @@ enum IntegrationPermissions {
             case .location: return URL(string: base + "?Privacy_LocationServices")
             }
         }
+    }
 
-        func request(_ completion: @escaping () -> Void) {
+    /// Current status per integration, refreshed by `refresh()`.
+    private(set) var statuses: [Integration: Status] = [:]
+
+    /// Extra context shown under a row, e.g. why music can't be verified.
+    private(set) var notes: [Integration: String] = [:]
+
+    private let locationManager = CLLocationManager()
+    private var calendarStore: EKEventStore?
+
+    private override init() {
+        super.init()
+        locationManager.delegate = self
+        refresh()
+    }
+
+    func status(for integration: Integration) -> Status {
+        statuses[integration] ?? .unknown
+    }
+
+    // MARK: - Refresh
+
+    func refresh() {
+        statuses[.calendar] = calendarStatus()
+        statuses[.location] = locationStatus()
+
+        let music = musicStatus()
+        statuses[.music] = music.status
+        notes[.music] = music.note
+    }
+
+    private func calendarStatus() -> Status {
+        switch EKEventStore.authorizationStatus(for: .event) {
+        case .fullAccess, .authorized: .granted
+        case .writeOnly: .denied
+        case .denied, .restricted: .denied
+        case .notDetermined: .notDetermined
+        @unknown default: .unknown
+        }
+    }
+
+    /// Read from the one long-lived manager, which is the only source that
+    /// reports macOS location authorization correctly.
+    private func locationStatus() -> Status {
+        switch locationManager.authorizationStatus {
+        case .authorized, .authorizedAlways: .granted
+        case .denied, .restricted: .denied
+        case .notDetermined: .notDetermined
+        @unknown default: .unknown
+        }
+    }
+
+    /// Apple Events authorization is only answerable while the target app is
+    /// running. When it isn't, say so rather than guessing from a cached flag
+    /// — the old code reported "Granted" having verified nothing.
+    private func musicStatus() -> (status: Status, note: String?) {
+        let provider = NotchSettings.shared.musicProvider
+        let bundleID = provider == .spotify ? "com.spotify.client" : "com.apple.Music"
+        let appName = provider == .spotify ? "Spotify" : "Music"
+
+        guard !NSRunningApplication
+            .runningApplications(withBundleIdentifier: bundleID).isEmpty
+        else {
+            return (.unknown, "\(appName) isn't running — open it to check access.")
+        }
+
+        guard let data = bundleID.data(using: .utf8) else {
+            return (.unknown, nil)
+        }
+
+        var target = AEAddressDesc()
+        let created = data.withUnsafeBytes { raw -> OSStatus in
+            guard let base = raw.baseAddress else { return OSStatus(-50) // paramErr }
+            return AECreateDesc(DescType(typeApplicationBundleID), base, data.count, &target)
+        }
+        guard created == noErr else { return (.unknown, nil) }
+        defer { AEDisposeDesc(&target) }
+
+        // askUserIfNeeded: false — this is a status probe, not a request.
+        let result = AEDeterminePermissionToAutomateTarget(
+            &target, DescType(typeWildCard), DescType(typeWildCard), false
+        )
+
+        switch result {
+        case noErr:
+            return (.granted, nil)
+        case OSStatus(-1743): // errAEEventNotPermitted
+            return (.denied, "Enable Notch under Privacy & Security → Automation.")
+        case OSStatus(-600): // procNotFound
+            return (.unknown, "\(appName) isn't running — open it to check access.")
+        default:
+            return (.notDetermined, nil)
+        }
+    }
+
+    // MARK: - Requests
+
+    func request(_ integration: Integration, completion: @escaping () -> Void) {
+        switch integration {
+        case .calendar:
+            let store = EKEventStore()
+            calendarStore = store
+            store.requestFullAccessToEvents { [weak self] _, _ in
+                DispatchQueue.main.async {
+                    self?.refresh()
+                    completion()
+                }
+            }
+
+        case .location:
             NSApp.activate(ignoringOtherApps: true)
+            locationManager.requestWhenInUseAuthorization()
+            // Authorization arrives via the delegate; refresh optimistically
+            // too so the row updates if it resolved immediately.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.refresh()
+                completion()
+            }
 
-            switch self {
-            case .music:
-                let provider = NotchSettings.shared.musicProvider
-                let appName = provider.appleScriptAppName ?? "Music"
-
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let script = NSAppleScript(source: "tell application \"\(appName)\" to get name")
-                    var error: NSDictionary?
-                    script?.executeAndReturnError(&error)
-
-                    DispatchQueue.main.async {
-                        let granted = error == nil
-                        if granted {
-                            UserDefaults.standard.set(true, forKey: IntegrationPermissions.musicGrantedKey)
-                        }
-                        completion()
-                    }
-                }
-
-            case .calendar:
-                let store = EKEventStore()
-                IntegrationPermissions.calendarStore = store
-
-                let finish: () -> Void = {
-                    DispatchQueue.main.async {
-                        IntegrationPermissions.calendarStore = nil
-                        completion()
-                    }
-                }
-
-                if #available(macOS 14.0, *) {
-                    store.requestFullAccessToEvents { _, _ in finish() }
-                } else {
-                    store.requestAccess(to: .event) { _, _ in finish() }
-                }
-
-            case .location:
-                let requester = LocationRequester()
-                IntegrationPermissions.locationRequester = requester
-                requester.request {
-                    IntegrationPermissions.locationRequester = nil
+        case .music:
+            // Triggering the prompt requires actually addressing the app.
+            let provider = NotchSettings.shared.musicProvider
+            let appName = provider == .spotify ? "Spotify" : "Music"
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let script = NSAppleScript(
+                    source: "tell application \"\(appName)\" to return name"
+                )
+                var error: NSDictionary?
+                script?.executeAndReturnError(&error)
+                DispatchQueue.main.async {
+                    self?.refresh()
                     completion()
                 }
             }
         }
+    }
+
+    // MARK: - CLLocationManagerDelegate
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        refresh()
     }
 }

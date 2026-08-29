@@ -154,8 +154,8 @@ struct OnboardingView: View {
     @State private var refreshToken = 0
 
     private var permissions: some View {
-        let calendarGranted = IntegrationPermissions.Integration.calendar.status == .granted
-        let locationGranted = IntegrationPermissions.Integration.location.status == .granted
+        let calendarGranted = IntegrationPermissions.shared.status(for: .calendar) == .granted
+        let locationGranted = IntegrationPermissions.shared.status(for: .location) == .granted
 
         return VStack(spacing: 8) {
             HStack(spacing: 8) {
@@ -164,7 +164,7 @@ struct OnboardingView: View {
                     calendarGranted ? "Calendar Enabled" : "Enable Calendar",
                     isGranted: calendarGranted
                 ) {
-                    IntegrationPermissions.Integration.calendar.request {
+                    IntegrationPermissions.shared.request(.calendar) {
                         refreshToken += 1
                         state.calendar.refresh()
                     }
@@ -174,7 +174,7 @@ struct OnboardingView: View {
                     locationGranted ? "Weather Enabled" : "Enable Weather",
                     isGranted: locationGranted
                 ) {
-                    IntegrationPermissions.Integration.location.request {
+                    IntegrationPermissions.shared.request(.location) {
                         refreshToken += 1
                         state.weather.refresh(force: true)
                     }
