@@ -59,7 +59,7 @@ final class NotchState {
         // height = top bar (38) + vertical padding (32) + the module's real
         // content height. These were previously guessed high, which left a
         // slab of dead black under every screen.
-        case .home: CGSize(width: 980, height: 206)
+        case .home: CGSize(width: 980, height: 158)
         case .media: CGSize(width: 880, height: 296)
         case .weather: CGSize(width: 800, height: 272)
         case .calendar: CGSize(width: 760, height: 296)
@@ -150,6 +150,22 @@ final class NotchState {
         // the collapsed wings have a temperature without the notch opening
         // first; refresh() is a no-op while the 30-minute cache is fresh.
         activities.start()
+
+        // Brightness has no system notification, so the controller samples
+        // while enabled and reports only changes it did not make itself.
+        brightness.onExternalChange = { [weak self] level in
+            self?.activities.showBrightness(level: level)
+        }
+        if settings.brightnessHUDEnabled {
+            brightness.startHUDMonitoring()
+        }
+        settings.onBrightnessHUDSettingChanged = { [weak self] enabled in
+            if enabled {
+                self?.brightness.startHUDMonitoring()
+            } else {
+                self?.brightness.stopHUDMonitoring()
+            }
+        }
         calendar.bootstrapIfAuthorized()
         weather.refresh()
 
@@ -234,7 +250,7 @@ final class NotchState {
         case .lyrics: 150
         case .timer: 130
         case .trackChange: 240
-        case .volume: 130
+        case .volume, .brightness: 176
         case .battery: 116
         case .screenLock: 180
         case .focusMode: 190
@@ -381,7 +397,6 @@ final class NotchState {
         telemetry.start()
         weather.refresh()
         audio.refresh()
-        brightness.startTracking()
         bluetooth.start()
         shortcuts.refresh()
     }
@@ -389,7 +404,6 @@ final class NotchState {
     private func sleepModules() {
         media.setActive(false)
         telemetry.stop()
-        brightness.stopTracking()
         bluetooth.stop()
     }
 }

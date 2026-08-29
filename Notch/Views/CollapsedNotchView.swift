@@ -36,6 +36,11 @@ struct CollapsedNotchView: View {
                     level: level,
                     muted: muted
                 )
+            case let .brightness(level):
+                BrightnessActivityView(
+                    notchWidth: state.notchSize.width,
+                    level: level
+                )
             case let .battery(percent, charging, low):
                 BatteryActivityView(
                     notchWidth: state.notchSize.width,

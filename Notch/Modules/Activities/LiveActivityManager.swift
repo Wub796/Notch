@@ -17,6 +17,7 @@ enum LiveActivity: Equatable {
     case desktopChange
     case accessoryBattery(name: String, symbol: String, percent: Int)
     case volume(level: Float, muted: Bool)
+    case brightness(level: Float)
 }
 
 /// Owns the transient activity sources (volume HUD, battery events). Both are
@@ -108,6 +109,12 @@ final class LiveActivityManager {
             .accessoryBattery(name: name, symbol: symbol, percent: percent),
             for: Self.batteryEventDuration
         )
+    }
+
+    /// Brightness HUD, raised when a brightness key changes the level.
+    func showBrightness(level: Float) {
+        guard NotchSettings.shared.brightnessHUDEnabled else { return }
+        show(.brightness(level: level), for: Self.volumeHUDDuration)
     }
 
     /// Clears any transient activity immediately (used when a timer that owns

@@ -5,6 +5,8 @@ import SwiftUI
 /// hardware notch and a trailing readout on the right. Content is sized to
 /// stay inside its wing — see ActivityWingLayout.
 
+/// The volume HUD: a thick gradient bar that replaces the system's own
+/// overlay when a volume key is pressed.
 struct VolumeActivityView: View {
     let notchWidth: CGFloat
     let level: Float
@@ -21,22 +23,80 @@ struct VolumeActivityView: View {
         ActivityWingLayout(
             notchWidth: notchWidth,
             leading: Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .contentTransition(.symbolEffect(.replace)),
-            trailing: ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(.white.opacity(0.22))
-                Capsule()
-                    .fill(.white)
-                    .frame(width: 44 * CGFloat(muted ? 0 : level))
-            }
-            .frame(width: 44, height: 5)
-            .animation(NotchAnimations.activity, value: level)
+            trailing: HUDLevelBar(
+                level: muted ? 0 : level,
+                gradient: [
+                    Color(red: 0.30, green: 0.42, blue: 0.95),
+                    Color(red: 0.55, green: 0.45, blue: 0.98),
+                    Color(red: 0.86, green: 0.48, blue: 0.95),
+                ]
+            )
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Volume")
         .accessibilityValue(muted ? "Muted" : "\(Int((level * 100).rounded())) percent")
+    }
+}
+
+/// The brightness HUD, shown when a brightness key is pressed.
+struct BrightnessActivityView: View {
+    let notchWidth: CGFloat
+    let level: Float
+
+    var body: some View {
+        ActivityWingLayout(
+            notchWidth: notchWidth,
+            leading: Image(systemName: level < 0.34 ? "sun.min.fill" : "sun.max.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .contentTransition(.symbolEffect(.replace)),
+            trailing: HUDLevelBar(
+                level: level,
+                gradient: [
+                    Color(red: 0.98, green: 0.62, blue: 0.20),
+                    Color(red: 1.00, green: 0.80, blue: 0.32),
+                    Color(red: 1.00, green: 0.94, blue: 0.66),
+                ]
+            )
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Brightness")
+        .accessibilityValue("\(Int((level * 100).rounded())) percent")
+    }
+}
+
+/// Thick, rounded, gradient-filled level readout shared by the volume and
+/// brightness HUDs.
+struct HUDLevelBar: View {
+    let level: Float
+    let gradient: [Color]
+
+    private static let width: CGFloat = 96
+    private static let height: CGFloat = 10
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Capsule()
+                .fill(.white.opacity(0.16))
+
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: gradient,
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                // Keep a rounded stub at zero so the bar never looks broken.
+                .frame(
+                    width: max(Self.width * CGFloat(min(max(level, 0), 1)), Self.height)
+                )
+        }
+        .frame(width: Self.width, height: Self.height)
+        .animation(NotchAnimations.activity, value: level)
     }
 }
 

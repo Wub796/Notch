@@ -84,6 +84,16 @@ final class NotchSettings {
     /// Show system volume changes as a HUD in the collapsed notch.
     var volumeHUDEnabled = true { didSet { save(volumeHUDEnabled, "volumeHUDEnabled") } }
 
+    /// Show brightness changes as a HUD in the collapsed notch. Detecting a
+    /// brightness key press requires sampling, so this is opt-out.
+    var brightnessHUDEnabled = true {
+        didSet {
+            save(brightnessHUDEnabled, "brightnessHUDEnabled")
+            onBrightnessHUDSettingChanged?(brightnessHUDEnabled)
+        }
+    }
+    var onBrightnessHUDSettingChanged: ((Bool) -> Void)?
+
     /// Current conditions in the dashboard (Open-Meteo).
     var showWeather = true { didSet { save(showWeather, "showWeather") } }
 
@@ -350,6 +360,9 @@ final class NotchSettings {
         }
         hotKey = defaults.string(forKey: "hotKey")
             ?? HotKeyManager.Shortcut.optionCommandN.rawValue
+        if defaults.object(forKey: "brightnessHUDEnabled") != nil {
+            brightnessHUDEnabled = defaults.bool(forKey: "brightnessHUDEnabled")
+        }
         preferredScreenName = defaults.string(forKey: "preferredScreenName") ?? ""
         if defaults.object(forKey: "showQuickActions") != nil {
             showQuickActions = defaults.bool(forKey: "showQuickActions")

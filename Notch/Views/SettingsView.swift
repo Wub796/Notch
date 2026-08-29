@@ -448,6 +448,7 @@ private struct ActivitiesSettingsPane: View {
             Section {
                 Toggle("Battery charging and power events", isOn: $settings.liveActivitiesEnabled)
                 Toggle("Volume change HUD", isOn: $settings.volumeHUDEnabled)
+                Toggle("Brightness changes", isOn: $settings.brightnessHUDEnabled)
                 Toggle("Desktop & Spaces switches", isOn: $settings.desktopChangeEnabled)
                 Toggle("Bluetooth accessories battery levels", isOn: $settings.showAccessoryBattery)
                 Toggle("Quick actions in Tools", isOn: $settings.showQuickActions)

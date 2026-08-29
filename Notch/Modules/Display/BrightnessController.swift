@@ -45,22 +45,37 @@ final class BrightnessController {
         CGMainDisplayID()
     }
 
-    private var pollTimer: Timer?
+    private var hudTimer: Timer?
+    private var lastSeenLevel: Float = -1
 
-    /// The system gives no brightness-change notification, so while the notch
-    /// is open the level is sampled to keep the bar in step with the F1/F2
-    /// keys. Nothing runs once it closes.
-    func startTracking() {
-        guard isAvailable, pollTimer == nil else { return }
+    /// Fired when the level changes without the app asking — i.e. the user
+    /// pressed a brightness key — so the notch can raise its HUD.
+    var onExternalChange: ((Float) -> Void)?
+    private var isSelfSetting = false
+
+    /// macOS posts no brightness-change notification, so detecting a key
+    /// press means sampling. This is a single framework read at 4 Hz; it is
+    /// the one background task the app runs, and Settings can turn it off.
+    func startHUDMonitoring() {
+        guard isAvailable, hudTimer == nil else { return }
         refresh()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
-            self?.refresh()
+        lastSeenLevel = brightness
+        hudTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let previous = self.brightness
+            self.refresh()
+            guard !self.isSelfSetting,
+                  abs(self.brightness - previous) > 0.005,
+                  abs(self.brightness - self.lastSeenLevel) > 0.005
+            else { return }
+            self.lastSeenLevel = self.brightness
+            self.onExternalChange?(self.brightness)
         }
     }
 
-    func stopTracking() {
-        pollTimer?.invalidate()
-        pollTimer = nil
+    func stopHUDMonitoring() {
+        hudTimer?.invalidate()
+        hudTimer = nil
     }
 
     func refresh() {
@@ -80,6 +95,11 @@ final class BrightnessController {
     func setBrightness(_ newValue: Float) {
         let clamped = min(max(newValue, 0), 1)
         brightness = clamped
+        lastSeenLevel = clamped
+        isSelfSetting = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.isSelfSetting = false
+        }
 
         if let setBrightnessFunc, setBrightnessFunc(displayID, clamped) == 0 {
             return
