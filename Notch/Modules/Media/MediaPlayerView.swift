@@ -17,10 +17,12 @@ struct MediaPlayerView: View {
 
     var body: some View {
         // Budget: `NotchState.moduleContentSize`, about 498 x 250.
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 8) {
             header
 
-            lyricLine
+            ThreeDLyricsView(lyrics: media.lyrics, accent: media.accent) { time in
+                media.seek(to: time + 0.05)
+            }
 
             progressRow
 
@@ -28,11 +30,9 @@ struct MediaPlayerView: View {
                 LyricsView(lyrics: media.lyrics, accent: media.accent) { time in
                     media.seek(to: time + 0.05)
                 }
-                .frame(height: 104)
+                .frame(height: 90)
                 .transition(.opacity)
             }
-
-            Spacer(minLength: 0)
 
             transportRow
 

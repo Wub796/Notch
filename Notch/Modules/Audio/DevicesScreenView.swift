@@ -43,10 +43,22 @@ struct DevicesScreenView: View {
 
     private var spotify: SpotifyLibrary { state.spotify }
 
+    private var activeAudioApp: AudioAppMonitor.App? {
+        state.audioApps.apps.first(where: \.isPlaying)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            titleRow
-            controlRow
+        VStack(alignment: .leading, spacing: 8) {
+            headerRow
+
+            // 3D tilted lyrics right below the Library & Discover / section buttons
+            ThreeDLyricsView(
+                lyrics: state.media.lyrics,
+                accent: state.media.accent,
+                onSelect: { time in
+                    state.media.seek(to: time + 0.05)
+                }
+            )
 
             Group {
                 switch state.devicesSection {
@@ -61,12 +73,9 @@ struct DevicesScreenView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            // Screens rise a few points as they arrive rather than cutting.
-            // The panel is already open here, so this is free to be its own
-            // motion — nothing is racing the expansion spring.
             .transition(
                 .asymmetric(
-                    insertion: .opacity.combined(with: .offset(y: 8)),
+                    insertion: .opacity.combined(with: .offset(y: 6)),
                     removal: .opacity
                 )
             )
@@ -75,51 +84,86 @@ struct DevicesScreenView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { spotify.refresh() }
-        // Signing in happens in a browser, so the account arrives while this
-        // screen is already up: load it the moment the token lands.
         .onChange(of: spotify.isConnected) { _, connected in
             if connected { spotify.refresh(force: true) }
         }
     }
 
-    // MARK: - Title
+    // MARK: - Aligned Header Row (Track Info / Nothing Playing + Section Buttons)
 
-    /// The name, and what is making sound right now. The back button lives in
-    /// the header strip directly above it, where every other detail screen
-    /// keeps its own.
-    private var titleRow: some View {
-        HStack(alignment: .lastTextBaseline, spacing: NotchTheme.Space.m) {
-            Text("Devices")
-                .font(.notchDisplay)
-                .foregroundStyle(NotchTheme.inkPrimary)
+    private var headerRow: some View {
+        HStack(alignment: .center, spacing: 12) {
+            // Track Info / "Nothing Playing" evenly aligned on the left
+            HStack(spacing: 8) {
+                if let track = state.media.track, !track.title.isEmpty {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(track.title)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkPrimary)
+                            .lineLimit(1)
+                        Text(track.artist.isEmpty ? "Now Playing" : track.artist)
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkSecondary)
+                            .lineLimit(1)
+                    }
+                } else if let activeApp = activeAudioApp {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(activeApp.name)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkPrimary)
+                            .lineLimit(1)
+                        Text("Active Audio")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkSecondary)
+                            .lineLimit(1)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Nothing Playing")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkPrimary)
+                            .lineLimit(1)
+                        Text("No active audio")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkSecondary)
+                            .lineLimit(1)
+                    }
+                }
 
-            liveAudioBadge
+                liveAudioBadge
+            }
+            .frame(maxWidth: 240, alignment: .leading)
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+
+            // Right side: Section buttons (Now, Library, Discover, Audio) & Account
+            HStack(spacing: 8) {
+                accountChip
+                sectionSwitch
+            }
         }
+        .frame(height: 36)
     }
 
-    /// A live readout of what CoreAudio says is playing. It appears the
-    /// instant sound starts, which is the whole point of the listeners behind
-    /// it — the section is never stale by the time you look at it.
+    /// A live readout of what CoreAudio says is playing.
     @ViewBuilder
     private var liveAudioBadge: some View {
         let playing = state.audioApps.apps.filter(\.isPlaying)
 
         if state.audioApps.isAnyAudioPlaying || !playing.isEmpty {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Image(systemName: "waveform")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.green)
                     .symbolEffect(.variableColor.iterative, options: .repeating)
 
                 Text(Self.playingLabel(playing))
-                    .font(.notchCaption.weight(.semibold))
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 10)
-            .frame(height: 24)
+            .padding(.horizontal, 8)
+            .frame(height: 22)
             .background(Capsule().fill(Color.green.opacity(0.14)))
             .transition(.opacity.combined(with: .scale(scale: 0.9)))
             .accessibilityLabel("Audio playing")
@@ -132,16 +176,6 @@ struct DevicesScreenView: View {
         case 0: "Audio playing"
         case 1: playing[0].name
         default: "\(playing[0].name) +\(playing.count - 1)"
-        }
-    }
-
-    // MARK: - Account chip and section switch
-
-    private var controlRow: some View {
-        HStack(spacing: 10) {
-            accountChip
-            Spacer(minLength: 8)
-            sectionSwitch
         }
     }
 
