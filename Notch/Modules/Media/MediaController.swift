@@ -797,11 +797,14 @@ final class MediaController {
                 withArt.artwork = await SpotifyClient.artwork(for: first)
                 items[0] = withArt
             }
+            // Immutable snapshot so the concurrent MainActor closure captures
+            // a let, not a mutable var — Swift 6 forbids the latter.
+            let queue = items
             let followers = await SpotifyClient.followers(forArtist: track.artist, token: token)
 
             await MainActor.run { [weak self] in
                 guard let self, self.lastSpotifyLookup == key else { return }
-                self.queue = items
+                self.queue = queue
                 self.followersLabel = followers.map {
                     "Followers: " + Self.compactCount($0)
                 }
