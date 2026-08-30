@@ -67,14 +67,13 @@ final class SpotifyAuth {
     var clientID: String {
         get { NotchSettings.shared.spotifyClientID }
         set {
-            NotchSettings.shared.spotifyClientID = newValue
+            NotchSettings.shared.spotifyClientID = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
             refreshState()
         }
     }
 
-    var effectiveClientID: String {
-        let custom = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
-        return custom.isEmpty ? Self.defaultClientID : custom
+    var hasValidClientID: Bool {
+        !clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private init() {
@@ -105,14 +104,23 @@ final class SpotifyAuth {
 
     // MARK: - Sign in
 
-    /// Opens Spotify's consent page in the browser with 1-click PKCE authorization.
+    /// Opens Spotify's consent page in the browser with PKCE authorization.
     func signIn() {
+        let trimmedID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedID.isEmpty else {
+            state = .failed("Please enter your Spotify Client ID in Settings.")
+            DispatchQueue.main.async {
+                SettingsWindowController.shared.show()
+            }
+            return
+        }
+
         let verifier = Self.randomVerifier()
         self.verifier = verifier
 
         var components = URLComponents(string: "https://accounts.spotify.com/authorize")!
         components.queryItems = [
-            .init(name: "client_id", value: effectiveClientID),
+            .init(name: "client_id", value: trimmedID),
             .init(name: "response_type", value: "code"),
             .init(name: "redirect_uri", value: Self.redirectURI),
             .init(name: "scope", value: Self.scopes),

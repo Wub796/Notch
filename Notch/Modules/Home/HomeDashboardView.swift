@@ -66,18 +66,20 @@ struct HomeDashboardView: View {
                 // Uppercase and letterspaced, as in the reference: the title is
                 // the loudest thing on the panel.
                 Text(displayTitle.uppercased())
-                    .font(.system(size: 19, weight: .heavy, design: .rounded))
-                    .tracking(2.5)
+                    .font(.system(size: 18, weight: .heavy, design: .rounded))
+                    .tracking(2.0)
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(width: 196, alignment: .leading)
+                    .frame(maxWidth: 220, alignment: .leading)
 
                 HStack(spacing: 5) {
                     Text(displayArtist)
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .font(.system(size: 13.5, weight: .medium, design: .rounded))
                         .foregroundStyle(NotchTheme.inkSecondary)
                         .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 220, alignment: .leading)
 
                     if isAudioActive {
                         Image(systemName: "waveform")
@@ -94,9 +96,9 @@ struct HomeDashboardView: View {
                         state.media.previousTrack()
                     }
                     transportButton(
-                        state.media.isPlaying ? "play.fill" : "pause.fill",
+                        state.media.isPlaying ? "pause.fill" : "play.fill",
                         size: 18,
-                        label: state.media.isPlaying ? "Play" : "Pause"
+                        label: state.media.isPlaying ? "Pause" : "Play"
                     ) {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
                             state.media.togglePlayPause()
@@ -201,12 +203,15 @@ struct HomeDashboardView: View {
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(NotchTheme.inkPrimary)
                         .lineLimit(1)
-                        .frame(width: 96, alignment: .leading)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 120, alignment: .leading)
 
                     Text(WeatherService.condition(for: weather.weatherCode))
                         .font(.system(size: 14, weight: .medium, design: .rounded))
                         .foregroundStyle(NotchTheme.inkSecondary)
                         .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 120, alignment: .leading)
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
@@ -362,7 +367,7 @@ struct HomeDashboardView: View {
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 150, alignment: .leading)
+                    .frame(maxWidth: 180, alignment: .leading)
             } else {
                 Text(state.calendar.accessState == .granted
                      ? "No more items today"

@@ -635,9 +635,11 @@ private struct MediaSettingsPane: View {
                         HStack(spacing: 6) {
                             Text("Spotify")
                                 .font(.system(size: 13, weight: .bold))
+                                .lineLimit(1)
                             if auth.state == .signedIn {
                                 Text("Connected")
                                     .font(.system(size: 10, weight: .bold))
+                                    .lineLimit(1)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(Capsule().fill(Color.green.opacity(0.18)))
@@ -650,15 +652,18 @@ private struct MediaSettingsPane: View {
                                 Text("Signed in as \(name)")
                                     .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
+                                    .lineLimit(1)
                             } else {
                                 Text("Connected to your account")
                                     .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
+                                    .lineLimit(1)
                             }
                         } else {
                             Text("Playlists, search, queue & Spotify Connect")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
                     }
 
@@ -678,6 +683,7 @@ private struct MediaSettingsPane: View {
                             Text("Signing In…")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
 
                     case .signedOut, .failed:
@@ -687,8 +693,9 @@ private struct MediaSettingsPane: View {
                             HStack(spacing: 6) {
                                 Image(systemName: "arrow.up.right.circle.fill")
                                     .font(.system(size: 12))
-                                Text("Sign in with Spotify")
+                                Text(auth.hasValidClientID ? "Sign in with Spotify" : "Set up Spotify")
                                     .font(.system(size: 12, weight: .bold))
+                                    .lineLimit(1)
                             }
                             .padding(.horizontal, 11)
                             .padding(.vertical, 5)
@@ -702,35 +709,53 @@ private struct MediaSettingsPane: View {
                     }
                 }
 
-                // Advanced custom Client ID toggle
-                DisclosureGroup(isExpanded: $showAdvancedSpotify) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Custom Spotify Developer Client ID (Optional)")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.secondary)
-
+                if auth.state != .signedIn {
+                    VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
-                            TextField("Default Built-in Client ID", text: Binding(
+                            TextField("Paste Spotify Developer Client ID", text: Binding(
                                 get: { settings.spotifyClientID },
                                 set: { auth.clientID = $0 }
                             ))
                             .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 10).monospaced())
+                            .font(.system(size: 11).monospaced())
 
-                            if !settings.spotifyClientID.isEmpty {
-                                Button("Reset to Default") {
-                                    auth.clientID = ""
-                                }
-                                .font(.system(size: 10))
-                                .buttonStyle(.link)
+                            Button("Get Client ID") {
+                                NSWorkspace.shared.open(
+                                    URL(string: "https://developer.spotify.com/dashboard")!
+                                )
                             }
+                            .buttonStyle(.link)
+                            .font(.system(size: 11, weight: .semibold))
+                            .lineLimit(1)
+
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(SpotifyAuth.redirectURI, forType: .string)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.system(size: 10))
+                                    Text("Copy Redirect URI")
+                                        .font(.system(size: 11))
+                                        .lineLimit(1)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
+
+                        Text("Redirect URI to register on dashboard: ")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.secondary)
+                        + Text(SpotifyAuth.redirectURI)
+                            .font(.system(size: 10.5, weight: .bold).monospaced())
+                            .foregroundStyle(NotchTheme.inkPrimary)
                     }
-                    .padding(.top, 4)
-                } label: {
-                    Text("Advanced Options")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white.opacity(0.04))
+                    )
                 }
             }
 

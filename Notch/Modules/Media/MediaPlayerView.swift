@@ -347,7 +347,7 @@ struct MediaPlayerView: View {
                     media.togglePlayPause()
                 }
             } label: {
-                Image(systemName: media.isPlaying ? "play.fill" : "pause.fill")
+                Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .frame(width: 38, height: 38)
@@ -359,7 +359,7 @@ struct MediaPlayerView: View {
             .disabled(!media.canControlTransport)
             .opacity(media.canControlTransport ? 1 : 0.4)
             .contentTransition(.symbolEffect(.replace))
-            .accessibilityLabel(media.isPlaying ? "Play" : "Pause")
+            .accessibilityLabel(media.isPlaying ? "Pause" : "Play")
 
             transportIcon(
                 "forward.fill",
