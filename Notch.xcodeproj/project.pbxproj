@@ -273,6 +273,10 @@
 				DEVELOPMENT_TEAM = WH94WCUVCU;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Notch/MediaRemoteAdapter",
+				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Notch/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -299,6 +303,10 @@
 				DEVELOPMENT_TEAM = WH94WCUVCU;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Notch/MediaRemoteAdapter",
+				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Notch/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
