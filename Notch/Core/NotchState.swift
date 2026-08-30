@@ -79,7 +79,7 @@ final class NotchState {
             + NotchSizing.openContentInset) * 2
         return CGSize(
             width: max(0, open.width - horizontal),
-            height: max(0, open.height - topBarHeight - NotchSizing.openContentInset)
+            height: max(0, open.height - topBarHeight - 6 - NotchSizing.openContentInset)
         )
     }
 
@@ -105,7 +105,7 @@ final class NotchState {
 
     /// Height of the icon strip that flanks the hardware notch.
     var topBarHeight: CGFloat {
-        max(adjustedNotchSize.height, 38)
+        max(adjustedNotchSize.height + 8, 44)
     }
 
     let settings = NotchSettings.shared
@@ -328,8 +328,8 @@ final class NotchState {
     // MARK: - Live activity resolution
 
     /// What the collapsed/peek notch is currently showing, by priority:
-    /// transient HUD events, an imminent meeting, the live lyric line, then
-    /// plain now-playing wings.
+    /// transient HUD events, a running timer, an imminent meeting, the live
+    /// lyric line, active music playback / sound, then idle weather wings.
     var collapsedActivity: LiveActivity? {
         if let transient = activities.transient {
             return transient
@@ -345,16 +345,8 @@ final class NotchState {
            let line = media.collapsedLyricLine {
             return .lyrics(line: line)
         }
-        if media.hasTrack, settings.showMediaWings {
-            return .music
-        }
-        // Nothing holds the now-playing session, but something is making
-        // sound — a video in a browser, a game, a call. The wings show it
-        // too: CoreAudio tells us the instant it starts, and the visualiser
-        // beside the notch is the honest answer to "what is that noise".
-        if settings.showMediaWings, settings.showWingsForAnyAudio,
-           audioApps.isAnyAudioPlaying,
-           audioApps.apps.contains(where: \.isPlaying) {
+        // Any active music playback or app audio replaces the weather wings next to the notch
+        if media.isPlaying || audioApps.isAnyAudioPlaying || (media.hasTrack && settings.showMediaWings) {
             return .music
         }
         return nil

@@ -15,7 +15,6 @@ struct NotchTopBarView: View {
         (.clipboard, "doc.on.clipboard", "Clipboard"),
         (.notes, "note.text", "Notes"),
         (.audio, "hifispeaker.2.fill", "Devices"),
-        (.tools, "wrench.and.screwdriver", "Tools"),
         (.telemetry, "gauge.with.dots.needle.50percent", "System Stats"),
     ]
 

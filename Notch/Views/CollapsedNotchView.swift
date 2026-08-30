@@ -268,13 +268,17 @@ struct CollapsedNotchView: View {
         }
     }
 
+    private var isAudioActive: Bool {
+        state.media.isPlaying || state.audioApps.isAnyAudioPlaying || (state.media.hasTrack && state.settings.showMediaWings)
+    }
+
     /// What flanks the hardware notch on its own row while an activity is
     /// dropped beneath it. Media owns the wings whenever something is
     /// playing — cover on the left, visualiser on the right, and the weather
     /// stays out of the way until playback stops.
     @ViewBuilder
     private var notchRowFlank: some View {
-        if state.media.hasTrack, state.settings.showMediaWings {
+        if isAudioActive {
             musicWings
         } else if state.settings.showCompactWeather {
             weatherFlank

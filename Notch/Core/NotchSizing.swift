@@ -45,9 +45,9 @@ enum NotchSizing {
     /// scaled display; `maxAllowedOpenWidth` is that rule.
     static let minimumOpenWidth: Double = 520
     static let defaultOpenWidth: Double = 900
-    static let minimumOpenHeight: Double = 140
-    static let defaultOpenHeight: Double = 182
-    static let maximumOpenHeight: Double = 460
+    static let minimumOpenHeight: Double = 150
+    static let defaultOpenHeight: Double = 215
+    static let maximumOpenHeight: Double = 500
 
     static func maxAllowedOpenWidth(for screen: NSScreen? = NSScreen.main) -> Double {
         guard let width = screen?.frame.width, width > 0 else { return 900 }
@@ -72,24 +72,18 @@ enum NotchSizing {
     }
 
     /// Each screen's natural size at the default width.
-    ///
-    /// Taken from the reference screenshots' own proportions rather than
-    /// invented: weather is 2.07 wide to tall, the calendar 1.69, the player
-    /// 1.59. They are much narrower and taller than a single shared panel
-    /// allowed, which is why the detail screens had blank bands down the
-    /// sides. Home stays a wide strip because it is a glance, not a screen.
     private static func baseSize(for tab: NotchTab) -> CGSize {
         switch tab {
-        case .home: CGSize(width: 860, height: 176)
-        case .media: CGSize(width: 580, height: 260)
-        case .weather: CGSize(width: 600, height: 260)
-        case .calendar: CGSize(width: 620, height: 320)
-        case .shelf: CGSize(width: 640, height: 220)
-        case .clipboard: CGSize(width: 660, height: 230)
-        case .tools: CGSize(width: 880, height: 270)
-        case .notes: CGSize(width: 580, height: 240)
-        case .telemetry: CGSize(width: 800, height: 250)
-        case .audio: CGSize(width: 880, height: 380)
+        case .home: CGSize(width: 860, height: 205)
+        case .media: CGSize(width: 580, height: 285)
+        case .weather: CGSize(width: 600, height: 290)
+        case .calendar: CGSize(width: 620, height: 350)
+        case .shelf: CGSize(width: 640, height: 240)
+        case .clipboard: CGSize(width: 660, height: 255)
+        case .tools: CGSize(width: 880, height: 295)
+        case .notes: CGSize(width: 580, height: 265)
+        case .telemetry: CGSize(width: 800, height: 275)
+        case .audio: CGSize(width: 880, height: 405)
         }
     }
 
