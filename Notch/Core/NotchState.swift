@@ -57,6 +57,10 @@ final class NotchState {
     /// Physical notch size, injected by NotchWindowController at launch.
     var notchSize: CGSize = NotchGeometry.fallbackSize
 
+    /// Real-time counter-offset applied during 3-finger space swipes so the notch
+    /// remains perfectly stationary behind the hardware notch.
+    var swipeCompensationOffset: CGFloat = 0
+
     /// The open slab, sized for the screen showing. Switching tabs resizes the
     /// panel, which the references avoid — but a month grid and a weather hero
     /// are genuinely different shapes, and forcing both into one box shrank
