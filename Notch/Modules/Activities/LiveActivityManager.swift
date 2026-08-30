@@ -25,9 +25,16 @@ enum LiveActivity: Equatable {
 /// periodic work. Calendar and music activities are derived in NotchState
 /// from their own controllers.
 @Observable
-final class LiveActivityManager {
     /// The transient activity currently on screen, if any.
-    private(set) var transient: LiveActivity?
+    private(set) var transient: LiveActivity? {
+        didSet {
+            if oldValue != transient {
+                onActivityChange?()
+            }
+        }
+    }
+
+    var onActivityChange: (() -> Void)?
 
     private let volumeMonitor = VolumeMonitor()
     /// Current power state, kept live for the collapsed notch's charging

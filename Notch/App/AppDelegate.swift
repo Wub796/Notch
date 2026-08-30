@@ -81,6 +81,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspaceObservers = []
         NotificationCenter.default.removeObserver(self)
 
+        if let existing = windowController {
+            existing.cleanup()
+            existing.close()
+            windowController = nil
+        }
+
         HotKeyManager.shared.apply(.disabled)
         state.shutdown()
     }
@@ -95,7 +101,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Never carry an expanded panel across a display change — the new
         // geometry starts from the resting state.
         state.collapse()
-        windowController?.close()
+        if let existing = windowController {
+            existing.cleanup()
+            existing.close()
+            existing.window?.orderOut(nil)
+            windowController = nil
+        }
         windowController = NotchWindowController(state: state, screen: screen)
         windowController?.showPanel()
     }

@@ -175,6 +175,11 @@ final class NotchState {
         // adds no polling.
         audio.refresh()
 
+        activities.onActivityChange = { [weak self] in
+            guard let self else { return }
+            self.onModeChange?(self.mode)
+        }
+
         media.onTrackChange = { [weak self] track in
             self?.activities.showTrackChange(title: track.title, artist: track.artist)
         }
@@ -518,6 +523,7 @@ final class NotchState {
             if newTab != .media { mediaShowsFullLyrics = false }
         }
         settings.lastTab = newTab.rawValue
+        onModeChange?(mode)
     }
 
     // MARK: - App lifecycle
