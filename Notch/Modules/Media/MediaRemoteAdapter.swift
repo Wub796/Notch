@@ -151,8 +151,8 @@ final class MediaRemoteAdapter {
         newProcess.terminationHandler = { [weak self] _ in
             // Drain the pipe tail so a final line that arrived with EOF is not
             // lost, then hand the death to the owner on the main queue.
-            self?.queue.async { [weak self] in
-                guard let self else { return }
+            guard let self else { return }
+            self.queue.async {
                 self.readSource?.cancel()
                 self.readSource = nil
                 let tail = handle.readDataToEndOfFile()
@@ -160,8 +160,8 @@ final class MediaRemoteAdapter {
                 self.process = nil
                 self.pipe = nil
                 guard !self.stopped else { return }
-                DispatchQueue.main.async { [weak self] in
-                    self?.onTerminated?()
+                DispatchQueue.main.async {
+                    self.onTerminated?()
                 }
             }
         }
