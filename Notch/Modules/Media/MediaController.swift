@@ -1507,11 +1507,13 @@ final class MediaController {
 
             // Re-ask off the main thread: a player that is slow to answer must
             // not be able to stall the UI, which is what running the script
-            // inline here did.
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let stillNothing = self?.appleScriptSnapshot() == nil
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, stillNothing else { return }
+            // inline here did. The nested closures capture the strong `self`
+            // established by the guard above (they are transient, so holding
+            // it strongly cannot create a cycle).
+            DispatchQueue.global(qos: .userInitiated).async {
+                let stillNothing = self.appleScriptSnapshot() == nil
+                DispatchQueue.main.async {
+                    guard stillNothing else { return }
                     self.finishClearingTrack()
                 }
             }
