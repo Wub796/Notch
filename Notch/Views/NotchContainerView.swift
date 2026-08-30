@@ -25,9 +25,8 @@ struct NotchContainerView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .top) {
             notchBody
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .top)
         .fontDesign(.rounded)
@@ -40,18 +39,9 @@ struct NotchContainerView: View {
 
             // Closed, hovering and clicking are detected by this and nothing
             // else: a rectangle of exactly the hardware notch's size, pinned to
-            // the top centre. The previous approach derived the region from a
-            // custom Shape laid inside the slab's own bounds — bounds that
-            // animate, and that the live-activity wings make far wider than the
-            // notch — so the region moved with them. A real view with a real
-            // frame cannot drift.
+            // the top centre.
             if state.mode != .expanded {
                 Color.black.opacity(0.001)
-                    // Keep the probe above the rendered slab in the z-stack.
-                    // A fully clear view can be skipped by AppKit/SwiftUI hit
-                    // testing in a non-activating panel; an almost-transparent
-                    // fill gives it a real hit-test surface without changing
-                    // the appearance.
                     .frame(
                         width: state.hoverProbeSize.width,
                         height: state.hoverProbeSize.height
@@ -65,34 +55,21 @@ struct NotchContainerView: View {
 
     private var slab: some View {
         NotchLayoutView(state: state, namespace: notchNamespace, isHovering: state.isHovering)
-            // Open, the horizontal inset clears the top flare and the extra 12
-            // is the references' slab padding. Closed it is zero, which is the
-            // one place this diverges from them: they pad the closed pill too
-            // and compensate by narrowing the camera dead zone by 20, which
-            // draws content under the housing. Keeping the pill exactly as
-            // wide as the notch plus its wings costs nothing and means the
-            // idle pill never overhangs the hardware notch.
             .padding(.horizontal, state.mode == .expanded
                 ? NotchSizing.cornerRadiusInsets.opened.top + NotchSizing.openContentInset
                 : 0)
             .padding(.bottom, state.mode == .expanded ? NotchSizing.openContentInset : 0)
-            // The height goes on before the background, and top-aligned: a
-            // .frame(height:) applied after clipShape centres the already-drawn
-            // shape inside it, so the slab's top edge drifts down the screen as
-            // the height animates instead of staying welded to the notch.
             .frame(
-                height: state.mode == .expanded ? state.expandedSize.height : nil,
+                height: state.mode == .expanded ? state.expandedSize.height : state.collapsedSize.height,
                 alignment: .top
             )
             .background(.black)
             .clipShape(shape)
-            // A hairline of black across the top, inside the flare, so no
-            // sliver of desktop shows between the slab and the screen edge.
+            // Solid top edge bonding to guarantee zero gap or hairline separation from screen bezel
             .overlay(alignment: .top) {
                 Rectangle()
                     .fill(.black)
-                    .frame(height: 1)
-                    .padding(.horizontal, state.cornerRadii.top)
+                    .frame(height: 3)
             }
             // Only the open slab and the hovered pill cast a shadow; a closed
             // pill sitting on the black notch does not need one.

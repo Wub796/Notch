@@ -196,8 +196,8 @@ struct AudioDevicesView: View {
                     }
 
                     RoundIconButton(
-                        systemImage: state.media.isPlaying ? "pause.fill" : "play.fill",
-                        help: state.media.isPlaying ? "Pause" : "Play"
+                        systemImage: state.media.isPlaying ? "play.fill" : "pause.fill",
+                        help: state.media.isPlaying ? "Play" : "Pause"
                     ) {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
                             state.media.togglePlayPause()
@@ -352,8 +352,8 @@ struct AudioDevicesView: View {
                     onSelect: { app.activate() }
                 ) {
                     RoundIconButton(
-                        systemImage: app.isPlaying ? "pause.fill" : "play.fill",
-                        help: app.isPlaying ? "Pause audio/video" : "Play audio/video"
+                        systemImage: app.isPlaying ? "play.fill" : "pause.fill",
+                        help: app.isPlaying ? "Play audio/video" : "Pause audio/video"
                     ) {
                         state.media.togglePlayPause()
                     }

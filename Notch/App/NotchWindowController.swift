@@ -28,7 +28,7 @@ final class NotchWindowController: NSWindowController {
             rootView: NotchContainerView(state: state),
             state: state
         )
-        hostingView.frame = NSRect(origin: .zero, size: frame.size)
+        hostingView.autoresizingMask = [.width, .height]
         panel.contentView = hostingView
 
         super.init(window: panel)
@@ -88,31 +88,35 @@ final class NotchWindowController: NSWindowController {
 
     private func setupModeChangeObserver() {
         state.onModeChange = { [weak self] mode in
-            guard let self, let panel = self.window, let screen = self.trackedScreen else { return }
-            self.collapseResizeWork?.cancel()
-            self.collapseResizeWork = nil
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let panel = self.window, let screen = self.trackedScreen else { return }
+                self.collapseResizeWork?.cancel()
+                self.collapseResizeWork = nil
 
-            if mode == .expanded {
-                // Expanding: instantly resize window to target size so SwiftUI has full room to animate
-                let targetSize = Self.targetWindowSize(for: self.state, mode: .expanded)
-                let newFrame = Self.frame(for: targetSize, on: screen)
-                panel.setFrame(newFrame, display: true)
-                panel.contentView?.frame = NSRect(origin: .zero, size: newFrame.size)
-                panel.ignoresMouseEvents = false
-                panel.orderFrontRegardless()
-            } else {
-                // Collapsing: keep expanded window during spring animation, shrink after collapse completes
-                let work = DispatchWorkItem { [weak self] in
-                    guard let self, let panel = self.window, let screen = self.trackedScreen else { return }
-                    guard self.state.mode != .expanded else { return }
-                    let targetSize = Self.targetWindowSize(for: self.state, mode: self.state.mode)
+                if mode == .expanded {
+                    // Expanding: resize window to target size asynchronously so SwiftUI has full room to animate
+                    let targetSize = Self.targetWindowSize(for: self.state, mode: .expanded)
                     let newFrame = Self.frame(for: targetSize, on: screen)
-                    panel.setFrame(newFrame, display: true)
-                    panel.contentView?.frame = NSRect(origin: .zero, size: newFrame.size)
-                    self.updateIgnoreMouseEvents()
+                    if panel.frame != newFrame {
+                        panel.setFrame(newFrame, display: true)
+                    }
+                    panel.ignoresMouseEvents = false
+                    panel.orderFrontRegardless()
+                } else {
+                    // Collapsing: keep expanded window during spring animation, shrink after collapse completes
+                    let work = DispatchWorkItem { [weak self] in
+                        guard let self, let panel = self.window, let screen = self.trackedScreen else { return }
+                        guard self.state.mode != .expanded else { return }
+                        let targetSize = Self.targetWindowSize(for: self.state, mode: self.state.mode)
+                        let newFrame = Self.frame(for: targetSize, on: screen)
+                        if panel.frame != newFrame {
+                            panel.setFrame(newFrame, display: true)
+                        }
+                        self.updateIgnoreMouseEvents()
+                    }
+                    self.collapseResizeWork = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.38, execute: work)
                 }
-                self.collapseResizeWork = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.38, execute: work)
             }
         }
     }
@@ -136,7 +140,6 @@ final class NotchWindowController: NSWindowController {
               abs(panel.frame.size.width - newFrame.size.width) > 0.5 ||
               abs(panel.frame.size.height - newFrame.size.height) > 0.5 else { return }
         panel.setFrame(newFrame, display: true)
-        panel.contentView?.frame = NSRect(origin: .zero, size: newFrame.size)
     }
 
     // MARK: - Pointer-Driven Click-Through (ignoresMouseEvents)

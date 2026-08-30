@@ -94,9 +94,9 @@ struct HomeDashboardView: View {
                         state.media.previousTrack()
                     }
                     transportButton(
-                        state.media.isPlaying ? "pause.fill" : "play.fill",
+                        state.media.isPlaying ? "play.fill" : "pause.fill",
                         size: 18,
-                        label: state.media.isPlaying ? "Pause" : "Play"
+                        label: state.media.isPlaying ? "Play" : "Pause"
                     ) {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
                             state.media.togglePlayPause()
