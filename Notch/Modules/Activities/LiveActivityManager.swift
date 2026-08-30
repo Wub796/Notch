@@ -198,13 +198,25 @@ final class LiveActivityManager {
     }
 
     private func show(_ activity: LiveActivity, for duration: TimeInterval) {
-        dismissWork?.cancel()
-        transient = activity
+        // CoreAudio and power callbacks are not guaranteed to arrive on main,
+        // but `transient` drives SwiftUI layout. Serialize the state change and
+        // its dismissal on main so the HUD cannot be lost during a concurrent
+        // activity update or produce an off-main observation warning.
+        let update = { [weak self] in
+            guard let self else { return }
+            self.dismissWork?.cancel()
+            self.transient = activity
 
-        let work = DispatchWorkItem { [weak self] in
-            self?.transient = nil
+            let work = DispatchWorkItem { [weak self] in
+                self?.transient = nil
+            }
+            self.dismissWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
         }
-        dismissWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
+        if Thread.isMainThread {
+            update()
+        } else {
+            DispatchQueue.main.async(execute: update)
+        }
     }
 }

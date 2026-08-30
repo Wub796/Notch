@@ -169,7 +169,10 @@ final class MediaKeyInterceptor {
             let current = volumeSource?() ?? 0
             let target = min(max(current + (key == .soundUp ? delta : -delta), 0), 1)
             setVolume?(target)
-            onVolume?(target, isMuted?() ?? false)
+            // Read back after writing so the HUD reflects the device's actual
+            // value, not a stale or rejected request.
+            let shown = volumeSource?() ?? target
+            onVolume?(shown, isMuted?() ?? false)
 
         case .mute:
             toggleMute?()
@@ -183,7 +186,10 @@ final class MediaKeyInterceptor {
             }
             let target = min(max(current + (key == .brightnessUp ? delta : -delta), 0), 1)
             setBrightness?(target)
-            onBrightness?(target)
+            // The setter can clamp or reject a request on some displays. Show
+            // the live value returned by the same API pair used for writing.
+            let shown = brightnessSource?() ?? target
+            onBrightness?(shown)
         }
     }
 }
