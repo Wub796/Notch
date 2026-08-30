@@ -25,6 +25,7 @@ enum LiveActivity: Equatable {
 /// periodic work. Calendar and music activities are derived in NotchState
 /// from their own controllers.
 @Observable
+final class LiveActivityManager {
     /// The transient activity currently on screen, if any.
     private(set) var transient: LiveActivity? {
         didSet {
