@@ -15,6 +15,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				MediaRemoteAdapter/MediaRemoteAdapter.framework,
 			);
 			target = 4E0000000000000000000002 /* Notch */;
 		};
@@ -156,7 +157,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "ditto \"$SRCROOT/Notch/MediaRemoteAdapter/MediaRemoteAdapter.framework\" \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/MediaRemoteAdapter.framework\"\n";
+			shellScript = "ditto \"$SRCROOT/Notch/MediaRemoteAdapter/MediaRemoteAdapter.framework\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/MediaRemoteAdapter.framework\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

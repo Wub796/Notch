@@ -28,18 +28,24 @@ source, falling back to the Apple Events path only if the adapter fails its
 
 ## Maintenance steps (non-obvious)
 
-1. **The framework binary has its minos patched to 14.0.** The original build
-   declares `LC_BUILD_VERSION` minos 26.0, which fails to link against this
-   app's macOS 14.0 deployment target. It was patched with:
+1. **The framework is kept out of the link — it ships in `Resources/`.** The
+   app never calls the framework; the Perl script `dlopen`s it. Xcode's
+   synchronized group would otherwise auto-link it into the app (embedding a
+   dead `@rpath` reference that crashes launch with a "Library not loaded"
+   dyld error), so it is excluded from target membership via
+   `membershipExceptions` in the pbxproj, and a `PBXShellScriptBuildPhase`
+   (`ditto`) copies it into `$(UNLOCALIZED_RESOURCES_FOLDER_PATH)` on every
+   build. If you move or rename the framework, update both the exception path
+   (`MediaRemoteAdapter/MediaRemoteAdapter.framework`) and the `ditto` source
+   path.
+
+2. **The framework binary has its minos patched to 14.0.** The original build
+   declares `LC_BUILD_VERSION` minos 26.0. The patch was originally needed to
+   link against this app's macOS 14.0 deployment target; now that the
+   framework is not linked it is only relevant if you ever re-add it to the
+   link. It was applied with:
    ```
    vtool -set-build-version macos 14.0 26.4 -replace -output <binary> <binary>
    codesign --force -s - MediaRemoteAdapter.framework
    ```
-   If you re-copy the framework from Sapphire (or rebuild it), re-apply both
-   steps or the build breaks. The minos change does not affect dlopen.
-
-2. **The framework is looked up in both `Resources/` and `Frameworks/`.**
-   Xcode's synchronized group links the `.framework` into the app (embedding
-   it under `Contents/Frameworks/`) rather than copying it as a plain
-   resource. `MediaRemoteAdapter.frameworkURL()` checks `Resources/` first and
-   falls back to `Frameworks/`, so it works either way.
+   The minos change does not affect dlopen.
