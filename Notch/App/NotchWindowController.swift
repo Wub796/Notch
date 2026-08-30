@@ -20,8 +20,16 @@ final class NotchWindowController: NSWindowController {
         state.notchSize = geometry.notchSize
 
         // Size the window dynamically to what is actually needed for the active mode
-        let initialSize = Self.targetWindowSize(for: state, mode: state.mode)
-        let frame = Self.frame(for: initialSize, on: screen)
+        let window = NotchSizing.windowSize
+        let width = max(window.width, geometry.notchSize.width)
+        let height = window.height + geometry.notchSize.height
+
+        let frame = NSRect(
+            x: screen.frame.midX - width / 2,
+            y: screen.frame.maxY - height,
+            width: width,
+            height: height
+        )
 
         let panel = NotchPanel(contentRect: frame, state: state)
         let hostingView = NotchHostingView(
@@ -59,63 +67,17 @@ final class NotchWindowController: NSWindowController {
         }
     }
 
-    // MARK: - Window Sizing & Anchoring
-
-    static func targetWindowSize(for state: NotchState, mode: NotchMode) -> CGSize {
-        if mode == .expanded {
-            let size = state.expandedSize
-            return CGSize(
-                width: size.width + NotchSizing.shadowPadding * 2,
-                height: size.height + NotchSizing.shadowPadding
-            )
-        } else {
-            let probe = state.hoverProbeSize
-            let collapsed = state.collapsedSize
-            let width = max(probe.width, collapsed.width) + NotchSizing.shadowPadding * 2
-            let height = max(probe.height, collapsed.height) + NotchSizing.shadowPadding
-            return CGSize(width: width, height: height)
-        }
-    }
-
-    static func frame(for size: CGSize, on screen: NSScreen) -> NSRect {
-        NSRect(
-            x: screen.frame.midX - size.width / 2,
-            y: screen.frame.maxY - size.height,
-            width: size.width,
-            height: size.height
-        )
-    }
+    // MARK: - Window Anchoring
 
     private func setupModeChangeObserver() {
         state.onModeChange = { [weak self] mode in
             DispatchQueue.main.async { [weak self] in
-                guard let self, let panel = self.window, let screen = self.trackedScreen else { return }
-                self.collapseResizeWork?.cancel()
-                self.collapseResizeWork = nil
-
+                guard let self, let panel = self.window else { return }
                 if mode == .expanded {
-                    // Expanding: resize window to target size asynchronously so SwiftUI has full room to animate
-                    let targetSize = Self.targetWindowSize(for: self.state, mode: .expanded)
-                    let newFrame = Self.frame(for: targetSize, on: screen)
-                    if panel.frame != newFrame {
-                        panel.setFrame(newFrame, display: true)
-                    }
                     panel.ignoresMouseEvents = false
                     panel.orderFrontRegardless()
                 } else {
-                    // Collapsing: keep expanded window during spring animation, shrink after collapse completes
-                    let work = DispatchWorkItem { [weak self] in
-                        guard let self, let panel = self.window, let screen = self.trackedScreen else { return }
-                        guard self.state.mode != .expanded else { return }
-                        let targetSize = Self.targetWindowSize(for: self.state, mode: self.state.mode)
-                        let newFrame = Self.frame(for: targetSize, on: screen)
-                        if panel.frame != newFrame {
-                            panel.setFrame(newFrame, display: true)
-                        }
-                        self.updateIgnoreMouseEvents()
-                    }
-                    self.collapseResizeWork = work
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.38, execute: work)
+                    self.updateIgnoreMouseEvents()
                 }
             }
         }
@@ -133,13 +95,15 @@ final class NotchWindowController: NSWindowController {
 
     func reanchorToTrackedScreen() {
         guard let panel = window, let screen = trackedScreen else { return }
-        let targetSize = Self.targetWindowSize(for: state, mode: state.mode)
-        let newFrame = Self.frame(for: targetSize, on: screen)
-        guard abs(panel.frame.origin.x - newFrame.origin.x) > 0.5 ||
-              abs(panel.frame.origin.y - newFrame.origin.y) > 0.5 ||
-              abs(panel.frame.size.width - newFrame.size.width) > 0.5 ||
-              abs(panel.frame.size.height - newFrame.size.height) > 0.5 else { return }
-        panel.setFrame(newFrame, display: true)
+        let window = NotchSizing.windowSize
+        let width = max(window.width, state.notchSize.width)
+        let height = window.height + state.notchSize.height
+        let newOrigin = NSPoint(
+            x: screen.frame.midX - width / 2,
+            y: screen.frame.maxY - height
+        )
+        guard abs(panel.frame.origin.x - newOrigin.x) > 0.5 || abs(panel.frame.origin.y - newOrigin.y) > 0.5 else { return }
+        panel.setFrameOrigin(newOrigin)
     }
 
     // MARK: - Pointer-Driven Click-Through (ignoresMouseEvents)

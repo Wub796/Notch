@@ -25,8 +25,9 @@ struct NotchContainerView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
+        VStack(spacing: 0) {
             notchBody
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .top)
         .fontDesign(.rounded)
