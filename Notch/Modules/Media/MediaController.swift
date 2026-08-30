@@ -412,7 +412,7 @@ final class MediaController {
     }
 
     private func tickCollapsedLyric() {
-        guard lyrics.isSynced, !lyrics.lines.isEmpty else {
+        guard isPlaying, lyrics.isSynced, !lyrics.lines.isEmpty else {
             if collapsedLyricLine != nil {
                 collapsedLyricLine = nil
             }
@@ -804,8 +804,16 @@ final class MediaController {
         elapsedAnchor = info[MediaRemoteBridge.InfoKey.elapsedTime] as? TimeInterval ?? 0
         anchorDate = info[MediaRemoteBridge.InfoKey.timestamp] as? Date ?? Date()
 
+        let playbackRate: Double?
         if let rate = info[MediaRemoteBridge.InfoKey.playbackRate] as? Double {
-            let playing = rate > 0
+            playbackRate = rate
+        } else if let playing = info[MediaRemoteAdapter.Key.playing] as? Bool {
+            playbackRate = playing ? 1 : 0
+        } else {
+            playbackRate = nil
+        }
+        if let playbackRate {
+            let playing = playbackRate > 0
             if playing != isPlaying {
                 isPlaying = playing
                 updateLyricActivityTimer()

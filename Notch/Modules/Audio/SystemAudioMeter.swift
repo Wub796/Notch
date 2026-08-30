@@ -32,6 +32,7 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
 
     private var stream: SCStream?
     private var starting = false
+    private var captureGeneration = 0
     private let sampleQueue = DispatchQueue(label: "com.notch.audiometer", qos: .userInitiated)
 
     /// One-pole filter states, kept between buffers so the split does not
@@ -64,6 +65,8 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
             return
         }
         starting = true
+        captureGeneration += 1
+        let generation = captureGeneration
 
         Task { [weak self] in
             do {
@@ -72,8 +75,9 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
                 )
                 guard let display = content.displays.first else {
                     await MainActor.run { [weak self] in
-                        self?.starting = false
-                        self?.failureReason = "No display to capture audio from."
+                        guard let self, self.captureGeneration == generation else { return }
+                        self.starting = false
+                        self.failureReason = "No display to capture audio from."
                     }
                     return
                 }
@@ -105,15 +109,20 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
                 try await stream.startCapture()
 
                 await MainActor.run { [weak self] in
-                    self?.stream = stream
-                    self?.starting = false
-                    self?.failureReason = nil
+                    guard let self, self.captureGeneration == generation else {
+                        Task { try? await stream.stopCapture() }
+                        return
+                    }
+                    self.stream = stream
+                    self.starting = false
+                    self.failureReason = nil
                 }
             } catch {
                 await MainActor.run { [weak self] in
-                    self?.starting = false
-                    self?.isLive = false
-                    self?.failureReason = "Couldn't read the audio output: "
+                    guard let self, self.captureGeneration == generation else { return }
+                    self.starting = false
+                    self.isLive = false
+                    self.failureReason = "Couldn't read the audio output: "
                         + error.localizedDescription
                 }
             }
@@ -128,6 +137,8 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func stop() {
+        captureGeneration += 1
+        starting = false
         let capture = stream
         stream = nil
         isLive = false
@@ -216,6 +227,7 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
 
     /// Fast attack, quick release on pause/silence, capped at 30 updates/sec.
     private func publish(_ measured: [Float]) {
+        guard stream != nil else { return }
         for index in envelope.indices {
             let target = measured[index]
             let coefficient: Float = target > envelope[index] ? 0.85 : 0.40
