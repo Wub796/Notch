@@ -46,7 +46,16 @@ final class AudioOutputManager {
 
     private var isListening = false
     private var listenerBlock: AudioObjectPropertyListenerBlock?
-    private var volumeDeviceID = AudioObjectID(kAudioObjectUnknown)
+    private var volumeDeviceID = AudioDeviceID(kAudioObjectUnknown)
+
+    /// Serial queue for all CoreAudio property queries: device enumeration
+    /// and volume reads are synchronous calls that can block, so they must
+    /// never run on the main thread. Listeners fire on this queue too.
+    private let audioQueue = DispatchQueue(label: "com.notch.audio-output", qos: .utility)
+
+    /// Debounce: a single device change fires several notifications, and
+    /// re-enumerating all devices for each one froze the UI.
+    private var pendingRefresh: DispatchWorkItem?
 
     private static var defaultOutputAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultOutputDevice,
@@ -73,10 +82,51 @@ final class AudioOutputManager {
     )
 
     func refresh() {
-        devices = Self.outputDevices()
-        currentDeviceID = Self.defaultOutputDevice()
-        readVolume()
-        startListening()
+        // Run the heavy CoreAudio queries on the audio queue; only the
+        // resulting state lands on main. The caller (launch, notch open)
+        // gets an immediate read from the cache, and the queue updates it.
+        refreshOnAudioQueue()
+    }
+
+    private func refreshOnAudioQueue() {
+        audioQueue.async { [weak self] in
+            guard let self else { return }
+            let devices = Self.outputDevices()
+            let deviceID = Self.defaultOutputDevice()
+
+            // Read volume on the audio queue — readScalar does synchronous
+            // CoreAudio calls that can block on Bluetooth devices.
+            let readings = Self.volumeElements.compactMap {
+                self.readScalar(device: deviceID, element: $0)
+            }
+            let volume: Float
+            if !readings.isEmpty {
+                volume = min(max(readings.reduce(0, +) / Float32(readings.count), 0), 1)
+            } else {
+                volume = self.volume
+            }
+
+            var muted: UInt32 = 0
+            var muteSize = UInt32(MemoryLayout<UInt32>.size)
+            var isMuted = self.isMuted
+            if AudioObjectHasProperty(deviceID, &Self.muteAddress),
+               AudioObjectGetPropertyData(
+                   deviceID, &Self.muteAddress, 0, nil, &muteSize, &muted
+               ) == noErr {
+                isMuted = muted != 0
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.devices = devices
+                self.currentDeviceID = deviceID
+                self.volume = volume
+                self.isMuted = isMuted
+                // Re-attach the volume listener for the new device — on the
+                // audio queue, not main.
+                self.audioQueue.async { self.attachVolumeListener() }
+            }
+        }
     }
 
     /// Keeps the picker honest when the output changes anywhere else — a
@@ -88,18 +138,23 @@ final class AudioOutputManager {
 
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             guard let self else { return }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.refresh()
+            // Coalesce on the audio queue: a single device change fires
+            // several notifications, and re-enumerating for each froze the
+            // UI. The debounce collapses them into one refresh.
+            self.pendingRefresh?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                self?.refreshOnAudioQueue()
             }
+            self.pendingRefresh = work
+            self.audioQueue.asyncAfter(deadline: .now() + 0.15, execute: work)
         }
         listenerBlock = block
 
         AudioObjectAddPropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject), &Self.defaultOutputAddress, .main, block
+            AudioObjectID(kAudioObjectSystemObject), &Self.defaultOutputAddress, audioQueue, block
         )
         AudioObjectAddPropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject), &Self.deviceListAddress, .main, block
+            AudioObjectID(kAudioObjectSystemObject), &Self.deviceListAddress, audioQueue, block
         )
         attachVolumeListener()
     }
@@ -128,10 +183,10 @@ final class AudioOutputManager {
         if volumeDeviceID != kAudioObjectUnknown {
             for element in Self.listenerElements {
                 var address = Self.scalarAddress(element: element)
-                AudioObjectRemovePropertyListenerBlock(volumeDeviceID, &address, .main, block)
+                AudioObjectRemovePropertyListenerBlock(volumeDeviceID, &address, audioQueue, block)
             }
             AudioObjectRemovePropertyListenerBlock(
-                volumeDeviceID, &Self.muteAddress, .main, block
+                volumeDeviceID, &Self.muteAddress, audioQueue, block
             )
         }
 
@@ -141,12 +196,12 @@ final class AudioOutputManager {
         for element in Self.listenerElements {
             var address = Self.scalarAddress(element: element)
             if AudioObjectHasProperty(volumeDeviceID, &address) {
-                AudioObjectAddPropertyListenerBlock(volumeDeviceID, &address, .main, block)
+                AudioObjectAddPropertyListenerBlock(volumeDeviceID, &address, audioQueue, block)
             }
         }
         if AudioObjectHasProperty(volumeDeviceID, &Self.muteAddress) {
             AudioObjectAddPropertyListenerBlock(
-                volumeDeviceID, &Self.muteAddress, .main, block
+                volumeDeviceID, &Self.muteAddress, audioQueue, block
             )
         }
     }

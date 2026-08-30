@@ -103,6 +103,10 @@ final class AudioAppMonitor {
         guard !isObserving else { return }
         isObserving = true
 
+        // Listeners fire on a private queue (not .main): CoreAudio bursts a
+        // dozen notifications for a single audio start, and fielding them on
+        // the main thread froze the UI. The block just schedules one
+        // coalesced pass on the audio queue.
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             self?.scheduleActivityChange()
         }
@@ -111,13 +115,13 @@ final class AudioAppMonitor {
         if #available(macOS 14.4, *) {
             var address = Self.address(Self.processObjectListSelector)
             AudioObjectAddPropertyListenerBlock(
-                AudioObjectID(kAudioObjectSystemObject), &address, .main, block
+                AudioObjectID(kAudioObjectSystemObject), &address, audioQueue, block
             )
         }
 
         var deviceList = Self.address(kAudioHardwarePropertyDevices)
         AudioObjectAddPropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject), &deviceList, .main, block
+            AudioObjectID(kAudioObjectSystemObject), &deviceList, audioQueue, block
         )
 
         attachPerObjectListeners()
@@ -146,12 +150,12 @@ final class AudioAppMonitor {
         if #available(macOS 14.4, *) {
             var address = Self.address(Self.processObjectListSelector)
             AudioObjectRemovePropertyListenerBlock(
-                AudioObjectID(kAudioObjectSystemObject), &address, .main, block
+                AudioObjectID(kAudioObjectSystemObject), &address, audioQueue, block
             )
         }
         var deviceList = Self.address(kAudioHardwarePropertyDevices)
         AudioObjectRemovePropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject), &deviceList, .main, block
+            AudioObjectID(kAudioObjectSystemObject), &deviceList, audioQueue, block
         )
 
         detachPerObjectListeners()
@@ -170,14 +174,14 @@ final class AudioAppMonitor {
             observedProcessObjects = Self.audioProcessObjects()
             var running = Self.address(Self.processIsRunningOutputSelector)
             for object in observedProcessObjects {
-                AudioObjectAddPropertyListenerBlock(object, &running, .main, block)
+                AudioObjectAddPropertyListenerBlock(object, &running, audioQueue, block)
             }
         }
 
         observedDevices = Self.outputDeviceObjects()
         var isRunning = Self.address(kAudioDevicePropertyDeviceIsRunningSomewhere)
         for device in observedDevices {
-            AudioObjectAddPropertyListenerBlock(device, &isRunning, .main, block)
+            AudioObjectAddPropertyListenerBlock(device, &isRunning, audioQueue, block)
         }
     }
 
@@ -187,14 +191,14 @@ final class AudioAppMonitor {
         if #available(macOS 14.4, *) {
             var running = Self.address(Self.processIsRunningOutputSelector)
             for object in observedProcessObjects {
-                AudioObjectRemovePropertyListenerBlock(object, &running, .main, block)
+                AudioObjectRemovePropertyListenerBlock(object, &running, audioQueue, block)
             }
         }
         observedProcessObjects = []
 
         var isRunning = Self.address(kAudioDevicePropertyDeviceIsRunningSomewhere)
         for device in observedDevices {
-            AudioObjectRemovePropertyListenerBlock(device, &isRunning, .main, block)
+            AudioObjectRemovePropertyListenerBlock(device, &isRunning, audioQueue, block)
         }
         observedDevices = []
     }
@@ -209,39 +213,45 @@ final class AudioAppMonitor {
     /// second is below the threshold of feeling delayed and collapses the
     /// burst into one update.
     private func scheduleActivityChange() {
+        // Coalesce on the audio queue: the listener block already fires there,
+        // so this just debounces the burst into one pass without touching main.
         pendingChange?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.pendingChange = nil
             self?.handleActivityChange()
         }
         pendingChange = work
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.1, execute: work)
+        audioQueue.asyncAfter(deadline: .now() + 0.1, execute: work)
     }
 
     private var pendingChange: DispatchWorkItem?
     private let audioQueue = DispatchQueue(label: "com.notch.audio-monitor", qos: .utility)
 
+    /// Runs on the audio queue — the listeners fire there, and the debounced
+    /// work item is scheduled there, so this never touches the main thread for
+    /// CoreAudio work. Only the final state write hops to main.
     private func handleActivityChange() {
-        audioQueue.async { [weak self] in
+        guard let self else { return }
+        // Already on audioQueue (called from the debounced work item which runs
+        // here). attach/detach are safe on this queue since the listeners are
+        // registered to fire here too — no cross-thread CoreAudio deadlock.
+        self.attachPerObjectListeners()
+
+        let playing: Bool
+        if #available(macOS 14.4, *), !self.observedProcessObjects.isEmpty {
+            playing = self.observedProcessObjects.contains { Self.isRunningOutput($0) }
+        } else {
+            playing = self.observedDevices.contains { Self.deviceIsRunningSomewhere($0) }
+        }
+        let apps = self.readAppsOnAudioQueue()
+
+        DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.attachPerObjectListeners()
-
-            let playing: Bool
-            if #available(macOS 14.4, *), !self.observedProcessObjects.isEmpty {
-                playing = self.observedProcessObjects.contains { Self.isRunningOutput($0) }
-            } else {
-                playing = self.observedDevices.contains { Self.deviceIsRunningSomewhere($0) }
+            self.apps = apps
+            if self.isAnyAudioPlaying != playing {
+                self.isAnyAudioPlaying = playing
             }
-            let apps = self.readAppsOnAudioQueue()
-
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.apps = apps
-                if self.isAnyAudioPlaying != playing {
-                    self.isAnyAudioPlaying = playing
-                }
-                self.onAudioActivityChange?()
-            }
+            self.onAudioActivityChange?()
         }
     }
 
