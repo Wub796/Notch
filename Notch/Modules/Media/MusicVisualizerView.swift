@@ -74,28 +74,32 @@ struct MusicVisualizerView: View {
 
     /// Measured: the band's own real audio energy, scaled by the actual output level.
     private func meteredHeight(_ index: Int) -> CGFloat {
+        guard isPlaying else { return Self.barWidth }
         guard let bands, bands.indices.contains(index) else { return Self.barWidth }
         let volume = CGFloat(min(max(level, 0), 1))
         let energy = CGFloat(min(max(bands[index], 0), 1))
-        let effectiveEnergy = min(energy * 1.35, 1.0)
+        guard energy > 0.005 else { return Self.barWidth }
+
+        let effectiveEnergy = min(energy * 1.6, 1.0)
         let effectiveVolume = volume > 0.01 ? max(volume, 0.35) : 0
         let range = Self.maxHeight - Self.barWidth
         let dynamicHeight = Self.barWidth + range * effectiveEnergy * effectiveVolume
         return min(max(dynamicHeight, Self.barWidth), Self.maxHeight)
     }
 
-    /// Output-driven fallback: directly follows the actual system volume level of the Mac.
+    /// Output-driven fallback: directly follows the actual system volume level of the Mac with dynamic wave motion when playing.
     private func height(at elapsed: TimeInterval, index: Int) -> CGFloat {
+        guard isPlaying else { return Self.barWidth }
         let clamped = CGFloat(min(max(level, 0), 1))
-        guard isPlaying, clamped > 0.001 else { return Self.barWidth }
+        guard clamped > 0.001 else { return Self.barWidth }
 
-        let weights: [CGFloat] = [0.75, 1.0, 0.85]
+        let weights: [CGFloat] = [0.8, 1.0, 0.85]
         let weight = weights[min(index, weights.count - 1)]
-        let phase = (elapsed * 2.8 + Double(index) * 0.5)
-        let pulse = CGFloat(sin(phase) * 0.16 + 0.84)
+        let phase = (elapsed * 3.5 + Double(index) * 0.7)
+        let oscillation = (sin(phase) + 1.0) / 2.0 // 0.0 ... 1.0
 
         let range = Self.maxHeight - Self.barWidth
-        let target = Self.barWidth + range * clamped * weight * pulse
+        let target = Self.barWidth + range * clamped * weight * CGFloat(0.2 + 0.8 * oscillation)
         return min(max(target, Self.barWidth), Self.maxHeight)
     }
 }

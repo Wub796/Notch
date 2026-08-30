@@ -202,12 +202,11 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
 
         guard count > 0 else { return }
         let scale = 1 / Float(count)
-        // RMS, then a gentle curve: linear amplitude reads as almost nothing
-        // at normal listening levels.
+        // RMS with heightened dynamic scaling for punchy visual response
         let measured = [
-            Self.shape(sqrt(lowSum * scale) * 3.4),
-            Self.shape(sqrt(midSum * scale) * 5.0),
-            Self.shape(sqrt(highSum * scale) * 6.5),
+            Self.shape(sqrt(lowSum * scale) * 4.8),
+            Self.shape(sqrt(midSum * scale) * 6.5),
+            Self.shape(sqrt(highSum * scale) * 8.2),
         ]
 
         DispatchQueue.main.async { [weak self] in
@@ -215,13 +214,15 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
-    /// Fast attack, slow release, capped at 30 updates a second so the view
-    /// is not invalidated once per audio buffer.
+    /// Fast attack, quick release on pause/silence, capped at 30 updates/sec.
     private func publish(_ measured: [Float]) {
         for index in envelope.indices {
             let target = measured[index]
-            let coefficient: Float = target > envelope[index] ? 0.55 : 0.16
+            let coefficient: Float = target > envelope[index] ? 0.85 : 0.40
             envelope[index] += coefficient * (target - envelope[index])
+            if envelope[index] < 0.01 {
+                envelope[index] = 0
+            }
         }
 
         if !isLive { isLive = true }

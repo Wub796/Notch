@@ -30,11 +30,12 @@ struct NotchLayoutView: View {
     private static let moduleTransition = AnyTransition.opacity
 
     var body: some View {
-        VStack(alignment: .center, spacing: 6) {
+        VStack(alignment: .center, spacing: 12) {
             headerStrip
 
             if state.mode == .expanded {
                 moduleContent
+                    .padding(.top, 2)
                     .frame(
                         width: state.moduleContentSize.width,
                         height: state.moduleContentSize.height,

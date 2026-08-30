@@ -44,7 +44,7 @@ struct DevicesScreenView: View {
     private var spotify: SpotifyLibrary { state.spotify }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             titleRow
             controlRow
 

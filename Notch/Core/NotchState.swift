@@ -79,7 +79,7 @@ final class NotchState {
             + NotchSizing.openContentInset) * 2
         return CGSize(
             width: max(0, open.width - horizontal),
-            height: max(0, open.height - topBarHeight - 6 - NotchSizing.openContentInset)
+            height: max(0, open.height - topBarHeight - 14 - NotchSizing.openContentInset)
         )
     }
 
@@ -105,7 +105,7 @@ final class NotchState {
 
     /// Height of the icon strip that flanks the hardware notch.
     var topBarHeight: CGFloat {
-        max(adjustedNotchSize.height + 8, 44)
+        max(adjustedNotchSize.height + 12, 48)
     }
 
     let settings = NotchSettings.shared
