@@ -30,7 +30,8 @@ struct TelemetryView: View {
         if telemetry.hasBattery {
             parts.append("Battery \(percentString(telemetry.batteryPercent))")
         }
-        return parts.joined(separator: " · ")
+        // Wide separators keep the three readings readable as separate items.
+        return parts.joined(separator: "   ·   ")
     }
 
     private var gauges: some View {

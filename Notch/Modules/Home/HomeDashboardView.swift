@@ -1,6 +1,23 @@
 import AppKit
 import SwiftUI
 
+/// The home dashboard's fixed column heights, shared with NotchState so the
+/// slab can size itself to the content without waiting on a runtime
+/// measurement (which never reliably landed, leaving a black band under the
+/// dashboard). Keep these in step with the layout below.
+enum HomeDashboardMetrics {
+    /// The artwork column alone: artwork plus the row spacing.
+    static let artworkColumnHeight: CGFloat = 88
+    /// A row of other-audio chips beneath the artwork, spacing included.
+    static let otherAudioChipsHeight: CGFloat = 26
+
+    static func naturalHeight(hasOtherAudioChips: Bool) -> CGFloat {
+        hasOtherAudioChips
+            ? artworkColumnHeight + otherAudioChipsHeight
+            : artworkColumnHeight
+    }
+}
+
 /// The home dashboard, laid out to match the Sapphire reference: artwork and
 /// player on the left, weather in the middle with its metric column, calendar
 /// on the right over a single "what's next" line.
@@ -23,7 +40,11 @@ struct HomeDashboardView: View {
             calendarSection
         }
         .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        // No vertical filler. The module is height-fitted to its content, and
+        // a flexible maxHeight frame here would let the fit measure the full
+        // budget instead of the columns' real height — the black band under
+        // the dashboard this fitting exists to remove.
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Music
@@ -56,66 +77,125 @@ struct HomeDashboardView: View {
         state.media.isPlaying || activeAudioApp != nil
     }
 
+    /// Apps currently putting audio out besides the one the hero card is
+    /// already showing — the music source when a track is loaded, otherwise
+    /// the first playing app. These are the YouTube / Chrome / Safari-style
+    /// sources that used to be invisible whenever music had the spotlight.
+    /// Single source of truth lives on NotchState, which also sizes the slab
+    /// to this row — keeping the two in step is what that property is for.
+    private var otherAudioApps: [AudioAppMonitor.App] {
+        state.otherAudioApps
+    }
+
     private var musicSection: some View {
-        HStack(alignment: .center, spacing: 16) {
-            artwork
-                .contentShape(Rectangle())
-                .onTapGesture { state.select(.media) }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 16) {
+                artwork
+                    .contentShape(Rectangle())
+                    .onTapGesture { state.select(.media) }
 
-            VStack(alignment: .leading, spacing: 2) {
-                // Uppercase and letterspaced, as in the reference: the title is
-                // the loudest thing on the panel.
-                Text(displayTitle.uppercased())
-                    .font(.system(size: 18, weight: .heavy, design: .rounded))
-                    .tracking(2.0)
-                    .foregroundStyle(NotchTheme.inkPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: 220, alignment: .leading)
-
-                HStack(spacing: 5) {
-                    Text(displayArtist)
-                        .font(.system(size: 13.5, weight: .medium, design: .rounded))
-                        .foregroundStyle(NotchTheme.inkSecondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    // Uppercase and letterspaced, as in the reference: the title is
+                    // the loudest thing on the panel.
+                    Text(displayTitle.uppercased())
+                        .font(.system(size: 18, weight: .heavy, design: .rounded))
+                        .tracking(2.0)
+                        .foregroundStyle(NotchTheme.inkPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: 220, alignment: .leading)
 
-                    if isAudioActive {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.green)
-                            .symbolEffect(.variableColor.iterative, options: .repeating)
-                    }
-                }
+                    HStack(spacing: 5) {
+                        Text(displayArtist)
+                            .font(.system(size: 13.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 220, alignment: .leading)
 
-                // Transport sits centred under the text block rather than
-                // flush left, which is what makes the column read as one unit.
-                HStack(spacing: 18) {
-                    transportButton("backward.fill", size: 15, label: "Previous track") {
-                        state.media.previousTrack()
-                    }
-                    transportButton(
-                        state.media.isPlaying ? "pause.fill" : "play.fill",
-                        size: 18,
-                        label: state.media.isPlaying ? "Pause" : "Play"
-                    ) {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
-                            state.media.togglePlayPause()
+                        if isAudioActive {
+                            Image(systemName: "waveform")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.green)
+                                .symbolEffect(.variableColor.iterative, options: .repeating)
                         }
                     }
-                    transportButton("forward.fill", size: 15, label: "Next track") {
-                        state.media.nextTrack()
+
+                    // Transport sits centred under the text block rather than
+                    // flush left, which is what makes the column read as one unit.
+                    HStack(spacing: 18) {
+                        transportButton("backward.fill", size: 15, label: "Previous track") {
+                            state.media.previousTrack()
+                        }
+                        transportButton(
+                            state.media.isPlaying ? "pause.fill" : "play.fill",
+                            size: 18,
+                            label: state.media.isPlaying ? "Pause" : "Play"
+                        ) {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
+                                state.media.togglePlayPause()
+                            }
+                        }
+                        transportButton("forward.fill", size: 15, label: "Next track") {
+                            state.media.nextTrack()
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 4)
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 4)
+                .fixedSize(horizontal: true, vertical: false)
+                .contentShape(Rectangle())
+                .onTapGesture { state.select(.media) }
+                .help("Open the full player")
             }
-            .fixedSize(horizontal: true, vertical: false)
-            .contentShape(Rectangle())
-            .onTapGesture { state.select(.media) }
-            .help("Open the full player")
+
+            if !otherAudioApps.isEmpty {
+                otherAudioAppsRow
+            }
         }
+    }
+
+    /// Compact chips for every other app making sound right now. Each chip
+    /// splits the row evenly and truncates its label, so any number of
+    /// sources fit without ever overflowing the section; clicking one brings
+    /// that app to the front.
+    private var otherAudioAppsRow: some View {
+        HStack(spacing: 6) {
+            ForEach(otherAudioApps) { app in
+                Button {
+                    app.activate()
+                } label: {
+                    HStack(spacing: 5) {
+                        Group {
+                            if let icon = app.icon {
+                                Image(nsImage: icon)
+                                    .resizable()
+                                    .frame(width: 14, height: 14)
+                            } else {
+                                Image(systemName: "waveform")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(NotchTheme.inkMuted)
+                            }
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+
+                        Text(app.name)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(.white.opacity(0.08)))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(PressableButtonStyle())
+                .frame(maxWidth: .infinity)
+                .help("Bring \(app.name) to front")
+            }
+        }
+        .frame(maxWidth: 320, alignment: .leading)
     }
 
     private var artwork: some View {

@@ -4,6 +4,12 @@ import SwiftUI
 /// pin to keep across relaunches.
 struct ClipboardView: View {
     let clipboard: ClipboardManager
+    let state: NotchState
+
+    init(state: NotchState) {
+        self.state = state
+        clipboard = state.clipboard
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NotchTheme.Space.m) {
@@ -13,6 +19,7 @@ struct ClipboardView: View {
                         withAnimation(NotchAnimations.content) {
                             clipboard.clearUnpinned()
                         }
+                        state.showToast("Cleared unpinned items", symbol: "trash")
                     }
                 }
             }
@@ -50,7 +57,7 @@ struct ClipboardView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: NotchTheme.Space.m) {
                     ForEach(clipboard.entries) { entry in
-                        ClipboardCard(entry: entry, clipboard: clipboard)
+                        ClipboardCard(entry: entry, clipboard: clipboard, state: state)
                     }
                 }
                 .padding(.horizontal, 2)
@@ -64,9 +71,9 @@ struct ClipboardView: View {
 private struct ClipboardCard: View {
     let entry: ClipboardManager.Entry
     let clipboard: ClipboardManager
+    let state: NotchState
 
     @State private var hovering = false
-    @State private var justCopied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: NotchTheme.Space.xs) {
@@ -84,10 +91,10 @@ private struct ClipboardCard: View {
 
                 Spacer(minLength: 0)
 
-                Image(systemName: justCopied ? "checkmark" : "doc.on.doc")
+                Image(systemName: "doc.on.doc")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(justCopied ? NotchTheme.battery : NotchTheme.inkMuted)
-                    .opacity(justCopied || hovering ? 1 : 0)
+                    .foregroundStyle(NotchTheme.inkMuted)
+                    .opacity(hovering ? 1 : 0)
             }
 
             Text(entry.text.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -108,17 +115,21 @@ private struct ClipboardCard: View {
         }
         .onTapGesture {
             clipboard.copyBack(entry)
-            withAnimation(NotchAnimations.content) { justCopied = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                withAnimation(NotchAnimations.content) { justCopied = false }
-            }
+            state.showToast("Copied", symbol: "doc.on.doc")
         }
         .contextMenu {
-            Button("Copy") { clipboard.copyBack(entry) }
-            Button(entry.isPinned ? "Unpin" : "Pin") { clipboard.togglePin(entry) }
+            Button("Copy") {
+                clipboard.copyBack(entry)
+                state.showToast("Copied", symbol: "doc.on.doc")
+            }
+            Button(entry.isPinned ? "Unpin" : "Pin") {
+                clipboard.togglePin(entry)
+                state.showToast(entry.isPinned ? "Unpinned" : "Pinned", symbol: "pin")
+            }
             Divider()
             Button("Remove") {
                 withAnimation(NotchAnimations.content) { clipboard.remove(entry) }
+                state.showToast("Removed from clipboard", symbol: "trash")
             }
         }
         .help(entry.text)

@@ -30,19 +30,27 @@ struct NotchLayoutView: View {
     private static let moduleTransition = AnyTransition.opacity
 
     var body: some View {
-        VStack(alignment: .center, spacing: 6) {
-            headerStrip
+        ZStack(alignment: .bottom) {
+            VStack(alignment: .center, spacing: 6) {
+                headerStrip
 
-            if state.mode == .expanded {
-                moduleContent
-                    .frame(
-                        width: state.moduleContentSize.width,
-                        height: state.moduleContentSize.height,
-                        alignment: .center
-                    )
-                    .transition(Self.moduleTransition)
-                    .allowsHitTesting(true)
-                    .zIndex(1)
+                if state.mode == .expanded {
+                    sizedModule
+                        .transition(Self.moduleTransition)
+                        .allowsHitTesting(true)
+                        .zIndex(1)
+                }
+            }
+
+            // Action confirmations float over the open panel's bottom edge;
+            // an overlay so they never participate in the fitted-height
+            // measurement, and hit-testing off so they can't eat a click.
+            if state.mode == .expanded, let toast = state.toast {
+                NotchToastView(toast: toast)
+                    .padding(.bottom, 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .allowsHitTesting(false)
+                    .zIndex(20)
             }
         }
     }
@@ -77,6 +85,50 @@ struct NotchLayoutView: View {
     }
 
     // MARK: - Module
+
+    /// The module, sized to the tab's budget — except for the tabs that opt
+    /// into height fitting, where the width stays on the budget but the
+    /// height is measured: `fixedSize(horizontal: false, vertical: true)`
+    /// passes the width proposal through while asking the content for its
+    /// natural height, and the GeometryReader in the background reports what
+    /// it actually needed. That lands in `NotchState.measuredModuleHeight`,
+    /// which is what `expandedSize` hugs, so the slab shrinks to the content
+    /// instead of carrying a black band beneath it.
+    @ViewBuilder
+    private var sizedModule: some View {
+        if NotchSizing.fitsHeight(for: state.tab) {
+            moduleContent
+                .frame(width: state.moduleContentSize.width)
+                .fixedSize(horizontal: false, vertical: true)
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: ModuleNaturalHeightKey.self,
+                            value: proxy.size.height
+                        )
+                    }
+                }
+                .onPreferenceChange(ModuleNaturalHeightKey.self) { height in
+                    // Deferred off the layout pass: recording the height while
+                    // SwiftUI is mid-update can be dropped, which silently
+                    // leaves the slab on its full budget — the black band
+                    // under the module this mechanism exists to remove. The
+                    // tab is captured so a switch before the block runs can't
+                    // file the height under the wrong screen.
+                    let tab = state.tab
+                    DispatchQueue.main.async {
+                        state.updateMeasuredModuleHeight(height, for: tab)
+                    }
+                }
+        } else {
+            moduleContent
+                .frame(
+                    width: state.moduleContentSize.width,
+                    height: state.moduleContentSize.height,
+                    alignment: .center
+                )
+        }
+    }
 
     @ViewBuilder
     private var moduleContent: some View {
@@ -120,17 +172,56 @@ struct NotchLayoutView: View {
         case .calendar:
             CalendarDetailView(state: state)
         case .shelf:
-            ShelfView(shelf: state.shelf)
+            ShelfView(state: state)
         case .clipboard:
-            ClipboardView(clipboard: state.clipboard)
+            ClipboardView(state: state)
         case .tools:
             ToolsView(state: state)
         case .notes:
-            NotesView(notes: state.notes)
+            NotesView(state: state)
         case .telemetry:
             TelemetryView(telemetry: state.telemetry)
         case .audio:
             DevicesScreenView(state: state, namespace: namespace)
         }
+    }
+}
+
+/// Carries the open module's natural height out of the size pass. Defaults to
+/// zero; NotchState ignores non-positive values, so the slab is unaffected
+/// until a real measurement arrives.
+private struct ModuleNaturalHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+/// The confirmation capsule for a user action: a glyph and a short label,
+/// glassy on black so it reads over any module, never blocking clicks.
+private struct NotchToastView: View {
+    let toast: NotchState.NotchToast
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: toast.symbol)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(NotchTheme.battery)
+            Text(toast.message)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 7)
+        .background {
+            Capsule()
+                .fill(.black.opacity(0.88))
+                .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
+        }
+        .shadow(color: .black.opacity(0.45), radius: 10, y: 4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(toast.message)
     }
 }

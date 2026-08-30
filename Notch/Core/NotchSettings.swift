@@ -301,9 +301,23 @@ final class NotchSettings {
     /// Welcome window has been shown and dismissed.
     var hasCompletedOnboarding = false { didSet { save(hasCompletedOnboarding, "hasCompletedOnboarding") } }
 
+    /// Start at login. `SMAppService` is the native path — it shows up in
+    /// System Settings → Login Items — but it throws for unsigned builds and
+    /// apps not running from /Applications, so a LaunchAgent fallback keeps
+    /// the feature working from development builds too.
     var launchAtLogin = false { didSet { applyLaunchAtLogin() } }
 
+    /// Why the last enable/disable attempt failed — shown under the toggle
+    /// instead of the switch silently flipping back.
+    private(set) var launchAtLoginError: String?
+
     private var isApplyingLoginItem = false
+    private static let launchAgentLabel = "com.notchapp.Notch.launchAtLogin"
+    private static let launchAgentURL = FileManager.default
+        .homeDirectoryForCurrentUser
+        .appendingPathComponent(
+            "Library/LaunchAgents/com.notchapp.Notch.launchAtLogin.plist"
+        )
 
     private init() {
         let defaults = UserDefaults.standard
@@ -450,6 +464,7 @@ final class NotchSettings {
         // Login-item state lives in the system, not in defaults.
         isApplyingLoginItem = true
         launchAtLogin = SMAppService.mainApp.status == .enabled
+            || Self.launchAgentIsBootstrapped()
         isApplyingLoginItem = false
     }
 
@@ -461,19 +476,114 @@ final class NotchSettings {
         guard !isApplyingLoginItem else { return }
         isApplyingLoginItem = true
         defer { isApplyingLoginItem = false }
+        launchAtLoginError = nil
 
-        let service = SMAppService.mainApp
-        do {
-            if launchAtLogin {
-                if service.status != .enabled {
-                    try service.register()
+        if launchAtLogin {
+            // Native first: `register()` throws when the app isn't signed or
+            // isn't running from /Applications — typical for dev builds. On
+            // failure, fall through to the LaunchAgent below.
+            do {
+                if SMAppService.mainApp.status != .enabled {
+                    try SMAppService.mainApp.register()
                 }
-            } else if service.status == .enabled {
-                try service.unregister()
+                if SMAppService.mainApp.status == .enabled {
+                    // Drop any stale LaunchAgent from an earlier dev build so
+                    // the app can't launch twice at login.
+                    Self.removeLaunchAgent()
+                    return
+                }
+            } catch {
+                // Fall through to the LaunchAgent.
             }
+
+            do {
+                try Self.installLaunchAgent()
+            } catch {
+                launchAtLogin = false
+                launchAtLoginError = "macOS refused to add Notch to your login "
+                    + "items — \(error.localizedDescription)"
+            }
+        } else {
+            if SMAppService.mainApp.status == .enabled {
+                try? SMAppService.mainApp.unregister()
+            }
+            Self.removeLaunchAgent()
+        }
+    }
+
+    // MARK: - LaunchAgent fallback
+
+    /// Writes a LaunchAgent that runs the app at login and loads it with
+    /// launchctl. Unlike `SMAppService`, this works from any location and
+    /// without code signing — it is what keeps launch-at-login usable from
+    /// development builds.
+    private static func installLaunchAgent() throws {
+        guard let executable = Bundle.main.executableURL?.path else {
+            throw LaunchAtLoginError.missingExecutable
+        }
+
+        let directory = launchAgentURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true
+        )
+
+        let plist: [String: Any] = [
+            "Label": launchAgentLabel,
+            "ProgramArguments": [executable],
+            "RunAtLoad": true,
+        ]
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: plist, format: .xml, options: 0
+        )
+        try data.write(to: launchAgentURL, options: .atomic)
+
+        // Re-register cleanly even if an earlier run left it loaded.
+        bootoutLaunchAgent()
+        guard launchctl(["bootstrap", "gui/\(getuid())", launchAgentURL.path]) == 0 else {
+            throw LaunchAtLoginError.launchctlFailed
+        }
+    }
+
+    private static func removeLaunchAgent() {
+        bootoutLaunchAgent()
+        try? FileManager.default.removeItem(at: launchAgentURL)
+    }
+
+    private static func bootoutLaunchAgent() {
+        launchctl(["bootout", "gui/\(getuid())/\(launchAgentLabel)"])
+    }
+
+    private static func launchAgentIsBootstrapped() -> Bool {
+        launchctl(["print", "gui/\(getuid())/\(launchAgentLabel)"]) == 0
+    }
+
+    @discardableResult
+    private static func launchctl(_ arguments: [String]) -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
         } catch {
-            // Registration failed (e.g. unsigned dev build) — reflect reality.
-            launchAtLogin = service.status == .enabled
+            return -1
+        }
+        return process.terminationStatus
+    }
+
+    private enum LaunchAtLoginError: LocalizedError {
+        case missingExecutable
+        case launchctlFailed
+
+        var errorDescription: String? {
+            switch self {
+            case .missingExecutable:
+                "the app's executable couldn't be located"
+            case .launchctlFailed:
+                "launchctl rejected the launch agent"
+            }
         }
     }
 }

@@ -140,15 +140,23 @@ struct ScreenHeader<Trailing: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .lastTextBaseline, spacing: NotchTheme.Space.m) {
-            VStack(alignment: .leading, spacing: 1) {
+        // Trailing controls are centered against the whole title+subtitle
+        // block. Baseline alignment pinned them to the subtitle's baseline,
+        // which made a 26pt action button hang low beside a big screen
+        // title instead of standing opposite it.
+        HStack(alignment: .center, spacing: NotchTheme.Space.m) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.notchDisplay)
+                    // Letterspaced so the screen title reads as a header
+                    // rather than a word sitting on top of its subtitle.
+                    .tracking(1.5)
                     .foregroundStyle(NotchTheme.inkPrimary)
 
                 if let subtitle {
                     Text(subtitle)
                         .font(.notchCaption)
+                        .tracking(0.4)
                         .foregroundStyle(NotchTheme.inkSecondary)
                         .lineLimit(1)
                 }

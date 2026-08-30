@@ -15,7 +15,7 @@ enum NotchSizing {
     static let cornerRadiusInsets: (
         opened: (top: CGFloat, bottom: CGFloat),
         closed: (top: CGFloat, bottom: CGFloat)
-    ) = (opened: (top: 19, bottom: 24), closed: (top: 6, bottom: 14))
+    ) = (opened: (top: 19, bottom: 24), closed: (top: 0, bottom: 14))
 
     /// Transparent margin the panel window keeps around the slab so the drop
     /// shadow is never clipped by the window bounds.
@@ -71,11 +71,39 @@ enum NotchSizing {
         )
     }
 
+    /// Whether the open module's height should hug its content instead of
+    /// the fixed per-tab budget.
+    ///
+    /// The tabs that opt in are the ones whose content is a fixed column
+    /// (or a horizontal scroll row): home, weather, calendar, shelf and
+    /// clipboard all render a natural height well below their budget, which
+    /// is the black band under the module. The rest are vertical ScrollViews
+    /// or charts written to fill the budget, so pinning their height to the
+    /// budget is correct and fitting them would just clamp to it anyway.
+    static func fitsHeight(for tab: NotchTab) -> Bool {
+        switch tab {
+        case .home, .weather, .calendar, .shelf, .clipboard: true
+        default: false
+        }
+    }
+
+    /// Floor for a fitted module height: below this the panel starts to look
+    /// like a sliver rather than a notch, so the slab stays at least this
+    /// tall even when the content is a single short row.
+    static let minimumFittedModuleHeight: CGFloat = 90
+
+    /// Extra width every dead zone draws beyond the measured notch, split
+    /// evenly between the two sides. The notch measurement can run a couple
+    /// of points short of the hardware cutout; this margin keeps everything
+    /// laid out beside the notch — header flanks, the collapsed wings, the
+    /// hover probe — clear of the real notch even then.
+    static let notchCoverageBleed: CGFloat = 8
+
     /// Each screen's natural size at the default width.
     private static func baseSize(for tab: NotchTab) -> CGSize {
         switch tab {
         case .home: CGSize(width: 860, height: 205)
-        case .media: CGSize(width: 580, height: 280)
+        case .media: CGSize(width: 580, height: 330)
         case .weather: CGSize(width: 600, height: 320)
         case .calendar: CGSize(width: 620, height: 350)
         case .shelf: CGSize(width: 640, height: 240)

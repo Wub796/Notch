@@ -24,22 +24,22 @@ struct ExpandedNotchView: View {
     private var header: some View {
         switch state.tab {
         case .media:
-            DetailHeaderView(state: state) {
-                sourcePill
+            DetailHeaderView(state: state) { width in
+                sourcePill(maxWidth: width)
             }
         case .weather:
-            DetailHeaderView(state: state) {
-                weatherHeaderTrailing
+            DetailHeaderView(state: state) { width in
+                weatherHeaderTrailing(maxWidth: width)
             }
         case .calendar:
-            DetailHeaderView(state: state) {
-                calendarHeaderTrailing
+            DetailHeaderView(state: state) { width in
+                calendarHeaderTrailing(maxWidth: width)
             }
         case .audio:
             // The Devices screen draws its own title and section switch, so
             // the strip carries only the way back — the module rail here would
             // have been a second, competing set of destinations.
-            DetailHeaderView(state: state) {
+            DetailHeaderView(state: state) { _ in
                 EmptyView()
             }
         default:
@@ -50,8 +50,10 @@ struct ExpandedNotchView: View {
     // MARK: - Detail headers
 
     /// The media header's right-hand pill: source app icon + name, standing in
-    /// for the reference's play-count pill.
-    private var sourcePill: some View {
+    /// for the reference's play-count pill. The label truncates rather than
+    /// overflowing, so the pill always stays inside its flank and never under
+    /// the hardware notch.
+    private func sourcePill(maxWidth: CGFloat) -> some View {
         HStack(spacing: 6) {
             if let icon = state.media.sourceAppIcon {
                 Image(nsImage: icon)
@@ -66,15 +68,18 @@ struct ExpandedNotchView: View {
             Text(state.media.sourceAppName ?? "Not Playing")
                 .font(.notchFootnote.weight(.semibold))
                 .foregroundStyle(NotchTheme.inkPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(Capsule().fill(.white.opacity(0.12)))
+        .frame(maxWidth: maxWidth, alignment: .trailing)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Source: \(state.media.sourceAppName ?? "none")")
     }
 
-    private var weatherHeaderTrailing: some View {
+    private func weatherHeaderTrailing(maxWidth: CGFloat) -> some View {
         HStack(spacing: 8) {
             forecastChip("Hourly", isActive: !state.showsDailyForecast) {
                 state.showsDailyForecast = false
@@ -87,6 +92,7 @@ struct ExpandedNotchView: View {
                 state.weather.refresh(force: true)
             }
         }
+        .frame(maxWidth: maxWidth, alignment: .trailing)
     }
 
     /// Flat chips rather than a segmented picker: the picker's chrome reads as
@@ -100,6 +106,7 @@ struct ExpandedNotchView: View {
             Text(title)
                 .font(.notchEyebrow)
                 .tracking(0.6)
+                .lineLimit(1)
                 .foregroundStyle(isActive ? NotchTheme.inkPrimary : NotchTheme.inkMuted)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 3)
@@ -112,8 +119,8 @@ struct ExpandedNotchView: View {
 
     /// The reference separates the view toggle from the day controls with thin
     /// rules, and spells "Today" out rather than using a pill.
-    private var calendarHeaderTrailing: some View {
-        HStack(spacing: 10) {
+    private func calendarHeaderTrailing(maxWidth: CGFloat) -> some View {
+        HStack(spacing: 8) {
             NotchIconButton(
                 systemImage: state.calendar.isMonthView ? "calendar" : "square.grid.2x2",
                 isActive: state.calendar.isMonthView,
@@ -136,6 +143,7 @@ struct ExpandedNotchView: View {
                 Text("Today")
                     .font(.notchBody.weight(.bold))
                     .foregroundStyle(NotchTheme.inkPrimary)
+                    .lineLimit(1)
                     .contentShape(Rectangle())
             }
             .buttonStyle(PressableButtonStyle())
@@ -147,6 +155,7 @@ struct ExpandedNotchView: View {
                 state.calendar.moveSelectedDay(by: state.calendar.isMonthView ? 7 : 1)
             }
         }
+        .frame(maxWidth: maxWidth, alignment: .trailing)
     }
 
     private var headerDivider: some View {

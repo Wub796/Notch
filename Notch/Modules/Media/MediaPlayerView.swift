@@ -16,13 +16,24 @@ struct MediaPlayerView: View {
 
 
     var body: some View {
-        // Budget: `NotchState.moduleContentSize`, about 498 x 250.
-        VStack(alignment: .leading, spacing: 8) {
+        // Budget: `NotchState.moduleContentSize`, about 518 x 268 at the
+        // default panel size. The sections are stacked with even air so the
+        // transport and the heart/shuffle row always clear the slab's
+        // rounded bottom edge — the module used to overflow its budget and
+        // clip the bottom row.
+        VStack(alignment: .leading, spacing: 10) {
             header
 
-            ThreeDLyricsView(lyrics: media.lyrics, accent: media.accent) { time in
-                media.seek(to: time + 0.05)
-            }
+            ThreeDLyricsView(
+                lyrics: media.lyrics,
+                accent: media.accent,
+                onSelect: { time in
+                    media.seek(to: time + 0.05)
+                },
+                emptyMessage: media.hasTrack
+                    ? "No lyrics found for this track"
+                    : "Lyrics appear here while music plays"
+            )
 
             progressRow
 
@@ -393,6 +404,10 @@ struct MediaPlayerView: View {
                 withAnimation(NotchAnimations.content) {
                     media.toggleFavorite()
                 }
+                state.showToast(
+                    media.isFavorite ? "Removed from favourites" : "Added to favourites",
+                    symbol: media.isFavorite ? "heart.slash" : "heart.fill"
+                )
             }
 
             transportIcon(
@@ -405,6 +420,10 @@ struct MediaPlayerView: View {
                 withAnimation(NotchAnimations.content) {
                     media.toggleShuffle()
                 }
+                state.showToast(
+                    media.isShuffling ? "Shuffle off" : "Shuffle on",
+                    symbol: "shuffle"
+                )
             }
         }
         .frame(maxWidth: .infinity)

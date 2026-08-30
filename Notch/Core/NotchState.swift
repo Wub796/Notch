@@ -68,7 +68,74 @@ final class NotchState {
         if tab == .media, mediaShowsFullLyrics {
             size.height += 110
         }
+        // Tabs whose content is a fixed column report their natural height
+        // so the slab hugs whatever is showing instead of carrying a black
+        // band under it. The measured height is clamped to the budget the
+        // tab already had — the panel may shrink to its content, never grow
+        // past today's size — and the width stays on the tuned per-tab value.
+        if NotchSizing.fitsHeight(for: tab) {
+            let header = topBarHeight + 6 + NotchSizing.openContentInset
+            let budget = max(size.height - header, NotchSizing.minimumFittedModuleHeight)
+            // Home's natural height is derived from its content rather than
+            // the runtime measurement: the artwork column plus the optional
+            // other-audio chips row. The preference-based measurement never
+            // reliably landed here, leaving the slab on its full budget —
+            // the black band under the dashboard this fitting exists to
+            // remove.
+            let natural: CGFloat
+            if tab == .home {
+                natural = HomeDashboardMetrics.naturalHeight(
+                    hasOtherAudioChips: !otherAudioApps.isEmpty
+                )
+            } else if let measured = measuredModuleHeight {
+                natural = measured
+            } else {
+                natural = budget
+            }
+            let clamped = min(max(natural, NotchSizing.minimumFittedModuleHeight), budget)
+            size.height = clamped + header
+        }
         return size
+    }
+
+    /// Apps currently putting audio out besides the one the dashboard's
+    /// music card shows — the row of chips beneath it. The slab sizes
+    /// itself to this and HomeDashboardView renders it, so there is one
+    /// source of truth rather than two copies that can drift.
+    var otherAudioApps: [AudioAppMonitor.App] {
+        let playing = audioApps.apps.filter(\.isPlaying)
+        guard !playing.isEmpty else { return [] }
+        let heroID = media.sourceAppBundleID ?? playing[0].id
+        return playing.filter { $0.id != heroID }
+    }
+
+    /// Natural module heights, remembered per tab once measured. Re-opening a
+    /// tab therefore lands directly on its fitted height instead of opening at
+    /// the fixed budget and then settling down to the measured height — which
+    /// is what made icon clicks animate in two steps.
+    private var measuredHeights: [NotchTab: CGFloat] = [:]
+
+    /// The open module's natural height for the current tab, reported by
+    /// NotchLayoutView's hidden size pass. nil until the module has laid out
+    /// once, so the slab falls back to the fixed per-tab budget before the
+    /// measurement lands.
+    var measuredModuleHeight: CGFloat? {
+        measuredHeights[tab]
+    }
+
+    /// Records the module's natural height from the layout pass. Rounded and
+    /// change-guarded so a sub-point wobble in text metrics can never ping-pong
+    /// the slab size; animated so the settle from the budget to the fitted
+    /// height eases instead of snapping. The tab is passed explicitly because
+    /// the measurement is deferred off the layout pass and the selection can
+    /// have moved on by the time it lands.
+    func updateMeasuredModuleHeight(_ height: CGFloat, for tab: NotchTab) {
+        guard height > 0 else { return }
+        let rounded = height.rounded()
+        guard abs((measuredHeights[tab] ?? 0) - rounded) >= 1 else { return }
+        withAnimation(NotchAnimations.content) {
+            measuredHeights[tab] = rounded
+        }
     }
 
     /// Room left for a module once the header and the slab's own insets are
@@ -89,6 +156,18 @@ final class NotchState {
         CGSize(
             width: max(notchSize.width + settings.notchWidthAdjustment, 40),
             height: max(notchSize.height + settings.notchHeightAdjustment, 20)
+        )
+    }
+
+    /// The notch size guaranteed to fully cover the real hardware cutout:
+    /// the measured size plus a coverage bleed. Everything laid out beside
+    /// the notch — the header flanks, the collapsed wings, the hover probe —
+    /// is sized against this, so a notch measured a point or two narrow can
+    /// never crop, cover, or hide what sits next to it.
+    var safeNotchSize: CGSize {
+        CGSize(
+            width: adjustedNotchSize.width + NotchSizing.notchCoverageBleed,
+            height: adjustedNotchSize.height
         )
     }
 
@@ -398,7 +477,7 @@ final class NotchState {
     }
 
     var collapsedSize: CGSize {
-        var size = adjustedNotchSize
+        var size = safeNotchSize
         size.width += activityWingWidth
         size.height += activityDropHeight
         return size
@@ -410,10 +489,10 @@ final class NotchState {
     var hoverProbeSize: CGSize {
         let slack = min(max(settings.hoverTolerance, 0), 24)
         return CGSize(
-            width: adjustedNotchSize.width + slack * 2,
+            width: safeNotchSize.width + slack * 2,
             // A draggable HUD hangs directly below the notch, so the probe
             // keeps off its bar while one is up.
-            height: adjustedNotchSize.height + (collapsedActivityIsInteractive ? 0 : slack)
+            height: safeNotchSize.height + (collapsedActivityIsInteractive ? 0 : slack)
         )
     }
 
@@ -526,6 +605,37 @@ final class NotchState {
         }
         settings.lastTab = newTab.rawValue
         onModeChange?(mode)
+    }
+
+    // MARK: - Action feedback
+
+    /// A brief in-panel confirmation for a user action ("Copied", "Pinned"…).
+    /// Shown as a small capsule at the bottom of the open panel and dismissed
+    /// automatically; firing another replaces it rather than stacking.
+    struct NotchToast {
+        let message: String
+        let symbol: String
+    }
+
+    private(set) var toast: NotchToast?
+    private var toastDismissWork: DispatchWorkItem?
+
+    /// Raises a confirmation toast for the action just performed. Small and
+    /// brief on purpose — it exists so a click that changed something unseen
+    /// (copied to the clipboard, cleared a list) visibly landed, not to shout
+    /// over the action itself.
+    func showToast(_ message: String, symbol: String) {
+        toastDismissWork?.cancel()
+        withAnimation(NotchAnimations.content) {
+            toast = NotchToast(message: message, symbol: symbol)
+        }
+        let work = DispatchWorkItem { [weak self] in
+            withAnimation(NotchAnimations.content) {
+                self?.toast = nil
+            }
+        }
+        toastDismissWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: work)
     }
 
     // MARK: - App lifecycle

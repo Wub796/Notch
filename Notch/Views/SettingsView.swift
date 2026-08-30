@@ -339,6 +339,15 @@ private struct GeneralSettingsPane: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
+
+                if let error = settings.launchAtLoginError {
+                    Text(error)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 10)
+                }
             }
         }
     }
@@ -614,114 +623,46 @@ private struct MediaSettingsPane: View {
         .onAppear {
             permissions.refresh()
         }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSApplication.didBecomeActiveNotification
+            )
+        ) { _ in
+            // The Automation prompt is answered in the player or in System
+            // Settings — re-read the statuses when the user comes back.
+            permissions.refresh()
+        }
     }
 
     /// Native music players and optional remote Spotify Connect integration.
     private var servicesCard: some View {
         SettingsCard(title: "Music Players") {
             // Spotify Native
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color(red: 29/255, green: 185/255, blue: 84/255))
-                        .frame(width: 32, height: 32)
-                    Image(systemName: "music.note.list")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text("Spotify")
-                            .font(.system(size: 13, weight: .bold))
-                            .lineLimit(1)
-                        Text("Native macOS")
-                            .font(.system(size: 10, weight: .bold))
-                            .lineLimit(1)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.green.opacity(0.18)))
-                            .foregroundStyle(.green)
-                    }
-
-                    Text("Detects playback, artwork, scrubbing, volume & lyrics automatically.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 8)
-
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.green)
-                    Text("Ready")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.green)
-                        .lineLimit(1)
-                }
-            }
-
-            Divider().padding(.vertical, 4)
+            playerRow(
+                icon: "music.note.list",
+                iconFill: AnyShapeStyle(Color(red: 29/255, green: 185/255, blue: 84/255)),
+                title: "Spotify",
+                subtitle: "Detects playback, artwork, scrubbing, volume & lyrics automatically.",
+                provider: .spotify
+            )
+            Divider().padding(.leading, 58)
 
             // Apple Music Native
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(LinearGradient(
-                            colors: [Color(red: 250/255, green: 45/255, blue: 72/255), Color(red: 254/255, green: 74/255, blue: 104/255)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ))
-                        .frame(width: 32, height: 32)
-                    Image(systemName: "music.note")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text("Apple Music")
-                            .font(.system(size: 13, weight: .bold))
-                            .lineLimit(1)
-                        Text("Native macOS")
-                            .font(.system(size: 10, weight: .bold))
-                            .lineLimit(1)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.green.opacity(0.18)))
-                            .foregroundStyle(.green)
-                    }
-
-                    Text("Detects playback, library tracks, artwork & favorites automatically.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 8)
-
-                if isAppleMusicConnected {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.green)
-                        Text("Ready")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.green)
-                            .lineLimit(1)
-                    }
-                } else {
-                    Button("Grant Access") {
-                        permissions.request(.music)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-            }
-
-            Divider().padding(.vertical, 4)
+            playerRow(
+                icon: "music.note",
+                iconFill: AnyShapeStyle(LinearGradient(
+                    colors: [
+                        Color(red: 250/255, green: 45/255, blue: 72/255),
+                        Color(red: 254/255, green: 74/255, blue: 104/255),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )),
+                title: "Apple Music",
+                subtitle: "Detects playback, library tracks, artwork & favorites automatically.",
+                provider: .appleMusic
+            )
+            Divider().padding(.leading, 58)
 
             // Optional Spotify Connect Web API
             DisclosureGroup(isExpanded: $showAdvancedSpotify) {
@@ -816,11 +757,91 @@ private struct MediaSettingsPane: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
         }
     }
 
-    private var isAppleMusicConnected: Bool {
-        permissions.status(for: .music) == .granted
+    /// One player row: the brand tile, name, capability line, and a live
+    /// status on the right — "Ready" only when that player's Automation
+    /// access is actually granted, otherwise a button that opens the app and
+    /// raises its permission prompt.
+    private func playerRow(
+        icon: String,
+        iconFill: AnyShapeStyle,
+        title: String,
+        subtitle: String,
+        provider: MusicProvider
+    ) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(iconFill)
+                    .frame(width: 32, height: 32)
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .bold))
+                        .lineLimit(1)
+                    Text("Native macOS")
+                        .font(.system(size: 10, weight: .bold))
+                        .lineLimit(1)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.green.opacity(0.18)))
+                        .foregroundStyle(.green)
+                }
+
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            playerTrailing(for: provider)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    /// The right edge of a player row: a green "Ready" when that player's
+    /// Automation access is granted, a progress spinner while a request is in
+    /// flight, or a "Grant Access" button that launches that exact app and
+    /// prompts macOS for permission to control it.
+    @ViewBuilder
+    private func playerTrailing(for provider: MusicProvider) -> some View {
+        switch permissions.musicStatus(for: provider) {
+        case .granted:
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.green)
+                Text("Ready")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.green)
+                    .lineLimit(1)
+            }
+        default:
+            if permissions.pending.contains(.music) {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 90)
+            } else {
+                Button("Grant Access") {
+                    permissions.grantMusicAccess(for: provider)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .help("Opens \(provider.title) and asks macOS to let Notch control it")
+            }
+        }
     }
 
     /// The visualiser's source. The measured option is a real capture of the

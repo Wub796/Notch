@@ -3,12 +3,19 @@ import SwiftUI
 /// Scratchpad: a plain text field that autosaves.
 struct NotesView: View {
     @Bindable var notes: NotesManager
+    let state: NotchState
+
+    init(state: NotchState) {
+        self.state = state
+        _notes = Bindable(wrappedValue: state.notes)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NotchTheme.Space.m) {
             ScreenHeader("Notes", subtitle: subtitle) {
                 ScreenTextButton(title: "Clear", systemImage: "trash") {
                     withAnimation(NotchAnimations.content) { notes.clear() }
+                    state.showToast("All notes cleared", symbol: "trash")
                 }
                 .opacity(notes.text.isEmpty ? 0.4 : 1)
                 .disabled(notes.text.isEmpty)

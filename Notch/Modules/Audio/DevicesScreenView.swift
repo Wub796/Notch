@@ -354,7 +354,15 @@ struct DevicesScreenView: View {
             }
 
             transportIcon(state.audio.currentSymbol, size: 15, label: "Switch audio output") {
+                // cycleToNextDevice is a no-op with fewer than two devices
+                // (and the system can refuse the switch), so confirm only when
+                // the output actually changed.
+                let before = state.audio.currentDeviceID
                 state.audio.cycleToNextDevice()
+                guard state.audio.currentDeviceID != before else { return }
+                let name = state.audio.devices
+                    .first { $0.id == state.audio.currentDeviceID }?.name
+                state.showToast("Output: \(name ?? "Default")", symbol: state.audio.currentSymbol)
             }
         }
         .frame(maxWidth: .infinity)
@@ -465,6 +473,7 @@ struct DevicesScreenView: View {
                 Button {
                     SpotifyAuth.shared.signOut()
                     spotify.clear()
+                    state.showToast("Logged out of Spotify", symbol: "power")
                 } label: {
                     Text("Log out")
                         .font(.notchCallout.weight(.semibold))

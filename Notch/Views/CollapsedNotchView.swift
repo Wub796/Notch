@@ -91,7 +91,7 @@ struct CollapsedNotchView: View {
                     }
                 } else {
                     ActivityWingLayout(
-                        notchWidth: state.adjustedNotchSize.width,
+                        notchWidth: state.safeNotchSize.width,
                         leading: Text(low ? "Low Battery" : "On Battery")
                             .font(.notchBody.weight(.bold))
                             .foregroundStyle(low ? .red : NotchTheme.inkPrimary)
@@ -152,7 +152,7 @@ struct CollapsedNotchView: View {
                     )
                 }
             case let .desktopChange(index):
-                DesktopChangeActivityView(index: index, notchWidth: state.adjustedNotchSize.width)
+                DesktopChangeActivityView(index: index, notchWidth: state.safeNotchSize.width)
             case let .accessoryBattery(name, symbol, percent):
                 dropped {
                     droppedRow(
@@ -284,7 +284,7 @@ struct CollapsedNotchView: View {
             weatherFlank
         } else {
             ActivityWingLayout(
-                notchWidth: state.adjustedNotchSize.width,
+                notchWidth: state.safeNotchSize.width,
                 leading: Color.clear.frame(width: 1, height: 1),
                 trailing: Color.clear.frame(width: 1, height: 1)
             )
@@ -295,7 +295,7 @@ struct CollapsedNotchView: View {
     /// the idle pill and the dropped HUD.
     private var weatherFlank: some View {
         ActivityWingLayout(
-            notchWidth: state.adjustedNotchSize.width,
+            notchWidth: state.safeNotchSize.width,
             leading: weatherIcon,
             trailing: weatherTemperature
         )
@@ -303,7 +303,7 @@ struct CollapsedNotchView: View {
 
     private var compactWeatherWing: some View {
         ActivityWingLayout(
-            notchWidth: state.adjustedNotchSize.width,
+            notchWidth: state.safeNotchSize.width,
             leading: weatherIcon,
             trailing: weatherTemperature
         )
@@ -357,7 +357,7 @@ struct CollapsedNotchView: View {
     /// back the moment playback stops.
     private var musicWings: some View {
         ActivityWingLayout(
-            notchWidth: state.adjustedNotchSize.width,
+            notchWidth: state.safeNotchSize.width,
             leading: miniArtwork,
             trailing: MusicVisualizerView(
                 accent: state.media.accent,

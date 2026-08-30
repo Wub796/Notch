@@ -80,70 +80,114 @@ final class BrightnessController {
         return CGMainDisplayID()
     }
 
+    /// Which brightness API pair is actually functional on this Mac, resolved
+    /// once by probing each getter. The read and the write MUST share one API
+    /// and one scale: macOS 27 broke CoreDisplay's brightness symbols — they
+    /// answer 1.0 for any real level — so a CoreDisplay-first read made the
+    /// notch think the display was always at maximum, and a CoreDisplay-only
+    /// write silently did nothing. DisplayServices is the pair that answers on
+    /// that version, and the probe picks the first getter that reports a real
+    /// level, which keeps read and write from ever disagreeing about scale or
+    /// targeting a dead API.
+    private enum BrightnessAPI {
+        case displayServicesUser
+        case displayServicesLinear
+        case coreDisplayUser
+        case coreDisplayLinear
+    }
+
+    private var resolvedAPI: BrightnessAPI?
+
+    private func resolveAPI() -> BrightnessAPI? {
+        if let resolvedAPI { return resolvedAPI }
+        let id = displayID
+        let api: BrightnessAPI? = {
+            if let get = dsGetBrightness {
+                var level: Float = 0
+                if get(id, &level) == 0, level > 0.001 { return .displayServicesUser }
+            }
+            if let get = dsGetLinearBrightness {
+                var level: Float = 0
+                if get(id, &level) == 0, level > 0.001 { return .displayServicesLinear }
+            }
+            if let get = cdGetUserBrightness, get(id) > 0.001 { return .coreDisplayUser }
+            if let get = cdGetLinearBrightness, get(id) > 0.001 { return .coreDisplayLinear }
+            return nil
+        }()
+        resolvedAPI = api
+        return api
+    }
+
+    /// Reads the display's current brightness through the resolved API, so
+    /// the value is always on the same scale the writer uses.
     func refresh() {
         let id = displayID
-
-        if let cdGetUserBrightness {
-            let val = cdGetUserBrightness(id)
-            if val > 0.001 {
-                brightness = Float(min(max(val, 0), 1))
+        guard let api = resolveAPI() else {
+            if let legacy = Self.legacyBrightness() {
+                brightness = legacy
                 isAvailable = true
-                return
             }
+            return
         }
-
-        if let dsGetBrightness {
+        isAvailable = true
+        switch api {
+        case .displayServicesUser:
             var level: Float = 0
-            if dsGetBrightness(id, &level) == 0 && level > 0.001 {
+            if dsGetBrightness?(id, &level) == 0 {
                 brightness = min(max(level, 0), 1)
-                isAvailable = true
-                return
             }
-        }
-
-        if let dsGetLinearBrightness {
+        case .displayServicesLinear:
             var level: Float = 0
-            if dsGetLinearBrightness(id, &level) == 0 && level > 0.001 {
-                brightness = min(max(level, 0), 1)
-                isAvailable = true
-                return
+            if dsGetLinearBrightness?(id, &level) == 0 {
+                brightness = Self.userBrightness(forLinear: level)
             }
-        }
-
-        if let cdGetLinearBrightness {
-            let val = cdGetLinearBrightness(id)
-            if val > 0.001 {
-                brightness = Float(min(max(val, 0), 1))
-                isAvailable = true
-                return
+        case .coreDisplayUser:
+            if let level = cdGetUserBrightness?(id), level > 0.001 {
+                brightness = Float(min(max(level, 0), 1))
             }
-        }
-
-        if let legacy = Self.legacyBrightness() {
-            brightness = legacy
-            isAvailable = true
+        case .coreDisplayLinear:
+            if let level = cdGetLinearBrightness?(id), level > 0.001 {
+                brightness = Self.userBrightness(forLinear: Float(level))
+            }
         }
     }
 
+    /// Writes through the same resolved API the reader uses. A linear-scale
+    /// pair gets the user level converted to linear luminance first, so the
+    /// reading stays where the slider said.
     func setBrightness(_ newValue: Float) {
         let clamped = min(max(newValue, 0), 1)
         brightness = clamped
         let id = displayID
+        guard let api = resolveAPI() else {
+            Self.setLegacyBrightness(clamped)
+            return
+        }
+        switch api {
+        case .displayServicesUser:
+            _ = dsSetBrightness?(id, clamped)
+        case .displayServicesLinear:
+            _ = dsSetLinearBrightness?(id, Self.linearBrightness(forUserBrightness: clamped))
+        case .coreDisplayUser:
+            cdSetUserBrightness?(id, Double(clamped))
+        case .coreDisplayLinear:
+            cdSetLinearBrightness?(id, Double(Self.linearBrightness(forUserBrightness: clamped)))
+        }
+    }
 
-        if let cdSetUserBrightness {
-            cdSetUserBrightness(id, Double(clamped))
-        }
-        if let dsSetBrightness {
-            _ = dsSetBrightness(id, clamped)
-        }
-        if let dsSetLinearBrightness {
-            _ = dsSetLinearBrightness(id, clamped)
-        }
-        if let cdSetLinearBrightness {
-            cdSetLinearBrightness(id, Double(clamped))
-        }
+    /// Converts a linear luminance level back to the perceptual/user scale
+    /// (the inverse of the 2.2-gamma encode below), for the displays whose
+    /// only working API is the linear one.
+    private static func userBrightness(forLinear linear: Float) -> Float {
+        min(max(pow(linear, 1.0 / 2.2), 0), 1)
+    }
 
-        Self.setLegacyBrightness(clamped)
+    /// Converts a perceptual/user brightness (0–1) to the linear luminance
+    /// scale the linear brightness APIs expect. Perceived brightness is
+    /// roughly the 1/2.2 power of luminance, so the linear level for a given
+    /// user level is its 2.2-gamma power.
+    private static func linearBrightness(forUserBrightness user: Float) -> Float {
+        min(max(pow(user, 2.2), 0), 1)
     }
 
     // MARK: - Intel fallback (IODisplay)

@@ -95,6 +95,11 @@ struct ThreeDLyricsView: View {
     let lyrics: LyricsEngine
     let accent: Color
     var onSelect: ((TimeInterval) -> Void)? = nil
+    /// Shown when there are no lyric lines: a hint when nothing is playing,
+    /// or a "no lyrics" note when a track is loaded but has none. The blank
+    /// 48pt spacer this replaces read as dead space in the middle of the
+    /// player.
+    var emptyMessage: String = "Lyrics appear here while music plays"
 
     private var currentIndex: Int? {
         lyrics.currentIndex
@@ -136,8 +141,7 @@ struct ThreeDLyricsView: View {
                     .foregroundStyle(NotchTheme.inkMuted)
                     .frame(height: 48)
                 } else {
-                    Spacer(minLength: 0)
-                        .frame(height: 48)
+                    emptyState
                 }
             } else {
                 // 1. Previous Line (Faded, facing UP in 3D)
@@ -209,5 +213,23 @@ struct ThreeDLyricsView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 2)
+    }
+
+    /// What fills the 3D carousel when there are no lyric lines: a quiet
+    /// one-line hint in the same slot, so the layout never collapses.
+    private var emptyState: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "text.quote")
+                .font(.system(size: 10, weight: .semibold))
+            Text(emptyMessage)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .foregroundStyle(NotchTheme.inkMuted.opacity(0.9))
+        .frame(height: 48)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(emptyMessage)
     }
 }

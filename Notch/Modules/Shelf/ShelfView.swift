@@ -5,6 +5,12 @@ import SwiftUI
 /// per-item actions, and bulk AirDrop / clear.
 struct ShelfView: View {
     let shelf: ShelfController
+    let state: NotchState
+
+    init(state: NotchState) {
+        self.state = state
+        shelf = state.shelf
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NotchTheme.Space.m) {
@@ -17,10 +23,15 @@ struct ShelfView: View {
                             isProminent: true
                         ) {
                             shelf.airDropAll()
+                            state.showToast(
+                                "AirDropping \(shelf.items.count) item\(shelf.items.count == 1 ? "" : "s")",
+                                symbol: "airplane"
+                            )
                         }
 
                         ScreenTextButton(title: "Clear", systemImage: "xmark.circle") {
                             withAnimation(.notchSpring) { shelf.clear() }
+                            state.showToast("Shelf cleared", symbol: "xmark.circle")
                         }
                     }
                 }
@@ -37,7 +48,7 @@ struct ShelfView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: NotchTheme.Space.m) {
                         ForEach(shelf.items) { item in
-                            ShelfItemCard(item: item, shelf: shelf)
+                            ShelfItemCard(item: item, shelf: shelf, state: state)
                         }
                     }
                     .padding(.vertical, 4)
@@ -61,6 +72,7 @@ struct ShelfView: View {
 private struct ShelfItemCard: View {
     let item: ShelfController.Item
     let shelf: ShelfController
+    let state: NotchState
 
     @State private var hovering = false
 
@@ -97,6 +109,7 @@ private struct ShelfItemCard: View {
                     withAnimation(.notchSpring) {
                         shelf.remove(item)
                     }
+                    state.showToast("Removed from shelf", symbol: "trash")
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 14))
@@ -121,14 +134,21 @@ private struct ShelfItemCard: View {
         }
         .contextMenu {
             Button("Open") { NSWorkspace.shared.open(item.url) }
-            Button("AirDrop") { shelf.airDrop(item) }
-            Button("Copy") { shelf.copyToPasteboard(item) }
+            Button("AirDrop") {
+                shelf.airDrop(item)
+                state.showToast("AirDrop sent", symbol: "airplane")
+            }
+            Button("Copy") {
+                shelf.copyToPasteboard(item)
+                state.showToast("Copied", symbol: "doc.on.doc")
+            }
             Button("Reveal in Finder") { shelf.revealInFinder(item) }
             Divider()
             Button("Remove from Shelf") {
                 withAnimation(.notchSpring) {
                     shelf.remove(item)
                 }
+                state.showToast("Removed from shelf", symbol: "trash")
             }
         }
         .help("\(item.name) — double-click to open")

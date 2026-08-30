@@ -21,27 +21,47 @@ struct NotchTopBarView: View {
     var body: some View {
         HStack(spacing: 0) {
             leadingControls
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(width: flankWidth, alignment: .leading)
+                .clipped()
 
             // Reserved dead zone, masked to the notch silhouette so the
             // hardware notch appears to continue through the open slab.
             Rectangle()
                 .fill(.black)
-                .frame(width: state.adjustedNotchSize.width)
+                .frame(width: deadZoneWidth)
                 .mask { NotchShape() }
 
             trailingControls
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                .frame(width: flankWidth, alignment: .trailing)
+                .clipped()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// The width each side of the notch is allowed — same rule as the detail
+    /// headers: the two flanks split everything that is not the dead zone, so
+    /// the rail and status icons can never slide under the hardware notch.
+    private var flankWidth: CGFloat {
+        max((state.moduleContentSize.width - deadZoneWidth) / 2, 0)
+    }
+
+    /// The dead zone's drawn width: the notch size that is guaranteed to
+    /// cover the real hardware cutout, measurement error included.
+    private var deadZoneWidth: CGFloat {
+        state.safeNotchSize.width
+    }
+
     private var leadingControls: some View {
-        HStack(spacing: 13) {
+        // The rail is six icons; on a narrow module its flank can be too
+        // small for them at the full 28pt size, which used to push the last
+        // icons under the hardware notch. It shrinks to fit the flank so it
+        // always stays visible beside the notch.
+        HStack(spacing: railSpacing) {
             NotchIconButton(
                 systemImage: "gearshape",
                 isActive: false,
-                help: "Settings"
+                help: "Settings",
+                size: railIconSize
             ) {
                 // Settings is an ordinary window; leaving the panel expanded
                 // over it would float the notch on top of what you opened.
@@ -54,7 +74,8 @@ struct NotchTopBarView: View {
                     systemImage: module.symbol,
                     isActive: state.tab == module.tab,
                     help: state.tab == module.tab ? "Back to Home" : module.name,
-                    activeTint: .blue
+                    activeTint: .blue,
+                    size: railIconSize
                 ) {
                     // Each rail icon toggles home ↔ module, so the icon you
                     // arrived by is also the way back.
@@ -62,6 +83,25 @@ struct NotchTopBarView: View {
                 }
             }
         }
+    }
+
+    /// Rail icon size: the full 28pt when the flank is wide enough for six
+    /// of them at the standard 13pt spacing, then 24pt, then 22pt — each tier
+    /// is exactly as small as it has to be so the whole rail stays visible
+    /// beside the notch instead of its rightmost icons sliding under it.
+    private var railIconSize: CGFloat {
+        if flankWidth >= 6 * 28 + 5 * 13 { return 28 }
+        if flankWidth >= 6 * 24 + 5 * 2 { return 24 }
+        return 22
+    }
+
+    /// Rail spacing, derived so six icons at `railIconSize` always fit the
+    /// flank (with a 2pt floor so they never touch).
+    private var railSpacing: CGFloat {
+        let count: CGFloat = 6
+        let maxSpacing = count * railIconSize + 5 * 13
+        guard flankWidth < maxSpacing else { return 13 }
+        return max((flankWidth - count * railIconSize) / 5, 2)
     }
 
     /// Three status controls, as in the reference: the battery pill, the
@@ -163,22 +203,39 @@ struct BatteryPill: View {
 /// trailing controls on the right, over the same reserved notch dead zone.
 struct DetailHeaderView<Trailing: View>: View {
     let state: NotchState
-    @ViewBuilder var trailing: () -> Trailing
+    @ViewBuilder var trailing: (CGFloat) -> Trailing
+
+    /// The width each side of the notch is allowed: the header is as wide as
+    /// the module, and the two flanks split everything that is not the dead
+    /// zone. Content is pinned to this exact share, so it can never render
+    /// over the dead zone and under the hardware notch — whatever the module
+    /// width or the notch size, the flanks simply truncate their content.
+    private var flankWidth: CGFloat {
+        max((state.moduleContentSize.width - deadZoneWidth) / 2, 0)
+    }
+
+    /// The dead zone's drawn width: the notch size that is guaranteed to
+    /// cover the real hardware cutout, measurement error included.
+    private var deadZoneWidth: CGFloat {
+        state.safeNotchSize.width
+    }
 
     var body: some View {
         HStack(spacing: 0) {
             NotchBackButton {
                 state.select(.home)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: flankWidth, alignment: .leading)
+            .clipped()
 
             Rectangle()
                 .fill(.black)
-                .frame(width: state.adjustedNotchSize.width)
+                .frame(width: deadZoneWidth)
                 .mask { NotchShape() }
 
-            trailing()
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            trailing(flankWidth)
+                .frame(width: flankWidth, alignment: .trailing)
+                .clipped()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -217,6 +274,7 @@ struct NotchIconButton: View {
     var isActive: Bool = false
     let help: String
     var activeTint: Color? = nil
+    var size: CGFloat = 28
     let action: () -> Void
 
     @State private var isHovering = false
@@ -224,13 +282,13 @@ struct NotchIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 13, weight: isActive ? .heavy : .semibold))
+                .font(.system(size: max(size * 0.46, 11), weight: isActive ? .heavy : .semibold))
                 .foregroundStyle(
                     isActive
                         ? (activeTint ?? NotchTheme.inkPrimary)
                         : NotchTheme.inkSecondary.opacity(isHovering ? 1 : 0.72)
                 )
-                .frame(width: 28, height: 28)
+                .frame(width: size, height: size)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressableButtonStyle())

@@ -68,6 +68,11 @@ final class MediaController {
     private var sourceAppPID: Int32 = 0
     private(set) var sourceAppBundleID: String?
 
+    /// The adapter's mediaType for the current source ("...TypeMusic" vs
+    /// "...TypeAudio"), so callers can tell music from generic audio. Only
+    /// set on the perl-bridge path.
+    private(set) var sourceMediaType: String?
+
     private var selectedProvider: MusicProvider {
         NotchSettings.shared.musicProvider
     }
@@ -98,13 +103,26 @@ final class MediaController {
     private static let emptyRepliesBeforeDemotion = 3
 
     private let bridge = MediaRemoteBridge.shared
+    /// The bundled perl-bridge adapter (see MediaRemoteAdapter) when present
+    /// and verified — it replaces the dlopen bridge as the MediaRemote source
+    /// because it keeps working on macOS 15.4+, where direct calls are gated
+    /// and answer with silence.
+    private let adapter = MediaRemoteAdapter()
+    private var useAdapter = false
+    private var adapterRestartAttempts = 0
     private var useMediaRemote: Bool
     private var mediaRemoteRetryWork: DispatchWorkItem?
     private var progressTimer: Timer?
     private var fallbackTimer: Timer?
     private var lyricActivityTimer: Timer?
     private var pendingClearWork: DispatchWorkItem?
+    private var browserProbeTimer: Timer?
     private var isActive = false
+
+    /// True while the shown track came from the browser fallback. MediaRemote
+    /// can't see browsers on gated macOS, so an empty reply while this is set
+    /// must not blank the track — the browser probe owns keeping it honest.
+    private var isShowingBrowserSnapshot = false
 
     var hasTrack: Bool {
         track != nil
@@ -133,23 +151,24 @@ final class MediaController {
 
     init() {
         useMediaRemote = false
-        if bridge.isAvailable && bridge.supportsQueries {
-            useMediaRemote = true
-        }
-        if useMediaRemote {
-            bridge.registerForNotifications()
-            let center = NotificationCenter.default
-            center.addObserver(
-                forName: MediaRemoteBridge.infoDidChange, object: nil, queue: .main
-            ) { [weak self] _ in
-                self?.refreshFromMediaRemote()
+        if MediaRemoteAdapter.isBundled {
+            // Adapter first: verify off the main thread, then either take the
+            // adapter as the MediaRemote source or fall back to the dlopen
+            // bridge. Waiting for the verdict keeps the two sources from
+            // racing each other at launch.
+            DispatchQueue.global(qos: .userInitiated).async {
+                let functional = MediaRemoteAdapter.verifyFunctional()
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    if functional {
+                        self.armAdapter()
+                    } else {
+                        self.armDirectBridge()
+                    }
+                }
             }
-            center.addObserver(
-                forName: MediaRemoteBridge.isPlayingDidChange, object: nil, queue: .main
-            ) { [weak self] _ in
-                self?.refreshFromMediaRemote()
-            }
-            refreshFromMediaRemote()
+        } else {
+            armDirectBridge()
         }
 
         // Read whatever is playing straight away, off the main thread so a
@@ -160,6 +179,43 @@ final class MediaController {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.probePlayersAtLaunch(attemptsLeft: 4)
         }
+    }
+
+    /// The dlopen MediaRemoteBridge as the source. Used when the perl-bridge
+    /// adapter is not bundled or fails its entitlement test.
+    private func armDirectBridge() {
+        useAdapter = false
+        guard bridge.isAvailable && bridge.supportsQueries else { return }
+        useMediaRemote = true
+        bridge.registerForNotifications()
+        let center = NotificationCenter.default
+        center.addObserver(
+            forName: MediaRemoteBridge.infoDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.refreshFromMediaRemote()
+        }
+        center.addObserver(
+            forName: MediaRemoteBridge.isPlayingDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.refreshFromMediaRemote()
+        }
+        refreshFromMediaRemote()
+    }
+
+    /// The perl-bridge adapter as the source: verified functional, so its
+    /// stream owns now-playing delivery and the dlopen bridge stays dormant.
+    private func armAdapter() {
+        useAdapter = true
+        useMediaRemote = true
+        isSystemNowPlayingRestricted = false
+        adapterRestartAttempts = 0
+        adapter.onInfo = { [weak self] info in
+            self?.applyAdapterInfo(info)
+        }
+        adapter.onTerminated = { [weak self] in
+            self?.handleAdapterTerminated()
+        }
+        adapter.startStream()
     }
 
     /// Launch-time probe, with retries, so a track that was already playing
@@ -259,6 +315,8 @@ final class MediaController {
         progressTimer = nil
         fallbackTimer?.invalidate()
         fallbackTimer = nil
+        browserProbeTimer?.invalidate()
+        browserProbeTimer = nil
         defer { updateLyricActivityTimer() }
 
         guard active else {
@@ -278,6 +336,13 @@ final class MediaController {
 
         if useMediaRemote {
             refreshFromMediaRemote()
+            // While the notch is open and MediaRemote is the source, a
+            // browser-derived track needs a probe of its own to stay honest:
+            // MediaRemote never answers for browsers, so nothing else would
+            // tell us when the tab closes or the video changes.
+            browserProbeTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                self?.tickBrowserProbe()
+            }
             // On Macs where MediaRemote is gated, its answers are silence and
             // the demotion counter only advances one refresh per open — music
             // that was already playing took several open/close rounds to appear.
@@ -381,7 +446,9 @@ final class MediaController {
         // Universal system media key: pauses/resumes YouTube, Netflix, Chrome, Safari, etc.
         SystemMediaKeySender.togglePlayPause()
 
-        if useMediaRemote {
+        if useAdapter {
+            adapter.sendCommand(.togglePlayPause)
+        } else if useMediaRemote {
             bridge.send(.togglePlayPause)
         }
 
@@ -398,7 +465,9 @@ final class MediaController {
             return
         }
         SystemMediaKeySender.nextTrack()
-        if useMediaRemote {
+        if useAdapter {
+            adapter.sendCommand(.nextTrack)
+        } else if useMediaRemote {
             bridge.send(.nextTrack)
         }
         if fallbackAppIsRunning {
@@ -412,7 +481,9 @@ final class MediaController {
             return
         }
         SystemMediaKeySender.previousTrack()
-        if useMediaRemote {
+        if useAdapter {
+            adapter.sendCommand(.previousTrack)
+        } else if useMediaRemote {
             bridge.send(.previousTrack)
         }
         if fallbackAppIsRunning {
@@ -432,6 +503,8 @@ final class MediaController {
 
         if let provider = selectedProvider.appleScriptAppName {
             runProviderCommand(appName: provider, command: "set player position to \(Int(clamped))")
+        } else if useAdapter {
+            adapter.seek(to: clamped)
         } else if useMediaRemote, bridge.canSeek {
             bridge.setElapsedTime(clamped)
         } else {
@@ -616,10 +689,25 @@ final class MediaController {
     // MARK: - MediaRemote source
 
     private func refreshFromMediaRemote() {
-        guard useMediaRemote else { return }
+        // With the adapter active the stream is the source; there is nothing
+        // to ask the dlopen bridge (which is gated on this macOS anyway).
+        guard useMediaRemote, !useAdapter else { return }
         bridge.nowPlayingInfo { [weak self] info in
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                if info.isEmpty {
+                    // MediaRemote has nothing to say. While a browser-derived
+                    // track is showing, that silence is expected — browsers are
+                    // exactly what gated MediaRemote can't see — so don't
+                    // blank it here. Otherwise probe the browser directly
+                    // before concluding nothing is playing.
+                    if self.isShowingBrowserSnapshot { return }
+                    self.handleEmptyMediaRemoteReply()
+                    return
+                }
+                // Real MediaRemote info is authoritative: it replaces any
+                // browser-derived track.
+                self.isShowingBrowserSnapshot = false
                 guard self.providerAllowsCurrentSource() else {
                     // A different app is playing than the one selected — show
                     // nothing until the chosen provider takes over.
@@ -637,6 +725,10 @@ final class MediaController {
         bridge.isPlaying { [weak self] playing in
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                // A browser-derived track plays on the browser's own schedule;
+                // gated MediaRemote reports false for it and must not flip the
+                // transport state.
+                guard !self.isShowingBrowserSnapshot else { return }
                 guard self.providerAllowsCurrentSource() else {
                     if self.isPlaying { self.isPlaying = false }
                     return
@@ -652,6 +744,46 @@ final class MediaController {
         }
     }
 
+    /// Now-playing updates from the perl-bridge adapter (its stream handler).
+    /// Mirrors what the direct-bridge refresh does with the same info keys,
+    /// plus the PID and media type the adapter's payload carries.
+    private func applyAdapterInfo(_ info: [String: Any]) {
+        guard useAdapter else { return }
+        if info.isEmpty {
+            // Empty full-state payload after real data = the player went
+            // away. A browser-derived track must not be blanked by it — the
+            // browser probe owns keeping that honest — same as the
+            // direct-bridge path.
+            if isShowingBrowserSnapshot { return }
+            handleEmptyMediaRemoteReply()
+            return
+        }
+        isShowingBrowserSnapshot = false
+        if let pid = info[MediaRemoteAdapter.Key.processIdentifier] as? Int {
+            updateSourceApp(pid: Int32(pid))
+        }
+        sourceMediaType = info[MediaRemoteAdapter.Key.mediaType] as? String
+        guard providerAllowsCurrentSource() else {
+            apply([:])
+            return
+        }
+        apply(info)
+    }
+
+    /// The adapter's stream process died on its own. Restart once — a
+    /// transient kill should not cost the source — then give up on MediaRemote
+    /// for this session and demote to the Apple Events path, the same fallback
+    /// the gated direct bridge ends up on.
+    private func handleAdapterTerminated() {
+        guard useAdapter else { return }
+        adapterRestartAttempts += 1
+        if adapterRestartAttempts <= 1 {
+            adapter.startStream()
+        } else {
+            demoteToAppleEvents()
+        }
+    }
+
     private func apply(_ info: [String: Any]) {
         guard !info.isEmpty else {
             noteEmptyMediaRemoteReply()
@@ -662,6 +794,7 @@ final class MediaController {
             return
         }
 
+        isShowingBrowserSnapshot = false
         consecutiveEmptyReplies = 0
         pendingClearWork?.cancel()
         pendingClearWork = nil
@@ -704,6 +837,84 @@ final class MediaController {
         demoteToAppleEvents()
     }
 
+    /// MediaRemote reported nothing. On macOS 15.4+ its now-playing entry
+    /// points are gated for third-party apps and answer with silence even
+    /// while a browser is blasting YouTube — so ask the player and the
+    /// browser directly instead of declaring nothing is playing.
+    private func handleEmptyMediaRemoteReply() {
+        // A probe while the notch is closed must never be what raises the
+        // Automation dialog; one while the user is looking at the notch may —
+        // without consent the browser snapshot can never work, and the prompt
+        // is how consent is obtained.
+        probeBrowserForPlayingMedia(avoidPrompt: !isActive)
+        apply([:])
+    }
+
+    /// One off-main probe for the selected player and then the browsers, on
+    /// an empty MediaRemote reply. The player outranks the browser — the
+    /// provider is what the notch controls — so a playing Spotify/Music track
+    /// demotes the source on the spot instead of losing to a YouTube tab.
+    private func probeBrowserForPlayingMedia(avoidPrompt: Bool) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            // With avoidPrompt, consent is pre-checked before any script
+            // runs, mirroring the launch probe's rule. With the notch open,
+            // running the script against a consented-or-undetermined app is
+            // exactly how the Automation prompt gets raised.
+            let snapshot: Snapshot?
+            if avoidPrompt, !self.automationIsAllowed() {
+                snapshot = self.browserYouTubeSnapshot(avoidPrompt: true)
+            } else {
+                snapshot = self.appleScriptSnapshot()
+                    ?? self.browserYouTubeSnapshot(avoidPrompt: avoidPrompt)
+            }
+            guard let snapshot else { return }
+            let isPlayer = snapshot.bundleID == self.fallbackBundleID
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.useMediaRemote else { return }
+                if isPlayer {
+                    // The selected player is playing but MediaRemote couldn't
+                    // see it — demote so the Apple Events path owns it from
+                    // here on (it also starts its 2s polling).
+                    self.demoteToAppleEvents()
+                } else {
+                    guard self.track == nil || self.isShowingBrowserSnapshot else { return }
+                    // The probe is the authoritative answer — cancel any
+                    // pending "nothing playing" clear so the track sticks.
+                    self.pendingClearWork?.cancel()
+                    self.pendingClearWork = nil
+                    self.isShowingBrowserSnapshot = true
+                }
+                self.apply(snapshot)
+            }
+        }
+    }
+
+    /// Keeps a browser-derived track honest while the notch is open and
+    /// MediaRemote is the source: re-reads the browser every couple of
+    /// seconds, updating the track when the video changes and clearing it
+    /// when the tab closes. MediaRemote never answers for browsers, so
+    /// without this a closed tab would leave a ghost track on screen.
+    private func tickBrowserProbe() {
+        // The timer only exists while the notch is open and MediaRemote is the
+        // source, so the one state that matters here is the browser track.
+        guard useMediaRemote, isShowingBrowserSnapshot else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let snapshot = self?.browserYouTubeSnapshot(avoidPrompt: true) else {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.isShowingBrowserSnapshot else { return }
+                    self.finishClearingTrack()
+                }
+                return
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isShowingBrowserSnapshot else { return }
+                self.apply(snapshot)
+            }
+        }
+    }
+
     /// One AppleScript probe when the notch opens, covering the gated-
     /// MediaRemote case: the fallback player reports a playing track while
     /// the system source has returned silence. That combination is the
@@ -734,6 +945,10 @@ final class MediaController {
     /// Switches the source from MediaRemote to the Apple Events path and
     /// rebuilds its timers.
     private func demoteToAppleEvents() {
+        if useAdapter {
+            useAdapter = false
+            adapter.stop()
+        }
         useMediaRemote = false
         isSystemNowPlayingRestricted = true
         consecutiveEmptyReplies = Self.emptyRepliesBeforeDemotion
@@ -748,10 +963,13 @@ final class MediaController {
     /// what is actually wrong instead of claiming nothing is playing.
     var emptyStateReason: String? {
         guard track == nil else { return nil }
+        // With the perl-bridge adapter, system-wide now-playing works even on
+        // gated macOS — nothing is restricted, so no explanation is owed.
+        if useAdapter { return nil }
         if isSystemNowPlayingRestricted {
             return "macOS restricts system-wide now-playing for third-party apps on "
-                + "this version. Notch reads \(fallbackAppName) directly; other "
-                + "players, browsers included, can't be seen."
+                + "this version. Notch reads \(fallbackAppName) and browsers "
+                + "directly; other players can't be seen."
         }
         if !bridge.isAvailable {
             return "System-wide now-playing isn't available here. Notch reads "
@@ -762,6 +980,10 @@ final class MediaController {
 
     /// Resolves the now-playing app from its PID, once per change.
     private func updateSourceApp(pid: Int32) {
+        // While a browser-derived track is showing, MediaRemote's idea of the
+        // now-playing app (often stale or gated) must not override the browser
+        // the snapshot came from.
+        if isShowingBrowserSnapshot { return }
         guard pid != sourceAppPID else { return }
         sourceAppPID = pid
         guard pid > 0,
@@ -952,18 +1174,30 @@ final class MediaController {
            !v.isEmpty {
             return v
         }
+        // Short links: youtu.be/<id> with an optional ?query or #fragment.
+        // The #t= start-time fragment is the standard share format, and a
+        // raw string split on "?"/"&" would carry "#t=30" into the ID,
+        // corrupting the thumbnail and oEmbed URLs built from it. Parsing
+        // also makes a bare "youtu.be/" return nil instead of an empty ID.
         if urlString.contains("youtu.be/") {
-            let parts = urlString.components(separatedBy: "youtu.be/")
-            if parts.count > 1 {
-                return parts[1].components(separatedBy: "?").first?.components(separatedBy: "&").first
+            if let url = URL(string: urlString),
+               let id = url.pathComponents.dropFirst().first,
+               !id.isEmpty {
+                return id
             }
         }
         return nil
     }
 
-    private func browserYouTubeSnapshot() -> Snapshot? {
+    private func browserYouTubeSnapshot(avoidPrompt: Bool) -> Snapshot? {
         for browser in Self.browserTargets {
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else {
+                continue
+            }
+            // A background probe must not be what raises the Automation
+            // prompt; only the interactive probe (notch open) may.
+            if avoidPrompt,
+               !IntegrationPermissions.isAutomationAllowed(browser.bundleID) {
                 continue
             }
 
@@ -1032,16 +1266,22 @@ final class MediaController {
                 }
             }
 
+            var artworkURL: URL?
+            if let videoID = Self.extractYouTubeVideoID(from: urlString) {
+                artworkURL = URL(string: "https://img.youtube.com/vi/\(videoID)/hqdefault.jpg")
+                // A watch-page tab title is just "Title - YouTube" — no
+                // channel. Pull the real channel name from the video so the
+                // player shows who made it, not the platform.
+                if artist == "YouTube", let channel = channelName(for: videoID) {
+                    artist = channel
+                }
+            }
+
             var track = Track()
             track.title = title
             track.artist = artist
             track.album = "YouTube"
             track.duration = 0
-
-            var artworkURL: URL?
-            if let videoID = Self.extractYouTubeVideoID(from: urlString) {
-                artworkURL = URL(string: "https://img.youtube.com/vi/\(videoID)/hqdefault.jpg")
-            }
 
             return Snapshot(
                 track: track,
@@ -1049,10 +1289,62 @@ final class MediaController {
                 isPlaying: true,
                 bundleID: browser.bundleID,
                 appName: browser.name,
-                artworkURL: artworkURL
+                artworkURL: artworkURL,
+                isBrowser: true
             )
         }
         return nil
+    }
+
+    /// Channel names for video IDs already looked up, so the periodic browser
+    /// probe never re-fetches what it has already seen.
+    private var channelCache: [String: String] = [:]
+    private static let channelCacheLock = NSLock()
+
+    /// The channel name for a video, via YouTube's oEmbed endpoint (a small
+    /// JSON document carrying `author_name`). Returns nil when the fetch fails
+    /// — consent walls, rate limiting, offline — and the player then shows
+    /// "YouTube" as the artist rather than the channel. Blocking on a cold
+    /// miss, so it is only ever called off the main thread, and cached so the
+    /// 2s probe never refetches.
+    private func channelName(for videoID: String) -> String? {
+        Self.channelCacheLock.lock()
+        let cached = channelCache[videoID]
+        Self.channelCacheLock.unlock()
+        if let cached { return cached }
+
+        let watchURL = "https://www.youtube.com/watch?v=\(videoID)"
+        guard let url = URL(string: "https://www.youtube.com/oembed?url=\(watchURL)&format=json")
+        else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 6
+        request.setValue(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+                + "(KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+            forHTTPHeaderField: "User-Agent"
+        )
+        // The URLRequest overloads of Data(contentsOf:) no longer exist in the
+        // current SDK, so fetch synchronously via URLSession instead. Only ever
+        // called off the main thread (this is a blocking cold-miss fetch); the
+        // semaphore is the happens-before edge that makes the captured write safe.
+        let semaphore = DispatchSemaphore(value: 0)
+        var fetched: Data?
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            fetched = data
+            semaphore.signal()
+        }.resume()
+        _ = semaphore.wait(timeout: .now() + request.timeoutInterval)
+        guard let data = fetched else { return nil }
+        guard let object = try? JSONSerialization.jsonObject(with: data),
+              let json = object as? [String: Any],
+              let name = json["author_name"] as? String,
+              !name.isEmpty
+        else { return nil }
+
+        Self.channelCacheLock.lock()
+        channelCache[videoID] = name
+        Self.channelCacheLock.unlock()
+        return name
     }
 
     /// One reading of the player's state, or nil when it has nothing to say.
@@ -1065,6 +1357,9 @@ final class MediaController {
         var bundleID: String?
         var appName: String?
         var artworkURL: URL?
+        /// True for browser snapshots: MediaRemote can't see or confirm them,
+        /// they carry no real playback position, and their artwork is a URL.
+        var isBrowser = false
     }
 
     private func appleScriptSnapshot() -> Snapshot? {
@@ -1094,19 +1389,35 @@ final class MediaController {
             }
         }
 
-        // 2. Check running browsers for YouTube/web media
-        if selectedProvider == .automatic {
-            if let browserSnap = browserYouTubeSnapshot() {
-                return browserSnap
-            }
+        // 2. Check running browsers for YouTube/web media. Runs regardless of
+        // the selected provider: the provider choice is about which player the
+        // notch *controls*, and a browser playing in the foreground is still
+        // the thing making sound. The selected player already had first crack
+        // above; the browser is only asked when it has nothing to say.
+        // Consent-gated: a background probe must never be what raises the
+        // Automation prompt.
+        if let browserSnap = browserYouTubeSnapshot(avoidPrompt: true) {
+            return browserSnap
         }
 
         return nil
     }
 
     private func apply(_ snapshot: Snapshot) {
-        elapsedAnchor = snapshot.elapsed
-        anchorDate = Date()
+        isShowingBrowserSnapshot = snapshot.isBrowser
+        if snapshot.isBrowser {
+            // Browser snapshots carry no real position (elapsed is always 0);
+            // re-anchoring on every poll — the 2s probe re-applies the same
+            // snapshot — would snap the progress bar back to zero repeatedly.
+            // Count forward from the last anchor; only a new video resets it.
+            if snapshot.track != track {
+                elapsedAnchor = 0
+                anchorDate = Date()
+            }
+        } else {
+            elapsedAnchor = snapshot.elapsed
+            anchorDate = Date()
+        }
         isPlaying = snapshot.isPlaying
 
         let isNewTrack = snapshot.track != track
@@ -1125,7 +1436,10 @@ final class MediaController {
             sourceAppBundleID = fallbackBundleID
         }
 
-        if let artworkURL = snapshot.artworkURL {
+        // Artwork only matters when the track actually changed — re-downloading
+        // the YouTube thumbnail on every 2s probe poll would be a network
+        // request every couple of seconds for the same video.
+        if let artworkURL = snapshot.artworkURL, isNewTrack {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 if let data = try? Data(contentsOf: artworkURL), let image = NSImage(data: data) {
                     DispatchQueue.main.async { [weak self] in
@@ -1207,10 +1521,12 @@ final class MediaController {
     }
 
     private func finishClearingTrack() {
+        isShowingBrowserSnapshot = false
         track = nil
         artwork = nil
         isPlaying = false
         sourceAppBundleID = nil
+        sourceMediaType = nil
         updateTrackIfChanged(Track())
         updateLyricActivityTimer()
     }

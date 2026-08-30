@@ -59,6 +59,12 @@ struct ToolsView: View {
                         }
                     }
                 }
+                // Hug the device list (up to a few rows) so the volume
+                // slider sits directly beneath it, top-aligned with the
+                // other columns, instead of being pinned to the bottom
+                // of the card with a dead gap above it.
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxHeight: 150, alignment: .top)
                 volumeRow
             }
         }
@@ -69,6 +75,10 @@ struct ToolsView: View {
         HStack(spacing: 8) {
             Button {
                 state.audio.toggleMute()
+                state.showToast(
+                    state.audio.isMuted ? "Unmuted" : "Muted",
+                    symbol: state.audio.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill"
+                )
             } label: {
                 Image(systemName: state.audio.isMuted
                     ? "speaker.slash.fill"
@@ -96,15 +106,24 @@ struct ToolsView: View {
             .opacity(state.audio.isMuted ? 0.4 : 1)
             .accessibilityLabel("Output volume")
         }
+        // Match the device rows' inset so the mute icon and slider track
+        // line up with the list's icons instead of starting at the edge.
+        .padding(.horizontal, 8)
         .padding(.top, 2)
     }
 
     private func deviceRow(_ device: AudioOutputManager.Device) -> some View {
         let isCurrent = device.id == state.audio.currentDeviceID
         return Button {
+            let requested = device.id
             withAnimation(NotchAnimations.content) {
                 state.audio.select(device)
             }
+            // select() only records the switch when the system accepted it —
+            // and clicking the already-current row is a no-op — so confirm
+            // only when the device actually became current.
+            guard state.audio.currentDeviceID == requested else { return }
+            state.showToast("Output: \(device.name)", symbol: device.symbolName)
         } label: {
             HStack(spacing: 7) {
                 Image(systemName: device.symbolName)
@@ -213,6 +232,10 @@ struct ToolsView: View {
                         withAnimation(NotchAnimations.content) {
                             state.timer.togglePause()
                         }
+                        state.showToast(
+                            state.timer.isPaused ? "Timer resumed" : "Timer paused",
+                            symbol: "timer"
+                        )
                     } label: {
                         Image(systemName: state.timer.isPaused ? "play.fill" : "pause.fill")
                             .font(.system(size: 10, weight: .bold))
@@ -225,6 +248,7 @@ struct ToolsView: View {
 
                     Button {
                         withAnimation(NotchAnimations.content) { state.timer.cancel() }
+                        state.showToast("Timer cancelled", symbol: "timer")
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 10, weight: .bold))
@@ -243,6 +267,7 @@ struct ToolsView: View {
                             withAnimation(NotchAnimations.content) {
                                 state.timer.start(minutes: minutes)
                             }
+                            state.showToast("\(minutes) min timer set", symbol: "timer")
                         } label: {
                             Text("\(minutes)m")
                                 .font(.system(size: 11, weight: .bold, design: .rounded))
@@ -268,6 +293,10 @@ struct ToolsView: View {
             withAnimation(NotchAnimations.content) {
                 state.eyeBreak.setEnabled(!state.eyeBreak.isEnabled)
             }
+            state.showToast(
+                state.eyeBreak.isEnabled ? "Eye breaks off" : "Eye breaks on",
+                symbol: "eye"
+            )
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: state.eyeBreak.isEnabled ? "eye.fill" : "eye.slash")
@@ -298,6 +327,7 @@ struct ToolsView: View {
                 ForEach(state.shortcuts.favorites.prefix(3), id: \.self) { name in
                     Button {
                         state.shortcuts.run(name)
+                        state.showToast("Running \(name)", symbol: "bolt.fill")
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: state.shortcuts.runningName == name
@@ -332,14 +362,20 @@ struct ToolsView: View {
                     state.quickActions.isDarkMode ? "Light Mode" : "Dark Mode"
                 ) {
                     state.quickActions.toggleAppearance()
+                    state.showToast(
+                        state.quickActions.isDarkMode ? "Light mode on" : "Dark mode on",
+                        symbol: state.quickActions.isDarkMode ? "sun.max.fill" : "moon.fill"
+                    )
                 }
 
                 actionButton("lock.fill", "Lock Screen") {
                     state.quickActions.lockScreen()
+                    state.showToast("Screen locked", symbol: "lock.fill")
                 }
 
                 actionButton("display", "Sleep Display") {
                     state.quickActions.sleepDisplay()
+                    state.showToast("Display asleep", symbol: "display")
                 }
 
                 actionButton(
@@ -350,6 +386,7 @@ struct ToolsView: View {
                     isEnabled: state.quickActions.trashItemCount > 0
                 ) {
                     state.quickActions.emptyTrash()
+                    state.showToast("Trash emptied", symbol: "trash.fill")
                 }
 
                 // These all go through AppleScript, which fails silently when

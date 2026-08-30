@@ -119,6 +119,11 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     /// Current status per integration, refreshed by `refresh()`.
     private(set) var statuses: [Integration: Status] = [:]
 
+    /// Automation status per player. Consent is granted per target app, so
+    /// Spotify and Apple Music each get their own row in settings — the
+    /// `.music` integration line reports whichever player is selected.
+    private(set) var musicStatuses: [MusicProvider: Status] = [:]
+
     /// Extra context shown under a row, e.g. why music can't be verified.
     private(set) var notes: [Integration: String] = [:]
 
@@ -165,38 +170,66 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     ///
     /// `AEDeterminePermissionToAutomateTarget` blocks, and against an app that
     /// is still launching it can block for many seconds. Calling it from
-    /// `refresh()` — which runs on every activation and every time the pane
-    /// appears — is what froze the app right after it opened Music.
+    /// `refresh()` — which runs on every activation and every time a settings
+    /// pane appears — is what froze the app right after it opened Music.
+    ///
+    /// Automation consent is granted per target app, so each player gets its
+    /// own status (surfaced by `musicStatus(for:)`); the `.music` integration
+    /// line reports whichever player is currently selected.
     private func refreshMusicStatus() {
-        let provider = NotchSettings.shared.musicProvider
-        let target: MusicProvider = provider == .automatic ? .appleMusic : provider
+        let current = resolvedMusicProvider()
 
-        guard !NSRunningApplication
-            .runningApplications(withBundleIdentifier: target.bundleID).isEmpty
-        else {
-            statuses[.music] = .unknown
-            notes[.music] = "\(target.title) isn't running — open it to check access."
-            return
-        }
+        for provider in [MusicProvider.appleMusic, .spotify] {
+            guard Self.isInstalled(provider),
+                  !NSRunningApplication
+                      .runningApplications(withBundleIdentifier: provider.bundleID).isEmpty
+            else {
+                musicStatuses[provider] = .unknown
+                if provider == current {
+                    statuses[.music] = .unknown
+                    notes[.music] = "\(provider.title) isn't running — open it to check access."
+                }
+                continue
+            }
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result = Self.automationPermission(for: target.bundleID, askUser: false)
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                switch result {
-                case noErr:
-                    self.statuses[.music] = .granted
-                case OSStatus(-1743): // errAEEventNotPermitted
-                    self.statuses[.music] = .denied
-                    self.notes[.music] = "Enable Notch under Privacy & Security → Automation."
-                case OSStatus(-600): // procNotFound
-                    self.statuses[.music] = .unknown
-                    self.notes[.music] = "\(target.title) isn't running — open it to check access."
-                default:
-                    self.statuses[.music] = .notDetermined
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let result = Self.automationPermission(for: provider.bundleID, askUser: false)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.musicStatuses[provider] = Self.musicStatus(from: result)
+                    if provider == current {
+                        self.statuses[.music] = self.musicStatuses[provider] ?? .unknown
+                        if self.statuses[.music] == .denied {
+                            self.notes[.music] = "Enable Notch under Privacy & Security → Automation."
+                        }
+                    }
                 }
             }
         }
+    }
+
+    /// Maps an `AEDeterminePermissionToAutomateTarget` result to a status.
+    private static func musicStatus(from result: OSStatus) -> Status {
+        switch result {
+        case noErr: .granted
+        case OSStatus(-1743): .denied // errAEEventNotPermitted
+        case OSStatus(-600): .unknown // procNotFound
+        default: .notDetermined
+        }
+    }
+
+    /// The player the `.music` integration line reports on. Automatic
+    /// resolves to Apple Music, since it is the one that ships with macOS.
+    private func resolvedMusicProvider() -> MusicProvider {
+        let provider = NotchSettings.shared.musicProvider
+        return provider == .automatic ? .appleMusic : provider
+    }
+
+    /// Automation status for one specific player — the settings rows for
+    /// Spotify and Apple Music each check their own, because consent is
+    /// granted per target app, not per feature.
+    func musicStatus(for provider: MusicProvider) -> Status {
+        musicStatuses[provider] ?? .unknown
     }
 
     /// Asks macOS whether this app may automate `bundleID`.
@@ -344,11 +377,37 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    /// Launches the chosen player, waits for it to be ready, then addresses it
-    /// over Apple Events — which is the only thing that makes macOS show the
-    /// Automation prompt.
+    /// Launches the currently selected player, waits for it to be ready, then
+    /// addresses it over Apple Events — the only thing that makes macOS show
+    /// the Automation prompt.
     private func grantMusicAccess(finish: @escaping () -> Void) {
-        let provider = NotchSettings.shared.musicProvider
+        performMusicGrant(for: resolvedMusicProvider(), finish: finish)
+    }
+
+    /// The settings rows' per-player version of `request(.music)`: launches
+    /// that exact player (Spotify or Apple Music) and raises its Automation
+    /// prompt, then re-reads the status.
+    func grantMusicAccess(for provider: MusicProvider) {
+        guard !pending.contains(.music) else { return }
+        pending.insert(.music)
+        let before = musicStatus(for: provider)
+
+        performMusicGrant(for: provider) { [weak self] in
+            guard let self else { return }
+            self.pending.remove(.music)
+            self.refresh()
+            if self.musicStatus(for: provider) == before {
+                self.notes[.music] = "No change yet. Allow Notch for \(provider.title) "
+                    + "under Privacy & Security → Automation."
+            }
+        }
+    }
+
+    /// Shared body for the music grant: open the player if it isn't running,
+    /// wait for it to be ready, then call `AEDeterminePermissionToAutomateTarget`
+    /// with `askUser` true — which is what puts the macOS Automation prompt
+    /// on screen.
+    private func performMusicGrant(for provider: MusicProvider, finish: @escaping () -> Void) {
         let target: MusicProvider = provider == .automatic ? .appleMusic : provider
 
         guard Self.isInstalled(target),
