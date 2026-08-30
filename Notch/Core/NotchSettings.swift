@@ -245,8 +245,8 @@ final class NotchSettings {
 
     /// Replace the system's volume and brightness overlay with the notch's
     /// own. Needs Accessibility access to intercept the media keys, which is
-    /// how both references do it — hence opt-in.
-    var hudReplacement = false {
+    /// how both references do it — enabled by default so native HUD is suppressed.
+    var hudReplacement = true {
         didSet {
             save(hudReplacement, "hudReplacement")
             onHUDReplacementChanged?(hudReplacement)
