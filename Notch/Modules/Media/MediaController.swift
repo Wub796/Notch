@@ -443,19 +443,19 @@ final class MediaController {
         }
         displayedElapsed = currentElapsed
 
-        // Universal system media key: pauses/resumes YouTube, Netflix, Chrome, Safari, etc.
-        SystemMediaKeySender.togglePlayPause()
-
-        if useAdapter {
+        // Send exactly one command. The old path sent a system media key,
+        // MediaRemote command, and provider AppleScript for one click; players
+        // could therefore toggle twice and appear not to respond. A selected
+        // provider owns its transport, otherwise use the entitlement-safe
+        // adapter/direct bridge, with the system key as the generic fallback.
+        if let provider = selectedProvider.appleScriptAppName {
+            runProviderCommand(appName: provider, command: "playpause")
+        } else if useAdapter {
             adapter.sendCommand(.togglePlayPause)
         } else if useMediaRemote {
             bridge.send(.togglePlayPause)
-        }
-
-        if let provider = selectedProvider.appleScriptAppName {
-            runProviderCommand(appName: provider, command: "playpause")
-        } else if fallbackAppIsRunning {
-            runMusicCommand("playpause")
+        } else {
+            SystemMediaKeySender.togglePlayPause()
         }
     }
 
@@ -464,14 +464,12 @@ final class MediaController {
             runProviderCommand(appName: provider, command: "next track")
             return
         }
-        SystemMediaKeySender.nextTrack()
         if useAdapter {
             adapter.sendCommand(.nextTrack)
         } else if useMediaRemote {
             bridge.send(.nextTrack)
-        }
-        if fallbackAppIsRunning {
-            runMusicCommand("next track")
+        } else {
+            SystemMediaKeySender.nextTrack()
         }
     }
 
@@ -480,14 +478,12 @@ final class MediaController {
             runProviderCommand(appName: provider, command: "previous track")
             return
         }
-        SystemMediaKeySender.previousTrack()
         if useAdapter {
             adapter.sendCommand(.previousTrack)
         } else if useMediaRemote {
             bridge.send(.previousTrack)
-        }
-        if fallbackAppIsRunning {
-            runMusicCommand("previous track")
+        } else {
+            SystemMediaKeySender.previousTrack()
         }
     }
 
