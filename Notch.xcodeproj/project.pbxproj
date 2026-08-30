@@ -159,7 +159,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "ditto \"$SRCROOT/Notch/MediaRemoteAdapter/MediaRemoteAdapter.framework\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/MediaRemoteAdapter.framework\"\n";
+			shellScript = "set -eu\nsource=\"$SRCROOT/Notch/MediaRemoteAdapter/MediaRemoteAdapter.framework\"\ndestination=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/MediaRemoteAdapter.framework\"\nmkdir -p \"$(dirname \"$destination\")\"\nrm -rf \"$destination\"\nditto \"$source\" \"$destination\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -299,6 +299,7 @@
 				DEVELOPMENT_TEAM = WH94WCUVCU;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/Notch/MediaRemoteAdapter",
@@ -329,6 +330,7 @@
 				DEVELOPMENT_TEAM = WH94WCUVCU;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/Notch/MediaRemoteAdapter",
