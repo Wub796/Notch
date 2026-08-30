@@ -142,18 +142,20 @@
 /* Begin PBXShellScriptBuildPhase section */
 		4E0000000000000000000023 /* Embed MediaRemoteAdapter */ = {
 			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
+			alwaysOutOfDate = 0;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			inputFileListPaths = (
 			);
 			inputPaths = (
+				"$(SRCROOT)/Notch/MediaRemoteAdapter/MediaRemoteAdapter.framework",
 			);
 			name = "Embed MediaRemoteAdapter";
 			outputFileListPaths = (
 			);
 			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/MediaRemoteAdapter.framework",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
