@@ -231,19 +231,18 @@ final class AudioAppMonitor {
     /// work item is scheduled there, so this never touches the main thread for
     /// CoreAudio work. Only the final state write hops to main.
     private func handleActivityChange() {
-        guard let self else { return }
         // Already on audioQueue (called from the debounced work item which runs
         // here). attach/detach are safe on this queue since the listeners are
         // registered to fire here too — no cross-thread CoreAudio deadlock.
-        self.attachPerObjectListeners()
+        attachPerObjectListeners()
 
         let playing: Bool
-        if #available(macOS 14.4, *), !self.observedProcessObjects.isEmpty {
-            playing = self.observedProcessObjects.contains { Self.isRunningOutput($0) }
+        if #available(macOS 14.4, *), !observedProcessObjects.isEmpty {
+            playing = observedProcessObjects.contains { Self.isRunningOutput($0) }
         } else {
-            playing = self.observedDevices.contains { Self.deviceIsRunningSomewhere($0) }
+            playing = observedDevices.contains { Self.deviceIsRunningSomewhere($0) }
         }
-        let apps = self.readAppsOnAudioQueue()
+        let apps = readAppsOnAudioQueue()
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
