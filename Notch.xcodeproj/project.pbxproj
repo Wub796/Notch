@@ -68,6 +68,7 @@
 				4E0000000000000000000021 /* Sources */,
 				4E0000000000000000000020 /* Frameworks */,
 				4E0000000000000000000022 /* Resources */,
+				4E0000000000000000000023 /* Embed MediaRemoteAdapter */,
 			);
 			buildRules = (
 			);
@@ -136,6 +137,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		4E0000000000000000000023 /* Embed MediaRemoteAdapter */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed MediaRemoteAdapter";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "ditto \"$SRCROOT/Notch/MediaRemoteAdapter/MediaRemoteAdapter.framework\" \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/MediaRemoteAdapter.framework\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
 		4E0000000000000000000050 /* Debug */ = {
