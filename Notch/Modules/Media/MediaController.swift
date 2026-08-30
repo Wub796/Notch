@@ -427,6 +427,7 @@ final class MediaController {
 
     private func tickProgress() {
         displayedElapsed = currentElapsed
+        guard isPlaying else { return }
         lyrics.updateCurrentLine(for: displayedElapsed)
     }
 
@@ -442,6 +443,11 @@ final class MediaController {
             anchorDate = Date()
         }
         displayedElapsed = currentElapsed
+        // Stop the collapsed lyric timer immediately on an optimistic pause;
+        // the player callback remains authoritative for resuming. Without
+        // this, a delayed MediaRemote update leaves lyrics advancing while the
+        // actual player is paused.
+        updateLyricActivityTimer()
 
         // Send exactly one command. The old path sent a system media key,
         // MediaRemote command, and provider AppleScript for one click; players
