@@ -66,9 +66,7 @@ final class MediaRemoteAdapter {
         scriptURL() != nil && frameworkURL() != nil
     }
 
-    /// The script ships as a plain resource. The framework is a directory the
-    /// script dlopens; Xcode's synchronized group copies it under Resources,
-    /// but check Frameworks too in case a build ever embeds it there instead.
+    /// The script and framework both ship as plain resources under Resources/.
     private static func scriptURL() -> URL? {
         guard let resources = Bundle.main.resourceURL else { return nil }
         let url = resources.appendingPathComponent("mediaremote-adapter.pl")
@@ -77,12 +75,8 @@ final class MediaRemoteAdapter {
 
     private static func frameworkURL() -> URL? {
         guard let resources = Bundle.main.resourceURL else { return nil }
-        let candidates = [
-            resources.appendingPathComponent("MediaRemoteAdapter.framework"),
-            resources.deletingLastPathComponent()
-                .appendingPathComponent("Frameworks/MediaRemoteAdapter.framework")
-        ]
-        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
+        let url = resources.appendingPathComponent("MediaRemoteAdapter.framework")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     private static func perlURL() -> URL {
