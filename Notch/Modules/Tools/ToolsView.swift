@@ -201,20 +201,24 @@ struct ToolsView: View {
             sectionLabel("TIMER")
 
             if state.timer.isRunning {
-                HStack(spacing: 10) {
+                HStack(spacing: 6) {
                     Text(TimerManager.timeString(state.timer.remaining))
-                        .font(.notchTitle.monospacedDigit())
+                        .font(.system(size: 15, weight: .bold, design: .rounded).monospacedDigit())
                         .foregroundStyle(NotchTheme.inkPrimary)
                         .contentTransition(.numericText())
 
+                    Spacer(minLength: 0)
+
                     Button {
-                        state.timer.togglePause()
+                        withAnimation(NotchAnimations.content) {
+                            state.timer.togglePause()
+                        }
                     } label: {
                         Image(systemName: state.timer.isPaused ? "play.fill" : "pause.fill")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(NotchTheme.inkPrimary)
-                            .frame(width: 26, height: 26)
-                            .background(Circle().fill(NotchTheme.surface))
+                            .frame(width: 24, height: 24)
+                            .background(Circle().fill(Color.white.opacity(0.1)))
                     }
                     .buttonStyle(PressableButtonStyle())
                     .accessibilityLabel(state.timer.isPaused ? "Resume timer" : "Pause timer")
@@ -223,14 +227,15 @@ struct ToolsView: View {
                         withAnimation(NotchAnimations.content) { state.timer.cancel() }
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(NotchTheme.inkSecondary)
-                            .frame(width: 26, height: 26)
-                            .background(Circle().fill(NotchTheme.surface))
+                            .frame(width: 24, height: 24)
+                            .background(Circle().fill(Color.white.opacity(0.1)))
                     }
                     .buttonStyle(PressableButtonStyle())
                     .accessibilityLabel("Cancel timer")
                 }
+                .frame(maxWidth: .infinity)
             } else {
                 HStack(spacing: 5) {
                     ForEach([1, 5, 10, 25], id: \.self) { minutes in
@@ -240,16 +245,17 @@ struct ToolsView: View {
                             }
                         } label: {
                             Text("\(minutes)m")
-                                .font(.notchCaption.weight(.bold).monospacedDigit())
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
                                 .foregroundStyle(NotchTheme.inkPrimary)
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 6)
-                                .background(Capsule().fill(NotchTheme.surface))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(Color.white.opacity(0.08)))
                         }
                         .buttonStyle(PressableButtonStyle())
                         .accessibilityLabel("\(minutes) minute timer")
                     }
                 }
+                .frame(maxWidth: .infinity)
             }
 
             eyeBreakRow

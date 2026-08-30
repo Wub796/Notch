@@ -122,8 +122,8 @@ struct CollapsedNotchView: View {
                     )
                 }
             case let .timer(remaining, progress):
-                dropped {
-                    VStack(spacing: 5) {
+                dropped(height: 42) {
+                    VStack(spacing: 4) {
                         droppedRow(
                             symbol: "timer",
                             tint: .orange,
@@ -135,6 +135,7 @@ struct CollapsedNotchView: View {
                             tint: .orange,
                             inline: true
                         )
+                        .frame(height: 4)
                     }
                 }
             case let .focusMode(name, symbol):
@@ -195,6 +196,7 @@ struct CollapsedNotchView: View {
     /// Wraps any activity content in the dropped form: the notch's own row
     /// keeps its weather wings, and the activity gets the full width beneath.
     private func dropped<Content: View>(
+        height: CGFloat = 36,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(spacing: 0) {
@@ -203,7 +205,7 @@ struct CollapsedNotchView: View {
 
             content()
                 .frame(maxWidth: .infinity)
-                .frame(height: 34)
+                .frame(height: height)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 6)
         }
@@ -216,11 +218,11 @@ struct CollapsedNotchView: View {
         label: String,
         value: String?
     ) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(tint)
-                .frame(width: 20)
+                .frame(width: 18)
 
             Text(label)
                 .font(.notchBody.weight(.bold))

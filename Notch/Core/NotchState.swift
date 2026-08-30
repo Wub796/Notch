@@ -180,6 +180,11 @@ final class NotchState {
             self.onModeChange?(self.mode)
         }
 
+        timer.onStateChange = { [weak self] in
+            guard let self else { return }
+            self.onModeChange?(self.mode)
+        }
+
         media.onTrackChange = { [weak self] track in
             self?.activities.showTrackChange(title: track.title, artist: track.artist)
         }
@@ -391,6 +396,8 @@ final class NotchState {
         case .volume, .brightness: 34
         // The charging popup drops beneath the notch, iOS-style.
         case .battery(_, true, _): 46
+        case .timer: 42
+        case .screenLock, .focusMode, .eyeBreak, .accessoryBattery, .meetingSoon: 36
         default: 0
         }
     }

@@ -11,6 +11,10 @@ final class TimerManager {
     private(set) var isPaused = false
     private(set) var pausedRemaining: TimeInterval = 0
     private(set) var totalDuration: TimeInterval = 0
+    private(set) var remaining: TimeInterval = 0
+
+    /// Fired when timer state or countdown changes for notch live activity updates.
+    var onStateChange: (() -> Void)?
 
     /// Fired when a timer completes, for the live activity + notification.
     var onFinished: (() -> Void)?
@@ -21,15 +25,9 @@ final class TimerManager {
         deadline != nil || isPaused
     }
 
-    var remaining: TimeInterval {
-        if isPaused { return pausedRemaining }
-        guard let deadline else { return 0 }
-        return max(deadline.timeIntervalSinceNow, 0)
-    }
-
     var progress: Double {
         guard totalDuration > 0 else { return 0 }
-        return 1 - (remaining / totalDuration)
+        return max(0, min(1, 1 - (remaining / totalDuration)))
     }
 
     func start(minutes: Int) {
@@ -39,28 +37,34 @@ final class TimerManager {
     func start(duration: TimeInterval) {
         guard duration > 0 else { return }
         totalDuration = duration
+        remaining = duration
         deadline = Date().addingTimeInterval(duration)
         isPaused = false
         scheduleTick()
+        onStateChange?()
     }
 
     func addMinutes(_ minutes: Int) {
         let delta = TimeInterval(minutes) * 60
         if isPaused {
             pausedRemaining += delta
+            remaining = pausedRemaining
         } else if let deadline {
             self.deadline = deadline.addingTimeInterval(delta)
+            remaining = max(self.deadline!.timeIntervalSinceNow, 0)
         } else {
             start(duration: delta)
             return
         }
         totalDuration += delta
+        onStateChange?()
     }
 
     func togglePause() {
         if isPaused {
             deadline = Date().addingTimeInterval(pausedRemaining)
             isPaused = false
+            remaining = pausedRemaining
             scheduleTick()
         } else {
             pausedRemaining = remaining
@@ -68,6 +72,7 @@ final class TimerManager {
             tickTimer?.invalidate()
             tickTimer = nil
         }
+        onStateChange?()
     }
 
     func cancel() {
@@ -77,16 +82,31 @@ final class TimerManager {
         isPaused = false
         pausedRemaining = 0
         totalDuration = 0
+        remaining = 0
+        onStateChange?()
     }
 
     private func scheduleTick() {
         tickTimer?.invalidate()
-        // Half-second cadence keeps the countdown legible without burning CPU.
-        tickTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        updateRemaining()
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self else { return }
+            self.updateRemaining()
             if self.remaining <= 0 {
                 self.finish()
             }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.tickTimer = timer
+    }
+
+    private func updateRemaining() {
+        if isPaused {
+            remaining = pausedRemaining
+        } else if let deadline {
+            remaining = max(deadline.timeIntervalSinceNow, 0)
+        } else {
+            remaining = 0
         }
     }
 
@@ -95,7 +115,9 @@ final class TimerManager {
         tickTimer = nil
         deadline = nil
         totalDuration = 0
+        remaining = 0
         onFinished?()
+        onStateChange?()
         Self.postNotification(
             title: "Timer finished",
             body: "Your timer is up."
