@@ -67,54 +67,94 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
-            List(visiblePanes, selection: $selection) { section in
-                HStack(spacing: 10) {
-                    Image(systemName: section.systemImage)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 24, height: 24)
-                        .background {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(section.tint)
-                        }
-                    Text(section.title)
-                        .font(.system(size: 13, weight: .medium))
+        HStack(spacing: 0) {
+            sidebar
+                .frame(width: 210)
+                .background(Color.black.opacity(0.3))
+
+            Rectangle()
+                .fill(Color.white.opacity(0.1))
+                .frame(width: 1)
+
+            VStack(alignment: .leading, spacing: 0) {
+                // Header bar
+                HStack {
+                    Text(selection.title)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(NotchTheme.inkPrimary)
+                    Spacer()
                 }
-                .padding(.vertical, 2)
-                .tag(section)
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                .padding(.bottom, 12)
+
+                detail
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .navigationSplitViewColumnWidth(196)
-            .safeAreaInset(edge: .top) {
-                // A field in the sidebar's own content, not .searchable: that
-                // modifier places its field in the toolbar area, and this
-                // window has no toolbar, so it landed on the split view's top
-                // edge and across the first rows.
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    TextField("Search", text: $search)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 12))
-                }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 6)
-                .background {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(.quaternary.opacity(0.5))
-                }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 8)
-                .background(.bar)
-            }
-        } detail: {
-            detail
-                .navigationTitle(selection.title)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 780, idealWidth: 820, minHeight: 560, idealHeight: 620)
-        // Match the notch's dark aesthetic.
         .preferredColorScheme(.dark)
+    }
+
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            // Search field
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                TextField("Search", text: $search)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+            }
+            .padding(12)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 3) {
+                    ForEach(visiblePanes) { pane in
+                        let isSelected = selection == pane
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.12)) {
+                                selection = pane
+                            }
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: pane.systemImage)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 24, height: 24)
+                                    .background {
+                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                            .fill(pane.tint)
+                                    }
+                                Text(pane.title)
+                                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                                    .foregroundStyle(isSelected ? .white : NotchTheme.inkPrimary)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background {
+                                if isSelected {
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(Color.accentColor.opacity(0.35))
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                .padding(.horizontal, 10)
+            }
+        }
     }
 
     @ViewBuilder

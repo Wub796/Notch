@@ -8,32 +8,32 @@ import SwiftUI
 /// selection without depending on a view type — a compile error anywhere in
 /// the view would otherwise take the whole state object down with it.
 enum AudioScreenTab: String, CaseIterable, Identifiable {
-    /// Spotify Connect: the account's own devices, over the Web API.
-    case spotify
-    /// Local outputs CoreAudio reports as AirPlay.
-    case airplay
-    /// Processes making sound on this Mac.
+    /// Processes making sound on this Mac (Chrome, Safari, Spotify, Music, YouTube, etc.).
     case apps
     /// Every local CoreAudio output.
     case system
+    /// Local outputs CoreAudio reports as AirPlay.
+    case airplay
+    /// Spotify Connect: the account's own devices, over the Web API.
+    case spotify
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .spotify: "Spotify"
-        case .airplay: "AirPlay"
-        case .apps: "Apps"
+        case .apps: "Apps & Web"
         case .system: "System"
+        case .airplay: "AirPlay"
+        case .spotify: "Spotify"
         }
     }
 
     var symbol: String {
         switch self {
-        case .spotify: "music.note"
+        case .apps: "waveform"
+        case .system: "speaker.wave.2.fill"
         case .airplay: "airplayaudio"
-        case .apps: "square.grid.2x2.fill"
-        case .system: "laptopcomputer"
+        case .spotify: "music.note"
         }
     }
 }
@@ -53,18 +53,22 @@ enum AudioScreenTab: String, CaseIterable, Identifiable {
 struct AudioDevicesView: View {
     let state: NotchState
 
-    private var spotify: SpotifyLibrary { state.spotify }
+    private var activeAudioApp: AudioAppMonitor.App? {
+        state.audioApps.apps.first(where: \.isPlaying)
+    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: NotchTheme.Space.s) {
                 meterFailureNotice
 
+                nowPlayingBanner
+
                 switch state.audioTab {
-                case .spotify: spotifyRows
-                case .airplay: airplayRows
                 case .apps: appRows
                 case .system: deviceRows
+                case .airplay: airplayRows
+                case .spotify: spotifyRows
                 }
             }
             .padding(.bottom, 2)
@@ -126,6 +130,84 @@ struct AudioDevicesView: View {
             .padding(.vertical, 10)
             .notchCard(radius: NotchTheme.Radius.tile, isHighlighted: true, tint: .orange)
             .transition(.opacity)
+        }
+    }
+
+    private var spotify: SpotifyLibrary { state.spotify }
+
+    @ViewBuilder
+    private var nowPlayingBanner: some View {
+        if state.media.isPlaying || activeAudioApp != nil {
+            let title = !(state.media.track?.title.isEmpty ?? true) ? (state.media.track?.title ?? "Playing") : (activeAudioApp?.name ?? "Playing Audio")
+            let artist = !(state.media.track?.artist.isEmpty ?? true) ? (state.media.track?.artist ?? "Active Media") : "Playing in \(activeAudioApp?.name ?? "Browser")"
+
+            HStack(spacing: 12) {
+                // Video thumbnail / Album art / App icon
+                Group {
+                    if let artwork = state.media.artwork {
+                        Image(nsImage: artwork)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else if let icon = state.media.sourceAppIcon ?? activeAudioApp?.icon {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .padding(8)
+                            .background(Color.white.opacity(0.08))
+                    } else {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.notchBody.weight(.bold))
+                            .foregroundStyle(NotchTheme.inkPrimary)
+                            .lineLimit(1)
+
+                        Image(systemName: "waveform")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.green)
+                            .symbolEffect(.variableColor.iterative, options: .repeating)
+                    }
+
+                    Text(artist)
+                        .font(.notchCaption)
+                        .foregroundStyle(NotchTheme.inkSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                // Quick transport / Focus buttons
+                HStack(spacing: 8) {
+                    if let active = activeAudioApp {
+                        RoundIconButton(
+                            systemImage: "arrow.up.forward.app.fill",
+                            help: "Bring \(active.name) to the front"
+                        ) {
+                            active.activate()
+                        }
+                    }
+
+                    RoundIconButton(
+                        systemImage: state.media.isPlaying ? "pause.fill" : "play.fill",
+                        help: state.media.isPlaying ? "Pause" : "Play"
+                    ) {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
+                            state.media.togglePlayPause()
+                        }
+                    }
+                }
+            }
+            .padding(10)
+            .notchCard(radius: NotchTheme.Radius.tile, isHighlighted: true, tint: .green)
+            .transition(.opacity.combined(with: .scale(scale: 0.98)))
         }
     }
 
@@ -270,18 +352,16 @@ struct AudioDevicesView: View {
                     onSelect: { app.activate() }
                 ) {
                     RoundIconButton(
-                        systemImage: "play.fill",
+                        systemImage: app.isPlaying ? "pause.fill" : "play.fill",
+                        help: app.isPlaying ? "Pause audio/video" : "Play audio/video"
+                    ) {
+                        state.media.togglePlayPause()
+                    }
+                    RoundIconButton(
+                        systemImage: "arrow.up.forward.app.fill",
                         help: "Bring \(app.name) to the front"
                     ) {
                         app.activate()
-                    }
-                    RoundIconButton(
-                        systemImage: "slider.horizontal.3",
-                        help: "Sound settings"
-                    ) {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension") {
-                            NSWorkspace.shared.open(url)
-                        }
                     }
                     RoundIconButton(
                         systemImage: "speaker.slash.fill",
@@ -500,6 +580,7 @@ struct RoundIconButton: View {
         .buttonStyle(PressableButtonStyle())
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.4)
+        .contentTransition(.symbolEffect(.replace))
         .onHover { hovering in
             withAnimation(NotchAnimations.content) { isHovering = hovering }
         }

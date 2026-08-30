@@ -154,14 +154,24 @@ struct OnboardingView: View {
     @State private var refreshToken = 0
 
     private var permissions: some View {
+        let accessibilityGranted = IntegrationPermissions.shared.status(for: .accessibility) == .granted
         let calendarGranted = IntegrationPermissions.shared.status(for: .calendar) == .granted
         let locationGranted = IntegrationPermissions.shared.status(for: .location) == .granted
 
         return VStack(spacing: 8) {
             HStack(spacing: 8) {
                 permissionButton(
+                    accessibilityGranted ? "checkmark.circle.fill" : "accessibility",
+                    accessibilityGranted ? "Accessibility" : "Accessibility",
+                    isGranted: accessibilityGranted
+                ) {
+                    IntegrationPermissions.shared.request(.accessibility) {
+                        refreshToken += 1
+                    }
+                }
+                permissionButton(
                     calendarGranted ? "checkmark.circle.fill" : "calendar",
-                    calendarGranted ? "Calendar Enabled" : "Enable Calendar",
+                    calendarGranted ? "Calendar" : "Calendar",
                     isGranted: calendarGranted
                 ) {
                     IntegrationPermissions.shared.request(.calendar) {
@@ -171,7 +181,7 @@ struct OnboardingView: View {
                 }
                 permissionButton(
                     locationGranted ? "checkmark.circle.fill" : "location.fill",
-                    locationGranted ? "Weather Enabled" : "Enable Weather",
+                    locationGranted ? "Weather" : "Weather",
                     isGranted: locationGranted
                 ) {
                     IntegrationPermissions.shared.request(.location) {
@@ -180,7 +190,7 @@ struct OnboardingView: View {
                     }
                 }
             }
-            Text("Both are optional — you can grant or revoke them anytime in System Settings.")
+            Text("Optional — grant with one click or manage in System Settings → Privacy & Security.")
                 .font(.system(size: 9.5))
                 .foregroundStyle(.white.opacity(0.4))
         }

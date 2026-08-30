@@ -103,29 +103,28 @@ final class AudioAppMonitor {
         guard !isObserving else { return }
         isObserving = true
 
-        // Listeners fire on a private queue (not .main): CoreAudio bursts a
-        // dozen notifications for a single audio start, and fielding them on
-        // the main thread froze the UI. The block just schedules one
-        // coalesced pass on the audio queue.
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             self?.scheduleActivityChange()
         }
         listenerBlock = block
 
-        if #available(macOS 14.4, *) {
-            var address = Self.address(Self.processObjectListSelector)
+        audioQueue.async { [weak self] in
+            guard let self else { return }
+            if #available(macOS 14.4, *) {
+                var address = Self.address(Self.processObjectListSelector)
+                AudioObjectAddPropertyListenerBlock(
+                    AudioObjectID(kAudioObjectSystemObject), &address, self.audioQueue, block
+                )
+            }
+
+            var deviceList = Self.address(kAudioHardwarePropertyDevices)
             AudioObjectAddPropertyListenerBlock(
-                AudioObjectID(kAudioObjectSystemObject), &address, audioQueue, block
+                AudioObjectID(kAudioObjectSystemObject), &deviceList, self.audioQueue, block
             )
+
+            self.attachPerObjectListeners()
+            self.handleActivityChange()
         }
-
-        var deviceList = Self.address(kAudioHardwarePropertyDevices)
-        AudioObjectAddPropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject), &deviceList, audioQueue, block
-        )
-
-        attachPerObjectListeners()
-        handleActivityChange()
     }
 
     /// Tears the listeners down and puts them back. After a sleep/wake cycle
@@ -374,9 +373,56 @@ final class AudioAppMonitor {
         return running != 0
     }
 
-    /// Turns pids into apps, dropping the ones with no user-facing identity —
-    /// coreaudiod and friends have audio processes but no icon and no name
-    /// worth showing.
+    // MARK: - Process Host Resolution
+
+    private static func resolveHostApp(for running: NSRunningApplication) -> (id: String, name: String, icon: NSImage?, mainApp: NSRunningApplication?) {
+        let bundleID = running.bundleIdentifier ?? ""
+
+        // Common helper and browser mappings
+        let knownMappings: [(prefix: String, mainBundleID: String, defaultName: String)] = [
+            ("com.google.Chrome", "com.google.Chrome", "Google Chrome"),
+            ("com.apple.WebKit", "com.apple.Safari", "Safari"),
+            ("com.apple.Safari", "com.apple.Safari", "Safari"),
+            ("company.thebrowser.Browser", "company.thebrowser.Browser", "Arc"),
+            ("com.brave.Browser", "com.brave.Browser", "Brave"),
+            ("org.mozilla.firefox", "org.mozilla.firefox", "Firefox"),
+            ("com.microsoft.edgemac", "com.microsoft.edgemac", "Microsoft Edge"),
+            ("com.operasoftware", "com.operasoftware.Opera", "Opera"),
+            ("com.hnc.Discord", "com.hnc.Discord", "Discord"),
+            ("com.tinyspeck.slackmacgap", "com.tinyspeck.slackmacgap", "Slack"),
+            ("com.spotify.client", "com.spotify.client", "Spotify"),
+            ("com.apple.Music", "com.apple.Music", "Music"),
+            ("com.apple.TV", "com.apple.TV", "Apple TV"),
+            ("com.apple.podcasts", "com.apple.podcasts", "Podcasts"),
+            ("org.videolan.vlc", "org.videolan.vlc", "VLC"),
+            ("com.colliderli.iina", "com.colliderli.iina", "IINA"),
+            ("us.zoom.xos", "us.zoom.xos", "Zoom"),
+            ("com.apple.FaceTime", "com.apple.FaceTime", "FaceTime"),
+            ("com.apple.QuickTimePlayerX", "com.apple.QuickTimePlayerX", "QuickTime Player")
+        ]
+
+        for mapping in knownMappings {
+            if bundleID.hasPrefix(mapping.prefix) || bundleID.contains(mapping.prefix) {
+                if let mainApp = NSRunningApplication.runningApplications(withBundleIdentifier: mapping.mainBundleID).first {
+                    return (mapping.mainBundleID, mainApp.localizedName ?? mapping.defaultName, mainApp.icon, mainApp)
+                }
+                return (mapping.mainBundleID, mapping.defaultName, running.icon, running)
+            }
+        }
+
+        // Check if there is a running application whose bundle identifier is a prefix
+        if let mainApp = NSWorkspace.shared.runningApplications.first(where: { app in
+            guard let appID = app.bundleIdentifier else { return false }
+            return (bundleID.hasPrefix(appID) || appID.hasPrefix(bundleID)) && app.activationPolicy == .regular
+        }) {
+            return (mainApp.bundleIdentifier ?? bundleID, mainApp.localizedName ?? running.localizedName ?? "Audio App", mainApp.icon, mainApp)
+        }
+
+        return (bundleID, running.localizedName ?? "Audio App", running.icon, running)
+    }
+
+    /// Turns pids into apps, resolving browser and helper processes to their
+    /// main parent applications (Chrome, Safari, Firefox, Discord, etc.).
     private static func resolve(
         _ processes: [(pid: pid_t, isRunningOutput: Bool)],
         keeping nowPlayingBundleID: String?,
@@ -385,37 +431,46 @@ final class AudioAppMonitor {
         var byBundle: [String: App] = [:]
 
         for process in processes {
-            guard let running = NSRunningApplication(processIdentifier: process.pid),
-                  let bundleID = running.bundleIdentifier,
-                  let name = running.localizedName,
-                  running.activationPolicy != .prohibited
-            else { continue }
+            guard let running = NSRunningApplication(processIdentifier: process.pid) else { continue }
+
+            let host = resolveHostApp(for: running)
+            guard !host.id.isEmpty, host.id != "com.apple.audio.CoreAudio" else { continue }
 
             let app = App(
-                id: bundleID,
-                name: name,
-                icon: running.icon,
+                id: host.id,
+                name: host.name,
+                icon: host.icon,
                 isPlaying: process.isRunningOutput,
-                pid: process.pid
+                pid: host.mainApp?.processIdentifier ?? process.pid
             )
-            // One row per app: a browser has several audio processes and only
-            // some of them are producing sound at any moment.
-            if let existing = byBundle[bundleID], existing.isPlaying { continue }
-            byBundle[bundleID] = app
+
+            // If already present, ensure isPlaying is true if any child process is playing
+            if let existing = byBundle[host.id] {
+                if !existing.isPlaying && app.isPlaying {
+                    byBundle[host.id] = app
+                }
+            } else {
+                byBundle[host.id] = app
+            }
         }
 
-        // Keep the current player visible between tracks, when it briefly
-        // stops running output but is plainly still the thing you are using.
-        if let nowPlayingBundleID, byBundle[nowPlayingBundleID] == nil,
-           let running = NSRunningApplication
-               .runningApplications(withBundleIdentifier: nowPlayingBundleID).first {
-            byBundle[nowPlayingBundleID] = App(
-                id: nowPlayingBundleID,
-                name: running.localizedName ?? nowPlayingBundleID,
-                icon: running.icon,
-                isPlaying: isPlaying,
-                pid: running.processIdentifier
-            )
+        // Also ensure all running known audio/browser apps appear
+        let runningApps = NSWorkspace.shared.runningApplications
+        for running in runningApps {
+            guard let id = running.bundleIdentifier,
+                  running.activationPolicy == .regular,
+                  audioBundleIDs.contains(id) || id == nowPlayingBundleID
+            else { continue }
+
+            if byBundle[id] == nil {
+                byBundle[id] = App(
+                    id: id,
+                    name: running.localizedName ?? id,
+                    icon: running.icon,
+                    isPlaying: id == nowPlayingBundleID && isPlaying,
+                    pid: running.processIdentifier
+                )
+            }
         }
 
         return sorted(Array(byBundle.values))
@@ -423,12 +478,11 @@ final class AudioAppMonitor {
 
     // MARK: - Pre-14.4 fallback
 
-    /// Known media apps that are running. Without the process list there is no
-    /// way to tell whether they are actually making sound, so only the
-    /// now-playing app is marked as playing.
+    /// Known media and browser apps that produce audio on macOS.
     private static let audioBundleIDs: Set<String> = [
         "com.apple.Music", "com.spotify.client", "com.google.Chrome",
         "com.apple.Safari", "org.mozilla.firefox", "com.microsoft.edgemac",
+        "company.thebrowser.Browser", "com.brave.Browser", "com.operasoftware.Opera",
         "com.apple.TV", "com.apple.QuickTimePlayerX", "com.colliderli.iina",
         "org.videolan.vlc", "com.apple.podcasts", "com.apple.FaceTime",
         "us.zoom.xos", "com.tinyspeck.slackmacgap", "com.hnc.Discord",

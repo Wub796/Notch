@@ -104,6 +104,9 @@ final class SpotifyAuth {
     func signIn() {
         guard !clientID.isEmpty else {
             state = .needsClientID
+            DispatchQueue.main.async {
+                SettingsWindowController.shared.show()
+            }
             return
         }
 

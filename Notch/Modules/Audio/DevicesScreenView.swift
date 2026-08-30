@@ -121,7 +121,6 @@ struct DevicesScreenView: View {
             .padding(.horizontal, 10)
             .frame(height: 24)
             .background(Capsule().fill(Color.green.opacity(0.14)))
-            .overlay(Capsule().strokeBorder(Color.green.opacity(0.28), lineWidth: 1))
             .transition(.opacity.combined(with: .scale(scale: 0.9)))
             .accessibilityLabel("Audio playing")
             .accessibilityValue(Self.playingLabel(playing))
@@ -177,8 +176,7 @@ struct DevicesScreenView: View {
                 .buttonStyle(PressableButtonStyle())
             }
             .frame(height: 34)
-            .background(Capsule().fill(NotchTheme.surface))
-            .overlay(Capsule().strokeBorder(.white.opacity(0.08), lineWidth: 1))
+            .background(Capsule().fill(Color.white.opacity(0.08)))
         } else {
             Button {
                 SpotifyAuth.shared.signIn()
@@ -237,8 +235,7 @@ struct DevicesScreenView: View {
             }
         }
         .padding(3)
-        .background(Capsule().fill(NotchTheme.surface))
-        .overlay(Capsule().strokeBorder(.white.opacity(0.06), lineWidth: 1))
+        .background(Capsule().fill(Color.white.opacity(0.06)))
         .fixedSize()
     }
 
@@ -416,10 +413,10 @@ struct PlaylistCard: View {
         }
         .padding(10)
         .notchCard(isHighlighted: isPlaying, tint: .green)
-        .overlay {
+        .background {
             if isHovering, !isPlaying {
                 RoundedRectangle(cornerRadius: NotchTheme.Radius.card, style: .continuous)
-                    .strokeBorder(.white.opacity(0.16), lineWidth: 1)
+                    .fill(Color.white.opacity(0.06))
             }
         }
         .onHover { isHovering = $0 }
@@ -433,7 +430,7 @@ struct PlaylistCard: View {
                 Image(nsImage: artwork).resizable().aspectRatio(contentMode: .fill)
             } else {
                 RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
-                    .fill(NotchTheme.surfaceHover)
+                    .fill(Color.white.opacity(0.06))
                     .overlay {
                         Image(systemName: "music.note.list")
                             .font(.system(size: 16, weight: .medium))
@@ -507,13 +504,7 @@ struct SpotifyDiscoverScreen: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 42)
-        .notchCard(radius: NotchTheme.Radius.tile)
-        .overlay {
-            if searchFocused {
-                RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
-            }
-        }
+        .background(Capsule().fill(Color.white.opacity(searchFocused ? 0.12 : 0.06)))
     }
 
     private var shelf: some View {
@@ -770,33 +761,130 @@ struct SpotifyVolumeBar: View {
 struct SpotifyConnectPrompt: View {
     let message: String
 
+    @State private var clientIDInput: String = ""
+    @State private var showsInput: Bool = false
+
+    private var auth: SpotifyAuth { SpotifyAuth.shared }
+
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             Image(systemName: "music.note.house.fill")
                 .font(.system(size: 26, weight: .medium))
-                .foregroundStyle(Color.green.opacity(0.8))
+                .foregroundStyle(Color.green)
 
             Text(message)
                 .font(.notchBody)
-                .foregroundStyle(NotchTheme.inkSecondary)
+                .foregroundStyle(NotchTheme.inkPrimary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button {
-                SpotifyAuth.shared.signIn()
-            } label: {
-                Text("Connect Spotify")
-                    .font(.notchBody.weight(.bold))
-                    .foregroundStyle(.white)
+            if auth.clientID.isEmpty && !showsInput {
+                VStack(spacing: 8) {
+                    Text("Requires a free Client ID from Spotify's Developer Dashboard to access remote Web API features.")
+                        .font(.notchFootnote)
+                        .foregroundStyle(NotchTheme.inkMuted)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+
+                    HStack(spacing: 10) {
+                        Button {
+                            SettingsWindowController.shared.show()
+                        } label: {
+                            Text("Open Settings")
+                                .font(.notchCaption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 14)
+                                .frame(height: 30)
+                                .background(Capsule().fill(Color.green.opacity(0.9)))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(PressableButtonStyle())
+
+                        Button {
+                            showsInput = true
+                        } label: {
+                            Text("Paste ID Here")
+                                .font(.notchCaption.weight(.semibold))
+                                .foregroundStyle(NotchTheme.inkSecondary)
+                                .padding(.horizontal, 12)
+                                .frame(height: 30)
+                                .background(Capsule().fill(Color.white.opacity(0.1)))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                    }
+                }
+            } else if auth.clientID.isEmpty && showsInput {
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        TextField("Paste Spotify Client ID", text: $clientIDInput)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 11, design: .monospaced))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(Color.white.opacity(0.1)))
+                            .foregroundStyle(.white)
+
+                        Button {
+                            let trimmed = clientIDInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !trimmed.isEmpty {
+                                SpotifyAuth.shared.clientID = trimmed
+                                SpotifyAuth.shared.signIn()
+                            }
+                        } label: {
+                            Text("Connect")
+                                .font(.notchCaption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 12)
+                                .frame(height: 28)
+                                .background(Capsule().fill(Color.green))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                    }
+                    .frame(maxWidth: 280)
+
+                    Button("Get a Client ID from Spotify Dashboard") {
+                        if let url = URL(string: "https://developer.spotify.com/dashboard") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .font(.notchFootnote)
+                    .foregroundStyle(Color.green)
+                }
+            } else {
+                Button {
+                    SpotifyAuth.shared.signIn()
+                } label: {
+                    HStack(spacing: 6) {
+                        if auth.state == .authorizing {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Text(auth.state == .authorizing ? "Opening Spotify..." : "Connect Spotify")
+                            .font(.notchBody.weight(.bold))
+                            .foregroundStyle(.white)
+                    }
                     .padding(.horizontal, 18)
                     .frame(height: 32)
                     .background(Capsule().fill(Color.green.opacity(0.85)))
                     .contentShape(Capsule())
+                }
+                .buttonStyle(PressableButtonStyle())
+
+                if case let .failed(error) = auth.state {
+                    Text(error)
+                        .font(.notchCaption)
+                        .foregroundStyle(.orange)
+                }
             }
-            .buttonStyle(PressableButtonStyle())
         }
-        .padding(NotchTheme.Space.xl)
+        .padding(.vertical, 16)
+        .padding(.horizontal, NotchTheme.Space.l)
         .frame(maxWidth: .infinity)
-        .notchCard()
+        .background(
+            RoundedRectangle(cornerRadius: NotchTheme.Radius.card, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+        )
     }
 }

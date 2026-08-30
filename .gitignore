@@ -13,3 +13,8 @@ xcuserdata/
 # Swift Package Manager
 .build/
 .swiftpm/
+
+# Agent & local tooling
+.agents/
+.freebuff/
+skills-lock.json

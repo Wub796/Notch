@@ -50,23 +50,25 @@ enum NotchAnimations {
     /// passed, so the panel eases away from the notch before it travels, then
     /// glides the rest. Closing keeps its spring — leaving briskly is the
     /// right behaviour on the way out.
+    /// Opening into the full panel.
+    ///
+    /// Natural Apple fluid spring curves that are interruptible and momentum-aware.
     static var open: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .timingCurve(0.6, 0, 0.35, 1, duration: 0.8)
-        case .bouncy: return .spring(response: 0.9, dampingFraction: 0.82, blendDuration: 0)
-        case .calm: return .timingCurve(0.65, 0, 0.3, 1, duration: 1.05)
+        case .snappy: return .spring(response: 0.38, dampingFraction: 0.88, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.44, dampingFraction: 0.76, blendDuration: 0)
+        case .calm: return .spring(response: 0.48, dampingFraction: 0.98, blendDuration: 0)
         }
     }
 
-    /// Closing back into the hardware notch, slightly longer than opening so
-    /// the notch never appears to snap shut.
+    /// Closing back into the hardware notch: brisk and responsive so it gets out of the way.
     static var close: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.58, dampingFraction: 1, blendDuration: 0)
-        case .bouncy: return .spring(response: 0.62, dampingFraction: 0.95, blendDuration: 0)
-        case .calm: return .spring(response: 0.82, dampingFraction: 1, blendDuration: 0)
+        case .snappy: return .spring(response: 0.32, dampingFraction: 0.96, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.36, dampingFraction: 0.85, blendDuration: 0)
+        case .calm: return .spring(response: 0.40, dampingFraction: 1.0, blendDuration: 0)
         }
     }
 
@@ -79,9 +81,9 @@ enum NotchAnimations {
     static var content: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .smooth(duration: 0.25)
-        case .bouncy: return .bouncy(duration: 0.35)
-        case .calm: return .smooth(duration: 0.4)
+        case .snappy: return .spring(response: 0.24, dampingFraction: 0.92, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.30, dampingFraction: 0.78, blendDuration: 0)
+        case .calm: return .spring(response: 0.34, dampingFraction: 0.98, blendDuration: 0)
         }
     }
 
@@ -89,48 +91,48 @@ enum NotchAnimations {
     static var activity: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .smooth(duration: 0.3)
-        case .bouncy: return .bouncy(duration: 0.42)
-        case .calm: return .smooth(duration: 0.45)
+        case .snappy: return .spring(response: 0.28, dampingFraction: 0.90, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.36, dampingFraction: 0.80, blendDuration: 0)
+        case .calm: return .spring(response: 0.40, dampingFraction: 0.98, blendDuration: 0)
         }
     }
 
-    /// Hovering the closed pill.
+    /// Hovering the closed pill: subtle, responsive expansion.
     static var hover: Animation {
         guard !prefersReducedMotion else { return reduced }
-        return .bouncy.speed(1.2)
+        return .spring(response: 0.24, dampingFraction: 0.78)
     }
 
     /// The HUD bar's own settle, matching `DraggableProgressBar`.
     static let hudBar = Animation.smooth(duration: 0.3)
 
-    /// Charging popup: pops in beneath the notch with a small overshoot, then
-    /// eases away when the transient dismisses.
+    /// Charging popup: pops in beneath the notch with subtle physical spring,
+    /// then dismisses cleanly.
     static var chargePop: AnyTransition {
         if prefersReducedMotion {
             return .opacity
         }
         return .asymmetric(
-            insertion: .scale(scale: 0.55, anchor: .top)
+            insertion: .scale(scale: 0.92, anchor: .top)
                 .combined(with: .opacity)
-                .animation(.spring(response: 0.32, dampingFraction: 0.68)),
+                .combined(with: .offset(y: -4))
+                .animation(.spring(response: 0.34, dampingFraction: 0.78)),
             removal: .opacity
-                .combined(with: .scale(scale: 0.94, anchor: .top))
-                .animation(.easeIn(duration: 0.22))
+                .combined(with: .scale(scale: 0.96, anchor: .top))
+                .animation(.spring(response: 0.24, dampingFraction: 0.92))
         )
     }
 
-    /// Closed-notch activity swap, from Atoll: a small scale in and a slightly
-    /// deeper scale out, so one activity replacing another reads as a
-    /// substitution rather than a flicker.
+    /// Closed-notch activity swap: a subtle scale-in (0.97) and scale-out (0.94),
+    /// so one activity replacing another reads as an organic substitution.
     static var activitySwap: AnyTransition {
         .asymmetric(
             insertion: .opacity
-                .combined(with: .scale(scale: 0.965, anchor: .center))
-                .animation(.spring(response: 0.34, dampingFraction: 0.88)),
+                .combined(with: .scale(scale: 0.97, anchor: .center))
+                .animation(.spring(response: 0.28, dampingFraction: 0.85)),
             removal: .opacity
-                .combined(with: .scale(scale: 0.92, anchor: .center))
-                .animation(.smooth(duration: 0.22))
+                .combined(with: .scale(scale: 0.94, anchor: .center))
+                .animation(.spring(response: 0.22, dampingFraction: 0.95))
         )
     }
 }

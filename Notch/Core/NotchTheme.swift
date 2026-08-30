@@ -26,9 +26,9 @@ enum NotchTheme {
 
     // MARK: Surfaces
 
-    static let surface = Color.white.opacity(0.06)
-    static let surfaceHover = Color.white.opacity(0.11)
-    static let hairline = Color.white.opacity(0.08)
+    static let surface = Color.clear
+    static let surfaceHover = Color.white.opacity(0.08)
+    static let hairline = Color.clear
 
     /// Accent derived from album artwork: the average color pushed into a
     /// saturation/brightness band that stays legible on black glass.
@@ -85,13 +85,13 @@ extension NSImage {
 
 // MARK: - Micro-interactions
 
-/// Compresses slightly while pressed — used for every tappable control.
+/// Compresses subtly while pressed with instant tactile feedback for every tappable control.
 struct PressableButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.93 : 1)
-            .opacity(configuration.isPressed ? 0.75 : 1)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .opacity(configuration.isPressed ? 0.88 : 1)
+            .animation(.spring(response: 0.16, dampingFraction: 0.85), value: configuration.isPressed)
     }
 }
 
@@ -109,7 +109,7 @@ struct HoverIconModifier: ViewModifier {
     }
 }
 
-/// Lifts an element on pointer hover.
+/// Lifts an element on pointer hover with smooth physical spring.
 struct HoverLiftModifier: ViewModifier {
     var scale: CGFloat
     @State private var hovering = false
@@ -117,13 +117,13 @@ struct HoverLiftModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .scaleEffect(hovering ? scale : 1)
-            .animation(.notchSpring, value: hovering)
+            .animation(.spring(response: 0.22, dampingFraction: 0.78), value: hovering)
             .onHover { hovering = $0 }
     }
 }
 
 extension View {
-    func hoverLift(_ scale: CGFloat = 1.07) -> some View {
+    func hoverLift(_ scale: CGFloat = 1.05) -> some View {
         modifier(HoverLiftModifier(scale: scale))
     }
 }

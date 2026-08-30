@@ -110,10 +110,9 @@ final class MediaController {
         track != nil
     }
 
-    /// True when transport controls do something: a track is showing, or a
-    /// specific provider is selected — play will launch and start that app.
+    /// Transport controls are always enabled to send universal playback commands.
     var canControlTransport: Bool {
-        hasTrack || selectedProvider != .automatic
+        true
     }
 
     /// Live position, extrapolated from the last anchor.
@@ -369,11 +368,26 @@ final class MediaController {
     // MARK: - Transport controls
 
     func togglePlayPause() {
+        let newState = !isPlaying
+        isPlaying = newState
+        if newState {
+            anchorDate = Date()
+        } else {
+            elapsedAnchor = currentElapsed
+            anchorDate = Date()
+        }
+        displayedElapsed = currentElapsed
+
+        // Universal system media key: pauses/resumes YouTube, Netflix, Chrome, Safari, etc.
+        SystemMediaKeySender.togglePlayPause()
+
+        if useMediaRemote {
+            bridge.send(.togglePlayPause)
+        }
+
         if let provider = selectedProvider.appleScriptAppName {
             runProviderCommand(appName: provider, command: "playpause")
-        } else if useMediaRemote {
-            bridge.send(.togglePlayPause)
-        } else {
+        } else if fallbackAppIsRunning {
             runMusicCommand("playpause")
         }
     }
@@ -381,9 +395,13 @@ final class MediaController {
     func nextTrack() {
         if let provider = selectedProvider.appleScriptAppName {
             runProviderCommand(appName: provider, command: "next track")
-        } else if useMediaRemote {
+            return
+        }
+        SystemMediaKeySender.nextTrack()
+        if useMediaRemote {
             bridge.send(.nextTrack)
-        } else {
+        }
+        if fallbackAppIsRunning {
             runMusicCommand("next track")
         }
     }
@@ -391,9 +409,13 @@ final class MediaController {
     func previousTrack() {
         if let provider = selectedProvider.appleScriptAppName {
             runProviderCommand(appName: provider, command: "previous track")
-        } else if useMediaRemote {
+            return
+        }
+        SystemMediaKeySender.previousTrack()
+        if useMediaRemote {
             bridge.send(.previousTrack)
-        } else {
+        }
+        if fallbackAppIsRunning {
             runMusicCommand("previous track")
         }
     }
@@ -857,13 +879,39 @@ final class MediaController {
     // MARK: - Apple Events fallback (the selected provider)
 
     /// App name and bundle used by the AppleScript fallback: the chosen
-    /// provider, or Music.app for Automatic.
+    /// provider, or Music/Spotify dynamically for Automatic.
     private var fallbackAppName: String {
-        selectedProvider.appleScriptAppName ?? "Music"
+        switch selectedProvider {
+        case .appleMusic:
+            return "Music"
+        case .spotify:
+            return "Spotify"
+        case .automatic:
+            if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
+                return "Music"
+            }
+            if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
+                return "Spotify"
+            }
+            return "Music"
+        }
     }
 
     private var fallbackBundleID: String {
-        selectedProvider == .automatic ? "com.apple.Music" : selectedProvider.bundleID
+        switch selectedProvider {
+        case .appleMusic:
+            return "com.apple.Music"
+        case .spotify:
+            return MusicProvider.spotify.bundleID
+        case .automatic:
+            if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty {
+                return "com.apple.Music"
+            }
+            if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
+                return MusicProvider.spotify.bundleID
+            }
+            return "com.apple.Music"
+        }
     }
 
     private func stateScript(for appName: String) -> String {
@@ -1086,8 +1134,12 @@ final class MediaController {
         guard fallbackAppIsRunning,
               let script = NSAppleScript(source: "tell application \"\(fallbackAppName)\" to \(command)")
         else { return }
-        var error: NSDictionary?
-        script.executeAndReturnError(&error)
-        refreshFromAppleScript()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var error: NSDictionary?
+            script.executeAndReturnError(&error)
+            DispatchQueue.main.async {
+                self?.refreshFromAppleScript()
+            }
+        }
     }
 }

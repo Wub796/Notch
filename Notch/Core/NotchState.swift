@@ -133,7 +133,7 @@ final class NotchState {
     var devicesSection: DevicesSection = .now
 
     /// Which output surface the Audio screen is showing.
-    var audioTab: AudioScreenTab = .system
+    var audioTab: AudioScreenTab = .apps
 
     private let focusMonitor = FocusModeMonitor()
     private let desktopMonitor = DesktopChangeMonitor()

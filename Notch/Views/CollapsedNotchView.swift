@@ -387,10 +387,6 @@ struct CollapsedNotchView: View {
         }
         .frame(width: 22, height: 22)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(state.media.accent.opacity(0.5), lineWidth: 1)
-        }
         .accessibilityHidden(true)
     }
 }

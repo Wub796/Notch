@@ -83,8 +83,10 @@ struct CalendarDetailView: View {
                 ) {
                     state.calendar.moveSelectedDay(to: day)
                 }
+                .frame(maxWidth: .infinity)
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Month grid

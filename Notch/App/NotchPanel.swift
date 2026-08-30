@@ -22,6 +22,10 @@ final class NotchPanel: NSPanel {
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
         becomesKeyOnlyIfNeeded = true
+        // A non-activating panel must still accept mouse movement while it is
+        // not key; otherwise SwiftUI never receives the probe's onHover.
+        ignoresMouseEvents = false
+        acceptsMouseMovedEvents = true
         animationBehavior = .none
     }
 

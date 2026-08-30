@@ -16,9 +16,8 @@ struct MediaPlayerView: View {
 
 
     var body: some View {
-        // Budget: `NotchState.moduleContentSize`, about 498 x 250. Header 78,
-        // lyric 22, scrubber 16, transport 40, actions 26, with 10pt gaps.
-        VStack(alignment: .leading, spacing: 10) {
+        // Budget: `NotchState.moduleContentSize`, about 498 x 250.
+        VStack(alignment: .leading, spacing: 14) {
             header
 
             lyricLine
@@ -42,15 +41,45 @@ struct MediaPlayerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    // MARK: - Active Audio State
+
+    private var activeAudioApp: AudioAppMonitor.App? {
+        state.audioApps.apps.first(where: \.isPlaying)
+    }
+
+    private var displayTitle: String {
+        if let title = media.track?.title, !title.isEmpty {
+            return title
+        }
+        if let active = activeAudioApp {
+            return active.name
+        }
+        return "Nothing Playing"
+    }
+
+    private var displayArtist: String {
+        if let artist = media.track?.artist, !artist.isEmpty {
+            return artist
+        }
+        if activeAudioApp != nil {
+            return "Active Audio"
+        }
+        return "Nothing is playing"
+    }
+
+    private var isAudioActive: Bool {
+        media.isPlaying || activeAudioApp != nil
+    }
+
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 16) {
             artwork
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 MarqueeText(
-                    text: media.track?.title ?? "Nothing Playing",
+                    text: displayTitle,
                     font: .system(size: 21, weight: .bold, design: .rounded),
                     width: media.upNext == nil ? 300 : 200
                 )
@@ -69,16 +98,47 @@ struct MediaPlayerView: View {
     }
 
     /// The line under the artist: the follower count when Spotify is
-    /// connected, the album otherwise, and the reason nothing is playing when
-    /// that is what there is to say.
+    /// connected, the album otherwise, or quick support for Apple Music & Spotify.
     @ViewBuilder
     private var subtitleLine: some View {
-        if let reason = media.emptyStateReason {
-            Text(reason)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(NotchTheme.inkMuted)
-                .fixedSize(horizontal: false, vertical: true)
-                .lineLimit(2)
+        if media.track == nil && activeAudioApp == nil {
+            HStack(spacing: 8) {
+                Button {
+                    NSWorkspace.shared.open(URL(string: "music://")!)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "apple.logo")
+                            .font(.system(size: 10))
+                        Text("Apple Music")
+                            .font(.notchCaption.weight(.semibold))
+                    }
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                }
+                .buttonStyle(PressableButtonStyle())
+
+                Button {
+                    if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") {
+                        NSWorkspace.shared.openApplication(at: app, configuration: .init())
+                    } else if let url = URL(string: "spotify:") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 10))
+                        Text("Spotify")
+                            .font(.notchCaption.weight(.semibold))
+                    }
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                }
+                .buttonStyle(PressableButtonStyle())
+            }
         } else if let followers = media.followersLabel {
             Text(followers)
                 .font(.notchCaption.weight(.semibold))
@@ -89,6 +149,22 @@ struct MediaPlayerView: View {
                 .font(.notchCaption)
                 .foregroundStyle(NotchTheme.inkSecondary)
                 .lineLimit(1)
+        } else if let active = activeAudioApp {
+            Button {
+                active.activate()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up.forward.app.fill")
+                        .font(.system(size: 9))
+                    Text("Bring \(active.name) to Front")
+                        .font(.notchCaption.weight(.semibold))
+                }
+                .foregroundStyle(NotchTheme.inkSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
+            }
+            .buttonStyle(PressableButtonStyle())
         }
     }
 
@@ -103,7 +179,7 @@ struct MediaPlayerView: View {
                         Image(nsImage: art).resizable().aspectRatio(contentMode: .fill)
                     } else {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(NotchTheme.surfaceHover)
+                            .fill(Color.white.opacity(0.08))
                     }
                 }
                 .frame(width: 32, height: 32)
@@ -125,8 +201,11 @@ struct MediaPlayerView: View {
                 }
                 .frame(width: 96, alignment: .leading)
             }
-            .padding(6)
-            .notchCard(radius: NotchTheme.Radius.tile)
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+            )
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Up next: \(next.title) by \(next.artist)")
         }
@@ -140,9 +219,15 @@ struct MediaPlayerView: View {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
+            } else if let icon = media.sourceAppIcon ?? activeAudioApp?.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .padding(14)
+                    .background(Color.white.opacity(0.08))
             } else {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(NotchTheme.surface)
+                    .fill(Color.white.opacity(0.06))
                     .overlay {
                         Image(systemName: "music.note")
                             .font(.system(size: 30, weight: .medium))
@@ -153,34 +238,32 @@ struct MediaPlayerView: View {
         .frame(width: 78, height: 78)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
-        .shadow(color: media.accent.opacity(0.5), radius: 18, y: 7)
+        .shadow(color: media.accent.opacity(0.38), radius: 14, y: 5)
     }
 
     private var artistRow: some View {
         HStack(spacing: 6) {
             // Monogram avatar stands in for the reference's artist photo.
-            Text(String(media.track?.artist.prefix(1) ?? "?").uppercased())
+            Text(String(displayArtist.prefix(1)).uppercased())
                 .font(.system(size: 9, weight: .heavy, design: .rounded))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .frame(width: 18, height: 18)
                 .background(Circle().fill(NotchTheme.surfaceHover))
 
-            Text(media.track?.artist ?? "Unknown Artist")
+            Text(displayArtist)
                 .font(.notchCallout.weight(.bold))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .lineLimit(1)
 
-            if media.track != nil {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.blue)
-                    .accessibilityLabel("Verified artist")
+            if isAudioActive {
+                Image(systemName: "waveform")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.green)
+                    .symbolEffect(.variableColor.iterative, options: .repeating)
             }
 
             Spacer(minLength: 0)
         }
-        // The glyphs cannot compress the way the name can, so without this the
-        // badge wraps onto its own line when the column gets tight.
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -260,18 +343,22 @@ struct MediaPlayerView: View {
             }
 
             Button {
-                media.togglePlayPause()
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
+                    media.togglePlayPause()
+                }
             } label: {
                 Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .frame(width: 38, height: 38)
-                    .contentShape(Rectangle())
+                    .background(Circle().fill(Color.white.opacity(0.12)))
+                    .contentShape(Circle())
             }
             .buttonStyle(PressableButtonStyle())
             .hoverLift(1.08)
             .disabled(!media.canControlTransport)
             .opacity(media.canControlTransport ? 1 : 0.4)
+            .contentTransition(.symbolEffect(.replace))
             .accessibilityLabel(media.isPlaying ? "Pause" : "Play")
 
             transportIcon(

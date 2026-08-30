@@ -182,22 +182,28 @@ final class CalendarController {
             calendars: nil
         )
 
-        let events = store.events(matching: predicate)
-            .sorted { $0.startDate < $1.startDate }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let events = self.store.events(matching: predicate)
+                .sorted { $0.startDate < $1.startDate }
 
-        items = events.map { event in
-            ScheduleItem(
-                id: "\(event.eventIdentifier ?? UUID().uuidString)-\(event.startDate.timeIntervalSince1970)",
-                title: event.title ?? "Untitled event",
-                start: event.startDate,
-                end: event.endDate,
-                isAllDay: event.isAllDay,
-                calendarColor: event.calendar?.cgColor,
-                meetingURL: Self.detectMeetingURL(in: event)
-            )
+            let mapped = events.map { event in
+                ScheduleItem(
+                    id: "\(event.eventIdentifier ?? UUID().uuidString)-\(event.startDate.timeIntervalSince1970)",
+                    title: event.title ?? "Untitled event",
+                    start: event.startDate,
+                    end: event.endDate,
+                    isAllDay: event.isAllDay,
+                    calendarColor: event.calendar?.cgColor,
+                    meetingURL: Self.detectMeetingURL(in: event)
+                )
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                self?.items = mapped
+                self?.armUpcomingWatch()
+            }
         }
-
-        armUpcomingWatch()
     }
 
     // MARK: - Meeting-soon live activity

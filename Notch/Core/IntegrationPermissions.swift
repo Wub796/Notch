@@ -44,36 +44,46 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     }
 
     enum Integration: String, CaseIterable, Identifiable {
+        case accessibility
         case music
         case calendar
         case location
+        case screenCapture
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
-            case .music: "Music control"
+            case .accessibility: "Accessibility"
+            case .music: "Music & Player Automation"
             case .calendar: "Calendar"
             case .location: "Location"
+            case .screenCapture: "Screen & Audio Recording"
             }
         }
 
         var systemImage: String {
             switch self {
+            case .accessibility: "accessibility"
             case .music: "music.note"
             case .calendar: "calendar"
             case .location: "location.fill"
+            case .screenCapture: "waveform.badge.magnifyingglass"
             }
         }
 
         var detail: String {
             switch self {
+            case .accessibility:
+                "Enables hardware media key interception, volume/brightness HUDs, and hotkeys."
             case .music:
-                "Lets the notch play, pause, and skip in Music or Spotify."
+                "Lets the notch control playback and lyrics across Apple Music and Spotify."
             case .calendar:
-                "Shows your schedule and upcoming meetings."
+                "Shows your schedule, upcoming events, and meeting links."
             case .location:
-                "Pins weather to your exact city."
+                "Pins weather forecasts to your current city."
+            case .screenCapture:
+                "Analyzes audio playback levels for the real-time sound visualizer."
             }
         }
 
@@ -81,21 +91,27 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         /// tell the truth about consequences instead of implying breakage.
         var fallbackNote: String {
             switch self {
+            case .accessibility:
+                "Without it, system media keys and global hotkeys use default macOS routing."
             case .music:
-                "Without it, playback still follows whatever is playing — only direct control needs permission."
+                "Without it, playback still follows whatever is playing — only direct automation needs permission."
             case .calendar:
                 "Without it, the schedule stays empty."
             case .location:
                 "Without it, weather falls back to an approximate location from your network."
+            case .screenCapture:
+                "Without it, the notch audio visualizer falls back to animated waveforms."
             }
         }
 
         var settingsURL: URL? {
             let base = "x-apple.systempreferences:com.apple.preference.security"
             switch self {
+            case .accessibility: return URL(string: base + "?Privacy_Accessibility")
             case .music: return URL(string: base + "?Privacy_Automation")
             case .calendar: return URL(string: base + "?Privacy_Calendars")
             case .location: return URL(string: base + "?Privacy_LocationServices")
+            case .screenCapture: return URL(string: base + "?Privacy_ScreenCapture")
             }
         }
     }
@@ -130,9 +146,19 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         // before anything re-states its own.
         notes.removeAll()
 
+        statuses[.accessibility] = accessibilityStatus()
         statuses[.calendar] = calendarStatus()
         statuses[.location] = locationStatus()
+        statuses[.screenCapture] = screenCaptureStatus()
         refreshMusicStatus()
+    }
+
+    private func accessibilityStatus() -> Status {
+        AXIsProcessTrusted() ? .granted : .notDetermined
+    }
+
+    private func screenCaptureStatus() -> Status {
+        CGPreflightScreenCaptureAccess() ? .granted : .notDetermined
     }
 
     /// Apple Events authorization is read off the main thread.
@@ -251,23 +277,55 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         }
 
         switch integration {
+        case .accessibility:
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            let trusted = AXIsProcessTrustedWithOptions(options)
+            if !trusted {
+                if let url = integration.settingsURL {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: finish)
+
+        case .screenCapture:
+            let hasAccess = CGRequestScreenCaptureAccess()
+            if !hasAccess {
+                if let url = integration.settingsURL {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: finish)
+
         case .calendar:
             let store = EKEventStore()
             calendarStore = store
-            store.requestFullAccessToEvents { _, _ in
-                DispatchQueue.main.async(execute: finish)
+            if #available(macOS 14.0, *) {
+                store.requestFullAccessToEvents { _, _ in
+                    DispatchQueue.main.async(execute: finish)
+                }
+            } else {
+                store.requestAccess(to: .event) { _, _ in
+                    DispatchQueue.main.async(execute: finish)
+                }
             }
 
         case .location:
             NSApp.activate(ignoringOtherApps: true)
             locationManager.requestWhenInUseAuthorization()
-            // Authorization arrives via the delegate, which refreshes on its
-            // own; this settles the row if the prompt never appears.
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: finish)
 
         case .music:
             grantMusicAccess(finish: finish)
         }
+    }
+
+    /// Asks macOS for all essential permissions on first run or explicit request.
+    func requestAll() {
+        request(.accessibility)
+        request(.music)
+        request(.calendar)
+        request(.location)
+        request(.screenCapture)
     }
 
     /// Whether a player is installed at all, so the UI can offer to install it
@@ -289,11 +347,6 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     /// Launches the chosen player, waits for it to be ready, then addresses it
     /// over Apple Events — which is the only thing that makes macOS show the
     /// Automation prompt.
-    ///
-    /// The old version fired the Apple Event immediately. If the app was not
-    /// already running that call had to launch it and talk to it in one step,
-    /// and the event usually timed out against a still-starting app: no
-    /// prompt, no error the user could see, and a button that looked dead.
     private func grantMusicAccess(finish: @escaping () -> Void) {
         let provider = NotchSettings.shared.musicProvider
         let target: MusicProvider = provider == .automatic ? .appleMusic : provider
@@ -309,9 +362,6 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
 
         let ask = {
             DispatchQueue.global(qos: .userInitiated).async {
-                // askUser: true is what raises the Automation prompt. This
-                // blocks until the user answers it, which is exactly why it is
-                // here and not on the main thread.
                 _ = Self.automationPermission(for: target.bundleID, askUser: true)
                 DispatchQueue.main.async(execute: finish)
             }
@@ -336,7 +386,6 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
                     self?.pending.remove(.music)
                     return
                 }
-                // A moment for the app to start answering Apple Events.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: ask)
             }
         }
@@ -345,18 +394,18 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     /// What to tell the user when a request produced no change at all.
     private static func unchangedNote(for integration: Integration, status: Status) -> String {
         switch integration {
+        case .accessibility:
+            return "Enable Notch in Privacy & Security → Accessibility to unlock all hardware and global controls."
+        case .screenCapture:
+            return "Enable Notch in Privacy & Security → Screen Recording for real-time sound metering."
         case .location:
             return status == .notDetermined
-                ? "macOS showed no prompt. It only ever offers one per app, and "
-                    + "only for a signed build with Location Services switched "
-                    + "on — add Notch by hand under Privacy & Security → "
-                    + "Location Services."
+                ? "macOS showed no prompt — add Notch under Privacy & Security → Location Services."
                 : "No change — grant access in Privacy & Security → Location Services."
         case .calendar:
             return "No change — grant access in Privacy & Security → Calendars."
         case .music:
-            return "No change yet. If macOS showed no prompt, allow Notch for "
-                + "your player under Privacy & Security → Automation."
+            return "No change yet. Allow Notch for your player under Privacy & Security → Automation."
         }
     }
 

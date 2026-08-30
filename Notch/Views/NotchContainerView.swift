@@ -46,10 +46,12 @@ struct NotchContainerView: View {
             // notch — so the region moved with them. A real view with a real
             // frame cannot drift.
             if state.mode != .expanded {
-                Color.clear
-                    // The hardware notch plus the user's slack, which widens
-                    // the sides and the bottom edge only — the top is the
-                    // screen edge, and the dropped HUD bar hangs below this.
+                Color.black.opacity(0.001)
+                    // Keep the probe above the rendered slab in the z-stack.
+                    // A fully clear view can be skipped by AppKit/SwiftUI hit
+                    // testing in a non-activating panel; an almost-transparent
+                    // fill gives it a real hit-test surface without changing
+                    // the appearance.
                     .frame(
                         width: state.hoverProbeSize.width,
                         height: state.hoverProbeSize.height
@@ -114,9 +116,7 @@ struct NotchContainerView: View {
             // and clicks, so the wings beside the notch are not a target. The
             // exception is a draggable HUD, which needs its bar to receive the
             // drag — it hangs below the notch, clear of the probe.
-            .allowsHitTesting(
-                state.mode == .expanded || state.collapsedActivityIsInteractive
-            )
+            .allowsHitTesting(state.mode == .expanded || state.collapsedActivityIsInteractive)
             // Hover is the probe's job whenever the notch is closed; letting
             // the slab report it too is what made the region grow.
             .onHover { hovering in

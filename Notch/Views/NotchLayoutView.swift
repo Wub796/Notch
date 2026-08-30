@@ -101,7 +101,7 @@ struct NotchLayoutView: View {
             .id(state.tab)
             .transition(
                 .asymmetric(
-                    insertion: .opacity.combined(with: .offset(y: 10)),
+                    insertion: .opacity.combined(with: .scale(scale: 0.985, anchor: .top)).combined(with: .offset(y: 4)),
                     removal: .opacity
                 )
             )

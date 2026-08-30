@@ -59,17 +59,10 @@ extension View {
         tint: Color? = nil
     ) -> some View {
         background {
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .fill(isHighlighted ? (tint ?? Color.accentColor).opacity(0.12) : NotchTheme.surface)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .strokeBorder(
-                    isHighlighted
-                        ? (tint ?? Color.accentColor).opacity(0.32)
-                        : NotchTheme.hairline,
-                    lineWidth: 1
-                )
+            if isHighlighted {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill((tint ?? Color.accentColor).opacity(0.12))
+            }
         }
     }
 }

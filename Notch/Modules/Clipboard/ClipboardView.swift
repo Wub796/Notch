@@ -97,14 +97,11 @@ private struct ClipboardCard: View {
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(11)
-        .frame(width: 152, height: 96, alignment: .topLeading)
-        .notchCard(radius: NotchTheme.Radius.tile, isHighlighted: entry.isPinned, tint: .orange)
-        .overlay {
-            if hovering, !entry.isPinned {
-                RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
-                    .strokeBorder(.white.opacity(0.18), lineWidth: 1)
-            }
+        .padding(12)
+        .frame(width: 168, height: 104, alignment: .topLeading)
+        .background {
+            RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
+                .fill(entry.isPinned ? Color.orange.opacity(0.14) : (hovering ? Color.white.opacity(0.08) : Color.white.opacity(0.04)))
         }
         .onHover { isHovering in
             withAnimation(NotchAnimations.content) { hovering = isHovering }

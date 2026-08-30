@@ -34,10 +34,7 @@ struct TelemetryView: View {
     }
 
     private var gauges: some View {
-        // Every column is a fixed width: the gauges are already fixed, and the
-        // tiles beside them are pinned above, so nothing here reflows as the
-        // numbers change.
-        HStack(alignment: .center, spacing: NotchTheme.Space.xl) {
+        HStack(alignment: .center, spacing: 0) {
             VStack(spacing: 6) {
                 CircularGaugeView(
                     value: telemetry.cpuUsage,
@@ -50,6 +47,8 @@ struct TelemetryView: View {
                     .frame(width: 64, height: 14)
             }
 
+            Spacer(minLength: NotchTheme.Space.m)
+
             CircularGaugeView(
                 value: telemetry.memoryPressure,
                 title: "Memory",
@@ -59,6 +58,8 @@ struct TelemetryView: View {
             )
 
             if telemetry.hasBattery {
+                Spacer(minLength: NotchTheme.Space.m)
+
                 CircularGaugeView(
                     value: telemetry.batteryPercent,
                     title: "Battery",
@@ -68,6 +69,8 @@ struct TelemetryView: View {
                         : "battery.75percent",
                     tint: NotchTheme.battery
                 )
+
+                Spacer(minLength: NotchTheme.Space.m)
 
                 VStack(alignment: .leading, spacing: 10) {
                     statTile(
@@ -85,6 +88,8 @@ struct TelemetryView: View {
                 }
                 .frame(width: 130, alignment: .leading)
             }
+
+            Spacer(minLength: NotchTheme.Space.m)
 
             VStack(alignment: .leading, spacing: 10) {
                 statTile(

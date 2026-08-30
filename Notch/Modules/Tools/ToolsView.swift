@@ -15,17 +15,17 @@ struct ToolsView: View {
 
             HStack(alignment: .top, spacing: NotchTheme.Space.m) {
                 column { audioColumn }
-                    .frame(width: 190, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 column { accessoriesColumn }
-                    .frame(width: 168, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 column { timerColumn }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 if state.settings.showQuickActions {
                     column { quickActionsColumn }
-                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

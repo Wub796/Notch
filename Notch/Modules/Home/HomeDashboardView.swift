@@ -15,29 +15,46 @@ struct HomeDashboardView: View {
     let namespace: Namespace.ID
 
     var body: some View {
-        // Hairlines rather than more air between the three: the sections have
-        // very different natural widths, so equal gaps still read as uneven —
-        // "weather too close to the calendar, too far from the music" was
-        // exactly that. A rule makes each gap deliberate and identical.
-        HStack(alignment: .center, spacing: NotchTheme.Space.xl) {
+        HStack(alignment: .center, spacing: 0) {
             musicSection
-            columnDivider
+            Spacer(minLength: 20)
             weatherSection
-            columnDivider
+            Spacer(minLength: 20)
             calendarSection
         }
-        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
-    private var columnDivider: some View {
-        Rectangle()
-            .fill(NotchTheme.hairline)
-            .frame(width: 1, height: 74)
-            .accessibilityHidden(true)
+    // MARK: - Music
+
+    private var activeAudioApp: AudioAppMonitor.App? {
+        state.audioApps.apps.first(where: \.isPlaying)
     }
 
-    // MARK: - Music
+    private var displayTitle: String {
+        if let title = state.media.track?.title, !title.isEmpty {
+            return title
+        }
+        if let active = activeAudioApp {
+            return active.name
+        }
+        return "Nothing Playing"
+    }
+
+    private var displayArtist: String {
+        if let artist = state.media.track?.artist, !artist.isEmpty {
+            return artist
+        }
+        if activeAudioApp != nil {
+            return "Active Audio"
+        }
+        return "Nothing is playing"
+    }
+
+    private var isAudioActive: Bool {
+        state.media.isPlaying || activeAudioApp != nil
+    }
 
     private var musicSection: some View {
         HStack(alignment: .center, spacing: 16) {
@@ -48,7 +65,7 @@ struct HomeDashboardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 // Uppercase and letterspaced, as in the reference: the title is
                 // the loudest thing on the panel.
-                Text((state.media.track?.title ?? "Nothing Playing").uppercased())
+                Text(displayTitle.uppercased())
                     .font(.system(size: 19, weight: .heavy, design: .rounded))
                     .tracking(2.5)
                     .foregroundStyle(NotchTheme.inkPrimary)
@@ -56,10 +73,19 @@ struct HomeDashboardView: View {
                     .truncationMode(.tail)
                     .frame(width: 196, alignment: .leading)
 
-                Text(state.media.track?.artist ?? "Nothing is playing")
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(NotchTheme.inkSecondary)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(displayArtist)
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundStyle(NotchTheme.inkSecondary)
+                        .lineLimit(1)
+
+                    if isAudioActive {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.green)
+                            .symbolEffect(.variableColor.iterative, options: .repeating)
+                    }
+                }
 
                 // Transport sits centred under the text block rather than
                 // flush left, which is what makes the column read as one unit.
@@ -72,7 +98,9 @@ struct HomeDashboardView: View {
                         size: 18,
                         label: state.media.isPlaying ? "Pause" : "Play"
                     ) {
-                        state.media.togglePlayPause()
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
+                            state.media.togglePlayPause()
+                        }
                     }
                     transportButton("forward.fill", size: 15, label: "Next track") {
                         state.media.nextTrack()
@@ -94,9 +122,15 @@ struct HomeDashboardView: View {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
+            } else if let icon = state.media.sourceAppIcon ?? activeAudioApp?.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .padding(14)
+                    .background(Color.white.opacity(0.08))
             } else {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(NotchTheme.surface)
+                    .fill(Color.white.opacity(0.06))
                     .overlay {
                         Image(systemName: "music.note")
                             .font(.system(size: 26, weight: .medium))
@@ -107,15 +141,9 @@ struct HomeDashboardView: View {
         .frame(width: 88, height: 88)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
-        // The reference rings the art in its own accent rather than dropping a
-        // shadow behind it, which is what gives it the lit-from-within look.
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(state.media.accent.opacity(0.55), lineWidth: 2.5)
-        }
-        .shadow(color: state.media.accent.opacity(0.5), radius: 14)
+        .shadow(color: state.media.accent.opacity(0.38), radius: 12, y: 4)
         .overlay(alignment: .bottomTrailing) {
-            if let icon = state.media.sourceAppIcon {
+            if let icon = state.media.sourceAppIcon ?? (state.media.artwork != nil ? activeAudioApp?.icon : nil) {
                 Image(nsImage: icon)
                     .resizable()
                     .frame(width: 20, height: 20)
@@ -138,13 +166,15 @@ struct HomeDashboardView: View {
             Image(systemName: systemImage)
                 .font(.system(size: size, weight: .bold))
                 .foregroundStyle(NotchTheme.inkPrimary)
-                .frame(width: 30, height: 30)
-                .contentShape(Rectangle())
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(Color.white.opacity(0.08)))
+                .contentShape(Circle())
         }
         .buttonStyle(PressableButtonStyle())
         .modifier(HoverIconModifier())
         .disabled(!state.media.canControlTransport)
         .opacity(state.media.canControlTransport ? 1 : 0.4)
+        .contentTransition(.symbolEffect(.replace))
         .accessibilityLabel(label)
     }
 

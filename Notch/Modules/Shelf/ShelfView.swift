@@ -85,14 +85,11 @@ private struct ShelfItemCard: View {
                 .lineLimit(1)
         }
         .padding(.horizontal, NotchTheme.Space.s)
-        .padding(.vertical, 10)
-        .frame(width: 104)
-        .notchCard(radius: NotchTheme.Radius.tile)
-        .overlay {
-            if hovering {
-                RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
-                    .strokeBorder(.white.opacity(0.18), lineWidth: 1)
-            }
+        .padding(.vertical, 12)
+        .frame(width: 112)
+        .background {
+            RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
+                .fill(hovering ? Color.white.opacity(0.08) : Color.white.opacity(0.04))
         }
         .overlay(alignment: .topTrailing) {
             if hovering {

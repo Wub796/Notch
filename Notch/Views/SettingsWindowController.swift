@@ -13,11 +13,22 @@ import SwiftUI
 /// Owning the window also means the activation policy can be tied to the
 /// window's real lifetime rather than to a SwiftUI `onAppear`/`onDisappear`
 /// pair that may never fire.
-final class SettingsWindowController: NSWindowController {
+final class SettingsWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
+final class SettingsHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+}
+
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     static let shared = SettingsWindowController()
 
     private init() {
-        let window = NSWindow(
+        let window = SettingsWindow(
             contentRect: NSRect(x: 0, y: 0, width: 820, height: 620),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
@@ -30,10 +41,10 @@ final class SettingsWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.identifier = NSUserInterfaceItemIdentifier("NotchSettingsWindow")
         window.appearance = NSAppearance(named: .darkAqua)
-        // A managed window that takes part in cycling, unlike the notch panel.
         window.collectionBehavior = [.managed, .participatesInCycle, .fullScreenAuxiliary]
+        window.level = .normal
         window.hidesOnDeactivate = false
-        window.contentView = NSHostingView(rootView: SettingsView())
+        window.contentView = SettingsHostingView(rootView: SettingsView())
         window.center()
         window.delegate = self
     }
@@ -43,36 +54,26 @@ final class SettingsWindowController: NSWindowController {
         fatalError("SettingsWindowController does not support NSCoding")
     }
 
-    /// Shows the window and gives it focus.
-    ///
-    /// The policy change has to come first: an `.accessory` app cannot bring
-    /// its own window forward, so ordering the window in before switching to
-    /// `.regular` is what leaves it invisible behind everything else.
+    /// Shows the window smoothly and gives it key focus so all controls respond immediately.
     func show() {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
-        window?.center()
+        if window?.isVisible != true {
+            window?.center()
+        }
         window?.makeKeyAndOrderFront(nil)
         window?.orderFrontRegardless()
 
-        // Activation completes on the next runloop turn; without this the
-        // window is frontmost but not key, so its controls stay unresponsive.
         DispatchQueue.main.async { [weak self] in
             self?.window?.makeKeyAndOrderFront(nil)
+            self?.window?.orderFrontRegardless()
         }
     }
 
-    /// Drops the Dock icon again once Settings is gone.
-    private func relinquishFocus() {
+    func windowWillClose(_ notification: Notification) {
         window?.orderOut(nil)
         NSApp.setActivationPolicy(.accessory)
-    }
-}
-
-extension SettingsWindowController: NSWindowDelegate {
-    func windowWillClose(_ notification: Notification) {
-        relinquishFocus()
     }
 
     func windowDidBecomeKey(_ notification: Notification) {

@@ -105,6 +105,7 @@ struct WeatherDetailView: View {
                     metric("thermometer.medium",
                            "Feels: " + WeatherService.temperatureString(celsius: weather.apparentCelsius))
                     metric("wind", "Wind: " + WeatherService.windString(kmh: weather.windKmh))
+                    metric("humidity.fill", "Humidity: \(weather.humidityPercent)%")
                 }
                 .padding(.top, 4)
             }

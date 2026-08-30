@@ -86,7 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Rebuilds the panel on the screen that physically has a notch,
-    /// falling back to the main display on non-notched Macs.
+    /// falling back to the main display on non-notched Macs. Space changes
+    /// alone do not require rebuilding: the panel is joined to every Space and
+    /// its controller re-anchors its existing window without disrupting hover.
     private func attachToBestScreen() {
         screenChangeWork = nil
         guard let screen = NotchGeometry.preferredScreen else { return }

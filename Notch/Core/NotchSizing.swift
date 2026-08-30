@@ -80,16 +80,16 @@ enum NotchSizing {
     /// sides. Home stays a wide strip because it is a glance, not a screen.
     private static func baseSize(for tab: NotchTab) -> CGSize {
         switch tab {
-        case .home: CGSize(width: 900, height: 182)
-        case .media: CGSize(width: 560, height: 280)
-        case .weather: CGSize(width: 600, height: 290)
-        case .calendar: CGSize(width: 620, height: 366)
-        case .shelf: CGSize(width: 700, height: 272)
-        case .clipboard: CGSize(width: 720, height: 252)
-        case .tools: CGSize(width: 900, height: 302)
-        case .notes: CGSize(width: 600, height: 292)
-        case .telemetry: CGSize(width: 800, height: 262)
-        case .audio: CGSize(width: 940, height: 440)
+        case .home: CGSize(width: 840, height: 168)
+        case .media: CGSize(width: 560, height: 250)
+        case .weather: CGSize(width: 580, height: 260)
+        case .calendar: CGSize(width: 600, height: 320)
+        case .shelf: CGSize(width: 620, height: 210)
+        case .clipboard: CGSize(width: 640, height: 220)
+        case .tools: CGSize(width: 820, height: 260)
+        case .notes: CGSize(width: 560, height: 240)
+        case .telemetry: CGSize(width: 760, height: 240)
+        case .audio: CGSize(width: 860, height: 360)
         }
     }
 

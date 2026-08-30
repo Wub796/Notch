@@ -58,7 +58,12 @@ final class BluetoothBatteryMonitor {
     }
 
     func refresh() {
-        devices = Self.scanRegistry()
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let found = Self.scanRegistry()
+            DispatchQueue.main.async {
+                self?.devices = found
+            }
+        }
     }
 
     // MARK: - IO Registry walk

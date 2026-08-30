@@ -64,14 +64,20 @@ final class FocusModeMonitor {
     }
 
     private func reload(notify: Bool) {
-        let resolved = Self.readActiveMode(
-            assertionsURL: assertionsURL,
-            configurationsURL: configurationsURL
-        )
-        guard resolved != activeMode else { return }
-        activeMode = resolved
-        if notify {
-            onChange?(resolved)
+        let assertionsURL = self.assertionsURL
+        let configurationsURL = self.configurationsURL
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let resolved = Self.readActiveMode(
+                assertionsURL: assertionsURL,
+                configurationsURL: configurationsURL
+            )
+            DispatchQueue.main.async { [weak self] in
+                guard let self, resolved != self.activeMode else { return }
+                self.activeMode = resolved
+                if notify {
+                    self.onChange?(resolved)
+                }
+            }
         }
     }
 
