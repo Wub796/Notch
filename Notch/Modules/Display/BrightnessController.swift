@@ -6,61 +6,118 @@ import Observation
 
 /// Reads and sets the built-in display's brightness.
 ///
-/// There is no public API for this. DisplayServices is the framework the
-/// system's own brightness keys drive and the only thing that works on Apple
-/// Silicon, so it is loaded at runtime with dlopen/dlsym — missing symbols
-/// simply disable the control rather than crashing. On Intel Macs the older
-/// IODisplay path is used as a fallback.
+/// Loads both DisplayServices and CoreDisplay dynamically so brightness
+/// control works reliably across all Apple Silicon and Intel Mac models.
 @Observable
 final class BrightnessController {
-    private(set) var brightness: Float = 0
+    private(set) var brightness: Float = 0.5
     private(set) var isAvailable = false
 
-    private typealias GetBrightnessFunc =
-        @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
-    private typealias SetBrightnessFunc =
-        @convention(c) (CGDirectDisplayID, Float) -> Int32
+    private typealias DSGetBrightnessFunc = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
+    private typealias DSSetBrightnessFunc = @convention(c) (CGDirectDisplayID, Float) -> Int32
+    private typealias CDGetBrightnessFunc = @convention(c) (CGDirectDisplayID) -> Double
+    private typealias CDSetBrightnessFunc = @convention(c) (CGDirectDisplayID, Double) -> Void
 
-    private var getBrightnessFunc: GetBrightnessFunc?
-    private var setBrightnessFunc: SetBrightnessFunc?
+    private var dsGetBrightness: DSGetBrightnessFunc?
+    private var dsSetBrightness: DSSetBrightnessFunc?
+    private var dsGetLinearBrightness: DSGetBrightnessFunc?
+    private var dsSetLinearBrightness: DSSetBrightnessFunc?
+
+    private var cdGetUserBrightness: CDGetBrightnessFunc?
+    private var cdSetUserBrightness: CDSetBrightnessFunc?
+    private var cdGetLinearBrightness: CDGetBrightnessFunc?
+    private var cdSetLinearBrightness: CDSetBrightnessFunc?
 
     init() {
-        if let handle = dlopen(
+        // 1. Try DisplayServices.framework
+        if let dsHandle = dlopen(
             "/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices",
             RTLD_NOW
         ) {
-            if let symbol = dlsym(handle, "DisplayServicesGetBrightness") {
-                getBrightnessFunc = unsafeBitCast(symbol, to: GetBrightnessFunc.self)
+            if let sym = dlsym(dsHandle, "DisplayServicesGetBrightness") {
+                dsGetBrightness = unsafeBitCast(sym, to: DSGetBrightnessFunc.self)
             }
-            if let symbol = dlsym(handle, "DisplayServicesSetBrightness") {
-                setBrightnessFunc = unsafeBitCast(symbol, to: SetBrightnessFunc.self)
+            if let sym = dlsym(dsHandle, "DisplayServicesSetBrightness") {
+                dsSetBrightness = unsafeBitCast(sym, to: DSSetBrightnessFunc.self)
+            }
+            if let sym = dlsym(dsHandle, "DisplayServicesGetLinearBrightness") {
+                dsGetLinearBrightness = unsafeBitCast(sym, to: DSGetBrightnessFunc.self)
+            }
+            if let sym = dlsym(dsHandle, "DisplayServicesSetLinearBrightness") {
+                dsSetLinearBrightness = unsafeBitCast(sym, to: DSSetBrightnessFunc.self)
             }
         }
-        isAvailable = getBrightnessFunc != nil && setBrightnessFunc != nil
+
+        // 2. Try CoreDisplay.framework
+        if let cdHandle = dlopen(
+            "/System/Library/Frameworks/CoreDisplay.framework/CoreDisplay",
+            RTLD_NOW
+        ) {
+            if let sym = dlsym(cdHandle, "CoreDisplay_Display_GetUserBrightness") {
+                cdGetUserBrightness = unsafeBitCast(sym, to: CDGetBrightnessFunc.self)
+            }
+            if let sym = dlsym(cdHandle, "CoreDisplay_Display_SetUserBrightness") {
+                cdSetUserBrightness = unsafeBitCast(sym, to: CDSetBrightnessFunc.self)
+            }
+            if let sym = dlsym(cdHandle, "CoreDisplay_Display_GetLinearBrightness") {
+                cdGetLinearBrightness = unsafeBitCast(sym, to: CDGetBrightnessFunc.self)
+            }
+            if let sym = dlsym(cdHandle, "CoreDisplay_Display_SetLinearBrightness") {
+                cdSetLinearBrightness = unsafeBitCast(sym, to: CDSetBrightnessFunc.self)
+            }
+        }
+
+        isAvailable = dsSetBrightness != nil || dsSetLinearBrightness != nil || cdSetUserBrightness != nil || cdSetLinearBrightness != nil
         refresh()
     }
 
-    /// The built-in panel; external displays need DDC, which this doesn't do.
     private var displayID: CGDirectDisplayID {
-        CGMainDisplayID()
+        if let screen = NSScreen.main,
+           let num = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
+            return num
+        }
+        return CGMainDisplayID()
     }
 
-
-    /// The sampler that used to drive the HUD is gone.
-    ///
-    /// It polled the level and raised the HUD on any change it had not made
-    /// itself, which cannot distinguish a key press from ambient
-    /// auto-brightness — so the notch lit up whenever the light in the room
-    /// changed. `MediaKeyInterceptor` sees the actual key press, and that is
-    /// the only thing a HUD should react to.
     func refresh() {
-        if let getBrightnessFunc {
-            var level: Float = 0
-            if getBrightnessFunc(displayID, &level) == 0 {
-                brightness = min(max(level, 0), 1)
+        let id = displayID
+
+        if let cdGetUserBrightness {
+            let val = cdGetUserBrightness(id)
+            if val > 0.001 {
+                brightness = Float(min(max(val, 0), 1))
+                isAvailable = true
                 return
             }
         }
+
+        if let dsGetBrightness {
+            var level: Float = 0
+            if dsGetBrightness(id, &level) == 0 && level > 0.001 {
+                brightness = min(max(level, 0), 1)
+                isAvailable = true
+                return
+            }
+        }
+
+        if let dsGetLinearBrightness {
+            var level: Float = 0
+            if dsGetLinearBrightness(id, &level) == 0 && level > 0.001 {
+                brightness = min(max(level, 0), 1)
+                isAvailable = true
+                return
+            }
+        }
+
+        if let cdGetLinearBrightness {
+            let val = cdGetLinearBrightness(id)
+            if val > 0.001 {
+                brightness = Float(min(max(val, 0), 1))
+                isAvailable = true
+                return
+            }
+        }
+
         if let legacy = Self.legacyBrightness() {
             brightness = legacy
             isAvailable = true
@@ -70,10 +127,21 @@ final class BrightnessController {
     func setBrightness(_ newValue: Float) {
         let clamped = min(max(newValue, 0), 1)
         brightness = clamped
+        let id = displayID
 
-        if let setBrightnessFunc, setBrightnessFunc(displayID, clamped) == 0 {
-            return
+        if let cdSetUserBrightness {
+            cdSetUserBrightness(id, Double(clamped))
         }
+        if let dsSetBrightness {
+            _ = dsSetBrightness(id, clamped)
+        }
+        if let dsSetLinearBrightness {
+            _ = dsSetLinearBrightness(id, clamped)
+        }
+        if let cdSetLinearBrightness {
+            cdSetLinearBrightness(id, Double(clamped))
+        }
+
         Self.setLegacyBrightness(clamped)
     }
 

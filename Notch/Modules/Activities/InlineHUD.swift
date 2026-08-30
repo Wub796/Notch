@@ -135,7 +135,8 @@ struct DroppedHUDBar: View {
                 .symbolVariant(muted || value.isZero ? .slash : .none)
                 .contentTransition(.interpolate)
         case .brightness:
-            Image(systemName: value > 0.6 ? "sun.max" : "sun.min")
+            Image(systemName: value > 0.5 ? "sun.max.fill" : "sun.min.fill")
+                .foregroundStyle(Color(red: 1.0, green: 0.8, blue: 0.2))
                 .contentTransition(.interpolate)
         }
     }

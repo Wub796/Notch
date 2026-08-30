@@ -177,7 +177,10 @@ final class MediaKeyInterceptor {
             onVolume?(muted ? 0 : (volumeSource?() ?? 0), muted)
 
         case .brightnessUp, .brightnessDown:
-            let current = brightnessSource?() ?? 0
+            var current = brightnessSource?() ?? 0
+            if current <= 0.001 {
+                current = 0.5
+            }
             let target = min(max(current + (key == .brightnessUp ? delta : -delta), 0), 1)
             setBrightness?(target)
             onBrightness?(target)
