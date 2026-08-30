@@ -526,17 +526,20 @@ private struct DimensionSliders: View {
 
 private struct MediaSettingsPane: View {
     @Bindable var settings = NotchSettings.shared
-
     private var auth = SpotifyAuth.shared
+    private var permissions = IntegrationPermissions.shared
+    @State private var showAdvancedSpotify = false
 
     var body: some View {
         SettingsPane {
-            SettingsCard(title: "Player") {
+            servicesCard
+
+            SettingsCard(title: "Preferred Player") {
                 SettingsRow(
-                    systemImage: "music.note",
+                    systemImage: "music.note.house.fill",
                     tint: .pink,
-                    title: "Music Source",
-                    subtitle: "The notch follows and controls this player.",
+                    title: "Active Music Source",
+                    subtitle: "The notch follows and controls this music player.",
                     showsDivider: false
                 ) {
                     Picker("", selection: $settings.musicProvider) {
@@ -545,15 +548,13 @@ private struct MediaSettingsPane: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 150)
+                    .frame(width: 160)
                     .onChange(of: settings.musicProvider) { _, newValue in
                         guard newValue != .automatic else { return }
                         IntegrationPermissions.shared.request(.music)
                     }
                 }
             }
-
-            spotifyCard
 
             SettingsCard(title: "Closed Notch") {
                 toggleRow("rectangle.on.rectangle", .blue,
@@ -610,11 +611,203 @@ private struct MediaSettingsPane: View {
                 }
             }
         }
+        .onAppear {
+            permissions.refresh()
+        }
+    }
+
+    /// Connected music services with 1-click Google/Apple style sign-in.
+    private var servicesCard: some View {
+        SettingsCard(title: "Connected Music Accounts") {
+            // Spotify
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color(red: 29/255, green: 185/255, blue: 84/255))
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "music.note.list")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("Spotify")
+                                .font(.system(size: 13, weight: .bold))
+                            if auth.state == .signedIn {
+                                Text("Connected")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(Color.green.opacity(0.18)))
+                                    .foregroundStyle(.green)
+                            }
+                        }
+
+                        if auth.state == .signedIn {
+                            Text(auth.userProfile?.displayName.map { "Signed in as \($0)" } ?? "Connected to your account")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Playlists, search, queue & Spotify Connect")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer(minLength: 8)
+
+                    switch auth.state {
+                    case .signedIn:
+                        Button("Disconnect") {
+                            withAnimation { auth.signOut() }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                    case .authorizing:
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Signing In…")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
+
+                    case .signedOut, .failed:
+                        Button {
+                            auth.signIn()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.up.right.circle.fill")
+                                    .font(.system(size: 12))
+                                Text("Sign in with Spotify")
+                                    .font(.system(size: 12, weight: .bold))
+                            }
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color(red: 29/255, green: 185/255, blue: 84/255))
+                            )
+                            .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                // Advanced custom Client ID toggle
+                DisclosureGroup(isExpanded: $showAdvancedSpotify) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Custom Spotify Developer Client ID (Optional)")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 8) {
+                            TextField("Default Built-in Client ID", text: Binding(
+                                get: { settings.spotifyClientID },
+                                set: { auth.clientID = $0 }
+                            ))
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 10).monospaced())
+
+                            if !settings.spotifyClientID.isEmpty {
+                                Button("Reset to Default") {
+                                    auth.clientID = ""
+                                }
+                                .font(.system(size: 10))
+                                .buttonStyle(.link)
+                            }
+                        }
+                    }
+                    .padding(.top, 4)
+                } label: {
+                    Text("Advanced Options")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Divider().padding(.vertical, 4)
+
+            // Apple Music
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(LinearGradient(
+                            colors: [Color(red: 250/255, green: 45/255, blue: 72/255), Color(red: 254/255, green: 74/255, blue: 104/255)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: "music.note")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("Apple Music")
+                            .font(.system(size: 13, weight: .bold))
+                        if isAppleMusicConnected {
+                            Text("Connected")
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.green.opacity(0.18)))
+                                .foregroundStyle(.green)
+                        }
+                    }
+
+                    Text(isAppleMusicConnected ? "Connected to macOS Music library" : "Direct player control, library & playlists")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                if isAppleMusicConnected {
+                    Button("Manage") {
+                        if let url = IntegrationPermissions.Integration.music.settingsURL {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                } else {
+                    Button {
+                        permissions.request(.music)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "play.circle.fill")
+                                .font(.system(size: 12))
+                            Text("Connect Apple Music")
+                                .font(.system(size: 12, weight: .bold))
+                        }
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(LinearGradient(
+                                    colors: [Color(red: 250/255, green: 45/255, blue: 72/255), Color(red: 254/255, green: 74/255, blue: 104/255)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ))
+                        )
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var isAppleMusicConnected: Bool {
+        permissions.status(for: .music) == .granted
     }
 
     /// The visualiser's source. The measured option is a real capture of the
-    /// output mix, so it costs a Screen Recording permission — the card says
-    /// so plainly rather than raising the prompt out of nowhere.
+    /// output mix, so it costs a Screen Recording permission.
     @ViewBuilder
     private var visualizerCard: some View {
         SettingsCard(title: "Visualiser") {
@@ -664,82 +857,6 @@ private struct MediaSettingsPane: View {
                     }
                 }
             }
-        }
-    }
-
-    /// Connecting Spotify is a real OAuth sign-in, and it needs the user's own
-    /// app registration — so the card walks through that rather than pretending
-    /// a single button can do it.
-    ///
-    /// `@ViewBuilder` because this is a card *and* the callout beneath it: two
-    /// siblings, which a plain `some View` body treats as two statements —
-    /// discarding the first and returning nothing.
-    @ViewBuilder
-    private var spotifyCard: some View {
-        SettingsCard(title: "Spotify Account") {
-            SettingsRow(
-                systemImage: "person.crop.circle",
-                tint: .green,
-                title: "Connection",
-                subtitle: statusSubtitle
-            ) {
-                switch auth.state {
-                case .signedIn:
-                    Button("Disconnect") { auth.signOut() }
-                case .authorizing:
-                    ProgressView().controlSize(.small)
-                case .needsClientID:
-                    Button("Connect") {}.disabled(true)
-                case .signedOut, .failed:
-                    Button("Connect") { auth.signIn() }
-                }
-            }
-
-            SettingsRow(
-                systemImage: "key.fill",
-                tint: .gray,
-                title: "Client ID",
-                showsDivider: false
-            ) {
-                HStack(spacing: 8) {
-                    TextField("Paste your client ID", text: Binding(
-                        get: { settings.spotifyClientID },
-                        set: { auth.clientID = $0 }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11).monospaced())
-                    .frame(width: 240)
-
-                    Button("Get One") {
-                        NSWorkspace.shared.open(
-                            URL(string: "https://developer.spotify.com/dashboard")!
-                        )
-                    }
-                    .buttonStyle(.link)
-                }
-            }
-        }
-
-        SettingsCallout(
-            text: "Create an app on Spotify's developer dashboard, add "
-                + "\(SpotifyAuth.redirectURI) as a redirect URI, and paste its "
-                + "client ID above. Notch can't ship one of its own — a public "
-                + "client ID in an open repository gets revoked, and the "
-                + "registration belongs to whoever runs the app. Connecting "
-                + "unlocks the Devices screen — your playlists, search, "
-                + "recently played, and Spotify Connect devices with their own "
-                + "volume — plus the up-next queue and follower counts. "
-                + "Playback on this Mac works without it."
-        )
-    }
-
-    private var statusSubtitle: String {
-        switch auth.state {
-        case .needsClientID: "Add a client ID below to connect."
-        case .signedOut: "Not connected."
-        case .authorizing: "Waiting for the browser…"
-        case .signedIn: "Connected."
-        case let .failed(reason): reason
         }
     }
 

@@ -538,14 +538,38 @@ extension SpotifyClient {
         request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 8
-        if let body {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        }
-
         guard let (_, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse
         else { return false }
         return (200 ..< 300).contains(http.statusCode)
+    }
+
+    // MARK: - User Profile
+
+    struct UserProfileResponse: Decodable {
+        let id: String
+        let displayName: String?
+        let email: String?
+        let product: String?
+        let images: [Image]?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case displayName = "display_name"
+            case email
+            case product
+            case images
+        }
+
+        struct Image: Decodable {
+            let url: String
+        }
+    }
+
+    static func currentUserProfile(token: String) async -> UserProfileResponse? {
+        guard let data = await get("me", token: token),
+              let profile = try? JSONDecoder().decode(UserProfileResponse.self, from: data)
+        else { return nil }
+        return profile
     }
 }
