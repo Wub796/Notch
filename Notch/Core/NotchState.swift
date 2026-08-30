@@ -224,8 +224,8 @@ final class NotchState {
         }
         focusMonitor.start()
 
-        desktopMonitor.onChange = { [weak self] in
-            self?.activities.showDesktopChange()
+        desktopMonitor.onChange = { [weak self] index in
+            self?.activities.showDesktopChange(index: index)
         }
         desktopMonitor.start()
 
@@ -380,7 +380,7 @@ final class NotchState {
             132
         // Stays in the wings, so it needs room for the label and the readout.
         case .battery: 210
-        case .desktopChange: 150
+        case .desktopChange: 110
         case nil: settings.showCompactWeather ? 120 : 0
         }
     }

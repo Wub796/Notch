@@ -151,8 +151,8 @@ struct CollapsedNotchView: View {
                         value: nil
                     )
                 }
-            case .desktopChange:
-                DesktopChangeActivityView(notchWidth: state.adjustedNotchSize.width)
+            case let .desktopChange(index):
+                DesktopChangeActivityView(index: index, notchWidth: state.adjustedNotchSize.width)
             case let .accessoryBattery(name, symbol, percent):
                 dropped {
                     droppedRow(

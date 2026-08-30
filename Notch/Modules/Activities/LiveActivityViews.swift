@@ -16,22 +16,24 @@ import SwiftUI
 
 
 
-/// A Space switch.
+/// A Space switch showing the desktop number on the right.
 struct DesktopChangeActivityView: View {
+    let index: Int
     let notchWidth: CGFloat
 
     var body: some View {
         ActivityWingLayout(
             notchWidth: notchWidth,
             leading: Image(systemName: "macwindow.on.rectangle")
-                .font(.system(size: 12))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(NotchTheme.inkSecondary),
-            trailing: Text("Desktop")
-                .font(.system(size: 10.5, weight: .semibold))
+            trailing: Text("\(index)")
+                .font(.system(size: 11.5, weight: .bold, design: .rounded).monospacedDigit())
                 .foregroundStyle(NotchTheme.inkPrimary)
+                .contentTransition(.numericText())
         )
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Switched desktop")
+        .accessibilityLabel("Desktop \(index)")
     }
 }
 

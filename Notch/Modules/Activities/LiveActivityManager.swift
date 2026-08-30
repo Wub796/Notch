@@ -14,7 +14,7 @@ enum LiveActivity: Equatable {
     case screenLock(locked: Bool)
     case focusMode(name: String, symbol: String)
     case eyeBreak(active: Bool)
-    case desktopChange
+    case desktopChange(index: Int)
     case accessoryBattery(name: String, symbol: String, percent: Int)
     case volume(level: Float, muted: Bool)
     case brightness(level: Float)
@@ -135,10 +135,10 @@ final class LiveActivityManager {
         show(.focusMode(name: name, symbol: symbol), for: Self.batteryEventDuration)
     }
 
-    /// A Space switch.
-    func showDesktopChange() {
+    /// A Space switch with the 1-based desktop number.
+    func showDesktopChange(index: Int = 1) {
         guard NotchSettings.shared.desktopChangeEnabled else { return }
-        show(.desktopChange, for: 1.1)
+        show(.desktopChange(index: index), for: 1.1)
     }
 
     /// Eye break started or ended.
