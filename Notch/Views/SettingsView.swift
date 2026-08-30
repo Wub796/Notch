@@ -646,9 +646,15 @@ private struct MediaSettingsPane: View {
                         }
 
                         if auth.state == .signedIn {
-                            Text(auth.userProfile?.displayName.map { "Signed in as \($0)" } ?? "Connected to your account")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                            if let name = auth.userProfile?.displayName {
+                                Text("Signed in as \(name)")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Connected to your account")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
                         } else {
                             Text("Playlists, search, queue & Spotify Connect")
                                 .font(.system(size: 11))
