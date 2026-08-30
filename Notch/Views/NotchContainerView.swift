@@ -52,7 +52,6 @@ struct NotchContainerView: View {
                     .onTapGesture { state.handleTap() }
             }
         }
-        .offset(x: state.swipeCompensationOffset)
     }
 
     private var slab: some View {

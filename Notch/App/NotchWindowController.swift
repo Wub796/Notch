@@ -10,7 +10,6 @@ final class NotchWindowController: NSWindowController {
     private var spaceObserver: NSObjectProtocol?
     private var mouseMoveGlobalMonitor: Any?
     private var mouseMoveLocalMonitor: Any?
-    private var swipeMonitor: Any?
     private var collapseResizeWork: DispatchWorkItem?
 
     init(state: NotchState, screen: NSScreen) {
@@ -45,7 +44,6 @@ final class NotchWindowController: NSWindowController {
         setupModeChangeObserver()
         setupSpaceObserver()
         setupMouseTracking()
-        setupSwipeTracking()
     }
 
     deinit {
@@ -66,10 +64,6 @@ final class NotchWindowController: NSWindowController {
         if let mouseMoveLocalMonitor {
             NSEvent.removeMonitor(mouseMoveLocalMonitor)
             self.mouseMoveLocalMonitor = nil
-        }
-        if let swipeMonitor {
-            NSEvent.removeMonitor(swipeMonitor)
-            self.swipeMonitor = nil
         }
     }
 
@@ -95,48 +89,7 @@ final class NotchWindowController: NSWindowController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            withAnimation(.easeOut(duration: 0.15)) {
-                self.state.swipeCompensationOffset = 0
-            }
-            self.reanchorToTrackedScreen()
-        }
-    }
-
-    private func setupSwipeTracking() {
-        swipeMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.scrollWheel, .swipe]
-        ) { [weak self] event in
-            guard let self else { return }
-
-            if event.type == .scrollWheel {
-                if event.phase == .began {
-                    if abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) {
-                        self.state.swipeCompensationOffset = 0
-                    }
-                } else if event.phase == .changed {
-                    if abs(event.scrollingDeltaX) > 0.5 {
-                        let delta = event.scrollingDeltaX
-                        DispatchQueue.main.async {
-                            self.state.swipeCompensationOffset -= delta
-                        }
-                    }
-                } else if event.phase == .ended || event.phase == .cancelled {
-                    DispatchQueue.main.async {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            self.state.swipeCompensationOffset = 0
-                        }
-                    }
-                }
-            } else if event.type == .swipe {
-                let deltaX = event.deltaX
-                DispatchQueue.main.async {
-                    self.state.swipeCompensationOffset -= deltaX * 20
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        self.state.swipeCompensationOffset = 0
-                    }
-                }
-            }
+            self?.reanchorToTrackedScreen()
         }
     }
 
