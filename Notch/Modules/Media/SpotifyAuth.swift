@@ -183,7 +183,7 @@ final class SpotifyAuth {
 
     private func exchange(code: String, verifier: String) async {
         let body = [
-            "client_id": effectiveClientID,
+            "client_id": clientID,
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": Self.redirectURI,
@@ -199,7 +199,7 @@ final class SpotifyAuth {
         }
         guard let refresh = Self.storedRefreshToken() else { return nil }
         await requestToken(body: [
-            "client_id": effectiveClientID,
+            "client_id": clientID,
             "grant_type": "refresh_token",
             "refresh_token": refresh,
         ])
