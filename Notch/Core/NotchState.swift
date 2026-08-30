@@ -255,10 +255,13 @@ final class NotchState {
 
     /// Starts or stops the real-time meter to match the setting and playback.
     func syncAudioMeter() {
-        // Any audio, not only the now-playing track: a video in a browser or
-        // a game is exactly what the meter should be following too.
-        if settings.realtimeAudioMeter, media.isPlaying || audioApps.isAnyAudioPlaying {
-            audioMeter.start()
+        // Automatically start real-time meter if permission is granted or setting is enabled
+        if SystemAudioMeter.hasPermission || settings.realtimeAudioMeter {
+            if media.isPlaying || audioApps.isAnyAudioPlaying {
+                audioMeter.start()
+            } else {
+                audioMeter.stop()
+            }
         } else {
             audioMeter.stop()
         }
@@ -267,7 +270,7 @@ final class NotchState {
     /// What the collapsed visualiser should draw: the measured bands when the
     /// meter is live, and nil when the volume-driven fallback should be used.
     var visualizerBands: [Float]? {
-        guard settings.realtimeAudioMeter, audioMeter.isLive else { return nil }
+        guard audioMeter.isLive else { return nil }
         return audioMeter.bands
     }
 

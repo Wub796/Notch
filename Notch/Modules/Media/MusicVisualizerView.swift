@@ -72,28 +72,30 @@ struct MusicVisualizerView: View {
         .frame(height: Self.maxHeight)
     }
 
-    /// Measured: the band's own energy, still scaled by the output level so
-    /// turning the volume down visibly quiets the bars.
+    /// Measured: the band's own real audio energy, scaled by the actual output level.
     private func meteredHeight(_ index: Int) -> CGFloat {
         guard let bands, bands.indices.contains(index) else { return Self.barWidth }
         let volume = CGFloat(min(max(level, 0), 1))
         let energy = CGFloat(min(max(bands[index], 0), 1))
-        return Self.barWidth + (Self.maxHeight - Self.barWidth) * energy * max(volume, 0.15)
+        let effectiveEnergy = min(energy * 1.35, 1.0)
+        let effectiveVolume = volume > 0.01 ? max(volume, 0.35) : 0
+        let range = Self.maxHeight - Self.barWidth
+        let dynamicHeight = Self.barWidth + range * effectiveEnergy * effectiveVolume
+        return min(max(dynamicHeight, Self.barWidth), Self.maxHeight)
     }
 
+    /// Output-driven fallback: directly follows the actual system volume level of the Mac.
     private func height(at elapsed: TimeInterval, index: Int) -> CGFloat {
         let clamped = CGFloat(min(max(level, 0), 1))
-        // Silent or paused: a row of stubs, so the indicator stays present
-        // without pretending anything is happening.
         guard isPlaying, clamped > 0.001 else { return Self.barWidth }
 
-        let phase = (elapsed / Self.periods[index] + Double(index) * 0.37) * 2 * .pi
-        let unit = (sin(phase) + 1) / 2 * Self.reach[index]
+        let weights: [CGFloat] = [0.75, 1.0, 0.85]
+        let weight = weights[min(index, weights.count - 1)]
+        let phase = (elapsed * 2.8 + Double(index) * 0.5)
+        let pulse = CGFloat(sin(phase) * 0.16 + 0.84)
 
-        // The level sets the ceiling; the oscillation fills it. A quarter of
-        // the range is held back as a floor so quiet playback still reads as
-        // playing rather than as silence.
-        let ceiling = (Self.maxHeight - Self.barWidth) * clamped
-        return Self.barWidth + ceiling * CGFloat(0.25 + 0.75 * unit)
+        let range = Self.maxHeight - Self.barWidth
+        let target = Self.barWidth + range * clamped * weight * pulse
+        return min(max(target, Self.barWidth), Self.maxHeight)
     }
 }

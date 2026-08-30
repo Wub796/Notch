@@ -929,6 +929,132 @@ final class MediaController {
         !NSRunningApplication.runningApplications(withBundleIdentifier: fallbackBundleID).isEmpty
     }
 
+    private struct BrowserTarget {
+        let name: String
+        let bundleID: String
+        let isChromium: Bool
+    }
+
+    private static let browserTargets: [BrowserTarget] = [
+        BrowserTarget(name: "Safari", bundleID: "com.apple.Safari", isChromium: false),
+        BrowserTarget(name: "Google Chrome", bundleID: "com.google.Chrome", isChromium: true),
+        BrowserTarget(name: "Arc", bundleID: "company.thebrowser.Browser", isChromium: true),
+        BrowserTarget(name: "Brave Browser", bundleID: "com.brave.Browser", isChromium: true),
+        BrowserTarget(name: "Microsoft Edge", bundleID: "com.microsoft.edgemac", isChromium: true),
+        BrowserTarget(name: "Vivaldi", bundleID: "com.vivaldi.Vivaldi", isChromium: true),
+        BrowserTarget(name: "Orion", bundleID: "com.kagi.kagisafari", isChromium: false)
+    ]
+
+    private static func extractYouTubeVideoID(from urlString: String) -> String? {
+        if let url = URL(string: urlString),
+           let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           let v = components.queryItems?.first(where: { $0.name == "v" })?.value,
+           !v.isEmpty {
+            return v
+        }
+        if urlString.contains("youtu.be/") {
+            let parts = urlString.components(separatedBy: "youtu.be/")
+            if parts.count > 1 {
+                return parts[1].components(separatedBy: "?").first?.components(separatedBy: "&").first
+            }
+        }
+        return nil
+    }
+
+    private func browserYouTubeSnapshot() -> Snapshot? {
+        for browser in Self.browserTargets {
+            guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else {
+                continue
+            }
+
+            let scriptSource: String
+            if browser.isChromium {
+                scriptSource = """
+                tell application "\(browser.name)"
+                    if (count of windows) > 0 then
+                        repeat with w in windows
+                            repeat with t in tabs of w
+                                set u to URL of t
+                                set n to title of t
+                                if u contains "youtube.com/watch" or u contains "youtu.be" or u contains "music.youtube.com" or n contains " - YouTube" then
+                                    return n & "||" & u
+                                end if
+                            end repeat
+                        end repeat
+                    end if
+                    return ""
+                end tell
+                """
+            } else {
+                scriptSource = """
+                tell application "\(browser.name)"
+                    if (count of windows) > 0 then
+                        repeat with w in windows
+                            repeat with t in tabs of w
+                                set u to URL of t
+                                set n to name of t
+                                if u contains "youtube.com/watch" or u contains "youtu.be" or u contains "music.youtube.com" or n contains " - YouTube" then
+                                    return n & "||" & u
+                                end if
+                            end repeat
+                        end repeat
+                    end if
+                    return ""
+                end tell
+                """
+            }
+
+            var error: NSDictionary?
+            guard let script = NSAppleScript(source: scriptSource) else { continue }
+            let result = script.executeAndReturnError(&error)
+            guard error == nil, let raw = result.stringValue, !raw.isEmpty, raw.contains("||") else {
+                continue
+            }
+
+            let parts = raw.components(separatedBy: "||")
+            guard parts.count >= 2 else { continue }
+
+            var title = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let urlString = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if title.hasSuffix(" - YouTube") {
+                title = String(title.dropLast(" - YouTube".count))
+            } else if title.hasSuffix(" - YouTube Music") {
+                title = String(title.dropLast(" - YouTube Music".count))
+            }
+
+            var artist = "YouTube"
+            if title.contains(" - ") {
+                let split = title.components(separatedBy: " - ")
+                if split.count >= 2 {
+                    artist = split[0].trimmingCharacters(in: .whitespacesAndNewlines)
+                    title = split[1...].joined(separator: " - ").trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            }
+
+            var track = Track()
+            track.title = title
+            track.artist = artist
+            track.album = "YouTube"
+            track.duration = 0
+
+            var artworkURL: URL?
+            if let videoID = Self.extractYouTubeVideoID(from: urlString) {
+                artworkURL = URL(string: "https://img.youtube.com/vi/\(videoID)/hqdefault.jpg")
+            }
+
+            return Snapshot(
+                track: track,
+                elapsed: 0,
+                isPlaying: true,
+                bundleID: browser.bundleID,
+                appName: browser.name,
+                artworkURL: artworkURL
+            )
+        }
+        return nil
+    }
+
     /// One reading of the player's state, or nil when it has nothing to say.
     /// Blocking, so it is only called from a background queue or from the
     /// fallback timer, which already runs while the notch is open.
@@ -936,32 +1062,46 @@ final class MediaController {
         var track: Track
         var elapsed: TimeInterval
         var isPlaying: Bool
+        var bundleID: String?
+        var appName: String?
+        var artworkURL: URL?
     }
 
     private func appleScriptSnapshot() -> Snapshot? {
-        // Never launch a player just to ask what is playing.
-        guard fallbackAppIsRunning,
-              let script = NSAppleScript(source: stateScript(for: fallbackAppName))
-        else { return nil }
+        // 1. Never launch a player just to ask what is playing.
+        if fallbackAppIsRunning,
+           let script = NSAppleScript(source: stateScript(for: fallbackAppName)) {
+            var error: NSDictionary?
+            let result = script.executeAndReturnError(&error)
+            if error == nil, let raw = result.stringValue, raw != "stopped" {
+                let parts = raw.components(separatedBy: "||")
+                if parts.count >= 6 {
+                    var newTrack = Track()
+                    newTrack.title = parts[0]
+                    newTrack.artist = parts[1]
+                    newTrack.album = parts[2]
+                    newTrack.duration = Self.seconds(fromAppleScript: parts[3])
 
-        var error: NSDictionary?
-        let result = script.executeAndReturnError(&error)
-        guard error == nil, let raw = result.stringValue, raw != "stopped" else { return nil }
+                    return Snapshot(
+                        track: newTrack,
+                        elapsed: TimeInterval(parts[4].replacingOccurrences(of: ",", with: ".")) ?? 0,
+                        isPlaying: parts[5] == "playing",
+                        bundleID: fallbackBundleID,
+                        appName: fallbackAppName,
+                        artworkURL: nil
+                    )
+                }
+            }
+        }
 
-        let parts = raw.components(separatedBy: "||")
-        guard parts.count >= 6 else { return nil }
+        // 2. Check running browsers for YouTube/web media
+        if selectedProvider == .automatic {
+            if let browserSnap = browserYouTubeSnapshot() {
+                return browserSnap
+            }
+        }
 
-        var newTrack = Track()
-        newTrack.title = parts[0]
-        newTrack.artist = parts[1]
-        newTrack.album = parts[2]
-        newTrack.duration = Self.seconds(fromAppleScript: parts[3])
-
-        return Snapshot(
-            track: newTrack,
-            elapsed: TimeInterval(parts[4].replacingOccurrences(of: ",", with: ".")) ?? 0,
-            isPlaying: parts[5] == "playing"
-        )
+        return nil
     }
 
     private func apply(_ snapshot: Snapshot) {
@@ -973,18 +1113,30 @@ final class MediaController {
         updateTrackIfChanged(snapshot.track)
         updateLyricActivityTimer()
 
-        // MediaRemote hands artwork over with the rest of the info; Apple
-        // Events do not, so on this path it has to be asked for separately —
-        // otherwise a Mac where MediaRemote is gated never shows a cover.
-        if isNewTrack {
-            loadFallbackArtwork()
-        }
-
-        if sourceAppName == nil,
+        if let bundleID = snapshot.bundleID {
+            sourceAppBundleID = bundleID
+            sourceAppName = snapshot.appName ?? NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.localizedName
+            sourceAppIcon = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.icon
+        } else if sourceAppName == nil,
            let app = NSRunningApplication
                .runningApplications(withBundleIdentifier: fallbackBundleID).first {
             sourceAppName = app.localizedName
             sourceAppIcon = app.icon
+            sourceAppBundleID = fallbackBundleID
+        }
+
+        if let artworkURL = snapshot.artworkURL {
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                if let data = try? Data(contentsOf: artworkURL), let image = NSImage(data: data) {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.track == snapshot.track else { return }
+                        self.artwork = image
+                        self.updateAccentIfNeeded(for: data)
+                    }
+                }
+            }
+        } else if isNewTrack {
+            loadFallbackArtwork()
         }
     }
 
