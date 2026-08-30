@@ -66,14 +66,23 @@ final class AudioAppMonitor {
     /// `nowPlayingBundleID` is only used on the fallback path, and to keep the
     /// current player listed even while it is momentarily silent.
     func refresh(nowPlayingBundleID: String? = nil, isPlaying: Bool = false) {
-        if #available(macOS 14.4, *) {
-            let observed = Self.audioProcesses()
-            if !observed.isEmpty {
-                apps = Self.resolve(observed, keeping: nowPlayingBundleID, isPlaying: isPlaying)
-                return
+        audioQueue.async { [weak self] in
+            guard let self else { return }
+            let apps: [App]
+            if #available(macOS 14.4, *) {
+                let observed = Self.audioProcesses()
+                if !observed.isEmpty {
+                    apps = Self.resolve(observed, keeping: nowPlayingBundleID, isPlaying: isPlaying)
+                } else {
+                    apps = Self.fallbackApps(nowPlayingBundleID: nowPlayingBundleID, isPlaying: isPlaying)
+                }
+            } else {
+                apps = Self.fallbackApps(nowPlayingBundleID: nowPlayingBundleID, isPlaying: isPlaying)
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.apps = apps
             }
         }
-        apps = Self.fallbackApps(nowPlayingBundleID: nowPlayingBundleID, isPlaying: isPlaying)
     }
 
     // MARK: - Push notifications
@@ -95,9 +104,7 @@ final class AudioAppMonitor {
         isObserving = true
 
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            DispatchQueue.main.async { [weak self] in
-                self?.scheduleActivityChange()
-            }
+            self?.scheduleActivityChange()
         }
         listenerBlock = block
 
@@ -208,25 +215,44 @@ final class AudioAppMonitor {
             self?.handleActivityChange()
         }
         pendingChange = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.1, execute: work)
     }
 
     private var pendingChange: DispatchWorkItem?
+    private let audioQueue = DispatchQueue(label: "com.notch.audio-monitor", qos: .utility)
 
     private func handleActivityChange() {
-        attachPerObjectListeners()
+        audioQueue.async { [weak self] in
+            guard let self else { return }
+            self.attachPerObjectListeners()
 
-        let playing: Bool
-        if #available(macOS 14.4, *), !observedProcessObjects.isEmpty {
-            playing = observedProcessObjects.contains { Self.isRunningOutput($0) }
-        } else {
-            playing = observedDevices.contains { Self.deviceIsRunningSomewhere($0) }
-        }
-        if isAnyAudioPlaying != playing {
-            isAnyAudioPlaying = playing
-        }
+            let playing: Bool
+            if #available(macOS 14.4, *), !self.observedProcessObjects.isEmpty {
+                playing = self.observedProcessObjects.contains { Self.isRunningOutput($0) }
+            } else {
+                playing = self.observedDevices.contains { Self.deviceIsRunningSomewhere($0) }
+            }
+            let apps = self.readAppsOnAudioQueue()
 
-        onAudioActivityChange?()
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.apps = apps
+                if self.isAnyAudioPlaying != playing {
+                    self.isAnyAudioPlaying = playing
+                }
+                self.onAudioActivityChange?()
+            }
+        }
+    }
+
+    private func readAppsOnAudioQueue() -> [App] {
+        if #available(macOS 14.4, *) {
+            let observed = Self.audioProcesses()
+            if !observed.isEmpty {
+                return Self.resolve(observed, keeping: nil, isPlaying: false)
+            }
+        }
+        return Self.fallbackApps(nowPlayingBundleID: nil, isPlaying: false)
     }
 
     private static func address(

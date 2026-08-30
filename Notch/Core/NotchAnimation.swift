@@ -64,9 +64,9 @@ enum NotchAnimations {
     static var close: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.74, dampingFraction: 1, blendDuration: 0)
-        case .bouncy: return .spring(response: 0.76, dampingFraction: 0.95, blendDuration: 0)
-        case .calm: return .spring(response: 1.0, dampingFraction: 1, blendDuration: 0)
+        case .snappy: return .spring(response: 0.58, dampingFraction: 1, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.62, dampingFraction: 0.95, blendDuration: 0)
+        case .calm: return .spring(response: 0.82, dampingFraction: 1, blendDuration: 0)
         }
     }
 
@@ -103,6 +103,22 @@ enum NotchAnimations {
 
     /// The HUD bar's own settle, matching `DraggableProgressBar`.
     static let hudBar = Animation.smooth(duration: 0.3)
+
+    /// Charging popup: pops in beneath the notch with a small overshoot, then
+    /// eases away when the transient dismisses.
+    static var chargePop: AnyTransition {
+        if prefersReducedMotion {
+            return .opacity
+        }
+        return .asymmetric(
+            insertion: .scale(scale: 0.55, anchor: .top)
+                .combined(with: .opacity)
+                .animation(.spring(response: 0.32, dampingFraction: 0.68)),
+            removal: .opacity
+                .combined(with: .scale(scale: 0.94, anchor: .top))
+                .animation(.easeIn(duration: 0.22))
+        )
+    }
 
     /// Closed-notch activity swap, from Atoll: a small scale in and a slightly
     /// deeper scale out, so one activity replacing another reads as a

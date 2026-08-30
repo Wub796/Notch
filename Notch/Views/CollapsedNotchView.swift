@@ -73,33 +73,46 @@ struct CollapsedNotchView: View {
                     )
                 )
             case let .battery(percent, charging, low):
-                // Back in the wings rather than dropped: this is a moment, and
-                // a word beside the notch with the matching glyph on the other
-                // side reads faster than a bar unfolding below it.
-                ActivityWingLayout(
-                    notchWidth: state.adjustedNotchSize.width,
-                    leading: Text(charging
-                                  ? "Charging"
-                                  : (low ? "Low Battery" : "On Battery"))
-                        .font(.notchBody.weight(.bold))
-                        .foregroundStyle(low ? .red : NotchTheme.inkPrimary)
-                        .fixedSize(),
+                // When charging, the dedicated popup takes over: the notch's
+                // own row keeps whatever it was wearing (music wings or
+                // weather), and the popup pops in on a band beneath the
+                // notch — iOS-style — then eases away on dismiss.
+                if charging {
+                    VStack(spacing: 0) {
+                        notchRowFlank
+                            .frame(height: state.adjustedNotchSize.height)
+
+                        ChargingPopupView(level: CGFloat(percent) / 100)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 6)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 46)
+                            .transition(NotchAnimations.chargePop)
+                    }
+                } else {
+                    ActivityWingLayout(
+                        notchWidth: state.adjustedNotchSize.width,
+                        leading: Text(low ? "Low Battery" : "On Battery")
+                            .font(.notchBody.weight(.bold))
+                            .foregroundStyle(low ? .red : NotchTheme.inkPrimary)
+                            .fixedSize(),
                     trailing: HStack(spacing: 5) {
                         Text("\(percent)%")
                             .font(.notchBody.weight(.bold)
                                 .monospacedDigit())
                             .contentTransition(.numericText())
                             .fixedSize()
-                        Image(systemName: charging
-                              ? "battery.100percent.bolt"
-                              : (low ? "battery.25percent" : "battery.75percent"))
+                        Image(systemName: low
+                              ? "battery.25percent"
+                              : "battery.75percent")
                             .font(.system(size: 15, weight: .semibold))
                     }
                     .foregroundStyle(low ? .red : NotchTheme.battery)
                 )
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(charging ? "Charging" : "On battery")
+                .accessibilityLabel(low ? "Low battery" : "On battery")
                 .accessibilityValue("\(percent) percent")
+                }
             case let .screenLock(locked):
                 dropped {
                     droppedRow(

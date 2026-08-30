@@ -159,17 +159,93 @@ final class MediaController {
         // and sends nothing until something changes, and where it is gated the
         // Apple Events path only ran while the notch was expanded.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            // Only when consent is already on file: a probe at launch must not
-            // be what raises the Automation dialog.
-            guard let bundleID = self?.fallbackBundleID,
-                  IntegrationPermissions.isAutomationAllowed(bundleID),
-                  let snapshot = self?.appleScriptSnapshot()
-            else { return }
+            self?.probePlayersAtLaunch(attemptsLeft: 4)
+        }
+    }
+
+    /// Launch-time probe, with retries, so a track that was already playing
+    /// before the notch launched shows up the moment the app opens rather
+    /// than after the first track change.
+    ///
+    /// One attempt misses too easily: a player can be slow to answer its
+    /// first Apple Event, and the Automation consent prompt may still be in
+    /// the air (a probe must never be what raises it, so an ungranted bundle
+    /// is retried rather than abandoned — the retry picks up the grant). The
+    /// probe also checks both known players, not only the fallback, so a
+    /// Spotify track on a Mac where MediaRemote is gated is caught too.
+    /// Retries stop as soon as any source has produced a track.
+    private func probePlayersAtLaunch(attemptsLeft: Int) {
+        guard attemptsLeft > 0 else { return }
+
+        // Both players the Apple Events path can read, each with its own app
+        // name. Only one will be running at a time on a real Mac, but checking
+        // both costs a single process-lookup each and covers the case where
+        // the user is playing the provider that isn't the fallback.
+        let candidates: [(appName: String, bundleID: String)] = [
+            ("Music", "com.apple.Music"),
+            ("Spotify", MusicProvider.spotify.bundleID)
+        ]
+
+        for candidate in candidates {
+            guard NSRunningApplication
+                .runningApplications(withBundleIdentifier: candidate.bundleID)
+                .isEmpty == false
+            else { continue }
+            // Only when consent is already on file: a probe at launch must
+            // not be what raises the Automation dialog.
+            guard IntegrationPermissions.isAutomationAllowed(candidate.bundleID) else {
+                continue
+            }
+            guard let snapshot = snapshotFrom(appName: candidate.appName) else { continue }
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.track == nil else { return }
                 self.apply(snapshot)
             }
+            return
         }
+
+        // Nothing playing (or the player is still starting up) — retry while
+        // nothing has been picked up yet.
+        scheduleLaunchProbeRetry(attemptsLeft: attemptsLeft)
+    }
+
+    private func scheduleLaunchProbeRetry(attemptsLeft: Int) {
+        guard attemptsLeft > 1 else { return }
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(
+            deadline: .now() + 2
+        ) { [weak self] in
+            guard let self else { return }
+            // Anything already picked up — by MediaRemote or an earlier
+            // probe — ends the launch probe.
+            guard self.track == nil, !self.isPlaying else { return }
+            self.probePlayersAtLaunch(attemptsLeft: attemptsLeft - 1)
+        }
+    }
+
+    /// Reads the state of a named player, or nil when it has nothing to say.
+    /// Like `appleScriptSnapshot` but for an arbitrary app name rather than
+    /// only the fallback — used by the launch probe to check both known
+    /// players.
+    private func snapshotFrom(appName: String) -> Snapshot? {
+        guard let script = NSAppleScript(source: stateScript(for: appName)) else { return nil }
+        var error: NSDictionary?
+        let result = script.executeAndReturnError(&error)
+        guard error == nil, let raw = result.stringValue, raw != "stopped" else { return nil }
+
+        let parts = raw.components(separatedBy: "||")
+        guard parts.count >= 6 else { return nil }
+
+        var newTrack = Track()
+        newTrack.title = parts[0]
+        newTrack.artist = parts[1]
+        newTrack.album = parts[2]
+        newTrack.duration = Self.seconds(fromAppleScript: parts[3])
+
+        return Snapshot(
+            track: newTrack,
+            elapsed: TimeInterval(parts[4].replacingOccurrences(of: ",", with: ".")) ?? 0,
+            isPlaying: parts[5] == "playing"
+        )
     }
 
     // MARK: - Lifecycle
@@ -203,6 +279,13 @@ final class MediaController {
 
         if useMediaRemote {
             refreshFromMediaRemote()
+            // On Macs where MediaRemote is gated, its answers are silence and
+            // the demotion counter only advances one refresh per open — music
+            // that was already playing took several open/close rounds to appear.
+            // One AppleScript probe per open closes that gap: if the fallback
+            // player answers with something playing while MediaRemote says
+            // nothing, demote on the spot and show the track.
+            probeFallbackIfMediaRemoteSilent()
         } else {
             refreshFromAppleScript()
             fallbackTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
@@ -596,9 +679,44 @@ final class MediaController {
         consecutiveEmptyReplies += 1
         guard consecutiveEmptyReplies >= Self.emptyRepliesBeforeDemotion else { return }
 
+        demoteToAppleEvents()
+    }
+
+    /// One AppleScript probe when the notch opens, covering the gated-
+    /// MediaRemote case: the fallback player reports a playing track while
+    /// the system source has returned silence. That combination is the
+    /// macOS 15.4 gate, so the source is demoted on the spot and the track
+    /// shows immediately instead of after several more empty replies.
+    private func probeFallbackIfMediaRemoteSilent() {
+        // Only worth asking when nothing is being shown, the fallback player
+        // is actually running, and MediaRemote has already answered at least
+        // once with silence (guards against demoting during a momentary gap
+        // on a healthy system).
+        guard useMediaRemote,
+              (track == nil || !isPlaying),
+              consecutiveEmptyReplies >= 1,
+              fallbackAppIsRunning,
+              automationIsAllowed()
+        else { return }
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let snapshot = self?.appleScriptSnapshot(), snapshot.isPlaying else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.useMediaRemote else { return }
+                self.demoteToAppleEvents()
+                self.apply(snapshot)
+            }
+        }
+    }
+
+    /// Switches the source from MediaRemote to the Apple Events path and
+    /// rebuilds its timers.
+    private func demoteToAppleEvents() {
         useMediaRemote = false
         isSystemNowPlayingRestricted = true
-        // Rebuild the timers on the Apple Events path.
+        consecutiveEmptyReplies = Self.emptyRepliesBeforeDemotion
+        pendingClearWork?.cancel()
+        pendingClearWork = nil
         if isActive {
             setActive(true)
         }

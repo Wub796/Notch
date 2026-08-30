@@ -88,10 +88,10 @@ final class AudioOutputManager {
 
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             guard let self else { return }
-            self.devices = Self.outputDevices()
-            self.currentDeviceID = Self.defaultOutputDevice()
-            self.attachVolumeListener()
-            self.readVolume()
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.refresh()
+            }
         }
         listenerBlock = block
 

@@ -360,6 +360,9 @@ final class NotchState {
         // The lyric line lives under the notch and wants room to read; the
         // wings only carry the cover and the visualiser.
         case .lyrics: 190
+        // The charging popup drops a band beneath the notch (like the volume
+        // HUD), so the wings only carry the notch's own row content.
+        case .battery(_, true, _): 132
         // These all drop a bar beneath the notch rather than splitting across
         // the wings, so the wings only carry what stays on the notch's own
         // row — the weather glyph and its temperature.
@@ -381,6 +384,8 @@ final class NotchState {
         switch collapsedActivity {
         case .lyrics: 26
         case .volume, .brightness: 34
+        // The charging popup drops beneath the notch, iOS-style.
+        case .battery(_, true, _): 46
         default: 0
         }
     }
