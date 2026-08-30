@@ -136,9 +136,7 @@ struct ThreeDLyricsView: View {
                     .foregroundStyle(NotchTheme.inkMuted)
                     .frame(height: 48)
                 } else {
-                    Text("No lyrics available")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(NotchTheme.inkMuted.opacity(0.6))
+                    Spacer(minLength: 0)
                         .frame(height: 48)
                 }
             } else {

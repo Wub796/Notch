@@ -42,28 +42,44 @@ struct DevicesScreenView: View {
     let namespace: Namespace.ID
 
     private var spotify: SpotifyLibrary { state.spotify }
+    private var media: MediaController { state.media }
 
     private var activeAudioApp: AudioAppMonitor.App? {
         state.audioApps.apps.first(where: \.isPlaying)
     }
 
+    private var displayTitle: String {
+        if let title = media.track?.title, !title.isEmpty {
+            return title
+        }
+        if let active = activeAudioApp {
+            return active.name
+        }
+        return "Nothing Playing"
+    }
+
+    private var displayArtist: String {
+        if let artist = media.track?.artist, !artist.isEmpty {
+            return artist
+        }
+        if activeAudioApp != nil {
+            return "Active Audio"
+        }
+        return "Nothing is playing"
+    }
+
+    private var isAudioActive: Bool {
+        media.isPlaying || activeAudioApp != nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            headerRow
-
-            // 3D tilted lyrics right below the Library & Discover / section buttons
-            ThreeDLyricsView(
-                lyrics: state.media.lyrics,
-                accent: state.media.accent,
-                onSelect: { time in
-                    state.media.seek(to: time + 0.05)
-                }
-            )
+            topHeroRow
 
             Group {
                 switch state.devicesSection {
                 case .now:
-                    MediaPlayerView(state: state, namespace: namespace)
+                    nowPlaybackSection
                 case .library:
                     SpotifyLibraryScreen(state: state)
                 case .discover:
@@ -89,60 +105,309 @@ struct DevicesScreenView: View {
         }
     }
 
-    // MARK: - Aligned Header Row (Track Info / Nothing Playing + Section Buttons)
+    // MARK: - Top Hero Row (Artwork + Title + Artist aligned with Section buttons & 3D lyrics)
 
-    private var headerRow: some View {
-        HStack(alignment: .center, spacing: 12) {
-            // Track Info / "Nothing Playing" evenly aligned on the left
-            HStack(spacing: 8) {
-                if let track = state.media.track, !track.title.isEmpty {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(track.title)
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(NotchTheme.inkPrimary)
-                            .lineLimit(1)
-                        Text(track.artist.isEmpty ? "Now Playing" : track.artist)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(NotchTheme.inkSecondary)
-                            .lineLimit(1)
+    private var topHeroRow: some View {
+        HStack(alignment: .top, spacing: 14) {
+            // LEFT: Album Art + Track Info + Subtitle
+            HStack(alignment: .center, spacing: 12) {
+                artwork
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        MarqueeText(
+                            text: displayTitle,
+                            font: .system(size: 19, weight: .bold, design: .rounded),
+                            width: 190
+                        )
+                        .foregroundStyle(NotchTheme.inkPrimary)
+
+                        liveAudioBadge
                     }
-                } else if let activeApp = activeAudioApp {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(activeApp.name)
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(NotchTheme.inkPrimary)
-                            .lineLimit(1)
-                        Text("Active Audio")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(NotchTheme.inkSecondary)
-                            .lineLimit(1)
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Nothing Playing")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(NotchTheme.inkPrimary)
-                            .lineLimit(1)
-                        Text("No active audio")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(NotchTheme.inkSecondary)
-                            .lineLimit(1)
-                    }
+
+                    artistRow
+
+                    subtitleButtons
                 }
-
-                liveAudioBadge
             }
-            .frame(maxWidth: 240, alignment: .leading)
 
             Spacer(minLength: 8)
 
-            // Right side: Section buttons (Now, Library, Discover, Audio) & Account
-            HStack(spacing: 8) {
-                accountChip
-                sectionSwitch
+            // RIGHT: Section buttons & 3D lyrics directly underneath Library & Discover
+            VStack(alignment: .trailing, spacing: 2) {
+                HStack(spacing: 8) {
+                    accountChip
+                    sectionSwitch
+                }
+
+                ThreeDLyricsView(
+                    lyrics: media.lyrics,
+                    accent: media.accent,
+                    onSelect: { time in
+                        media.seek(to: time + 0.05)
+                    }
+                )
+                .frame(maxWidth: 290, alignment: .trailing)
             }
         }
-        .frame(height: 36)
+        .frame(height: 78)
+    }
+
+    // MARK: - Now Playback Controls (Lifted Higher)
+
+    private var nowPlaybackSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            progressRow
+
+            if state.mediaShowsFullLyrics {
+                LyricsView(lyrics: media.lyrics, accent: media.accent) { time in
+                    media.seek(to: time + 0.05)
+                }
+                .frame(height: 85)
+                .transition(.opacity)
+            }
+
+            transportRow
+
+            bottomActions
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Media Artwork & Info Subcomponents
+
+    private var artwork: some View {
+        Group {
+            if let image = media.artwork {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else if let icon = media.sourceAppIcon ?? activeAudioApp?.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .padding(14)
+                    .background(Color.white.opacity(0.08))
+            } else {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+                    .overlay {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 30, weight: .medium))
+                            .foregroundStyle(NotchTheme.inkMuted)
+                    }
+            }
+        }
+        .frame(width: 76, height: 76)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .matchedGeometryEffect(id: "albumArt", in: namespace)
+        .shadow(color: media.accent.opacity(0.38), radius: 14, y: 5)
+    }
+
+    private var artistRow: some View {
+        HStack(spacing: 6) {
+            Text(String(displayArtist.prefix(1)).uppercased())
+                .font(.system(size: 9, weight: .heavy, design: .rounded))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(NotchTheme.surfaceHover))
+
+            Text(displayArtist)
+                .font(.notchCallout.weight(.bold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private var subtitleButtons: some View {
+        if media.track == nil && activeAudioApp == nil {
+            HStack(spacing: 8) {
+                Button {
+                    NSWorkspace.shared.open(URL(string: "music://")!)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "apple.logo")
+                            .font(.system(size: 10))
+                        Text("Apple Music")
+                            .font(.notchCaption.weight(.semibold))
+                    }
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                }
+                .buttonStyle(PressableButtonStyle())
+
+                Button {
+                    if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") {
+                        NSWorkspace.shared.openApplication(at: app, configuration: .init())
+                    } else if let url = URL(string: "spotify:") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 10))
+                        Text("Spotify")
+                            .font(.notchCaption.weight(.semibold))
+                    }
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                }
+                .buttonStyle(PressableButtonStyle())
+            }
+        } else if let followers = media.followersLabel {
+            Text(followers)
+                .font(.notchCaption.weight(.semibold))
+                .foregroundStyle(NotchTheme.inkMuted)
+                .lineLimit(1)
+        } else if let album = media.track?.album, !album.isEmpty {
+            Text(album)
+                .font(.notchCaption)
+                .foregroundStyle(NotchTheme.inkSecondary)
+                .lineLimit(1)
+        } else if let active = activeAudioApp {
+            Button {
+                active.activate()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up.forward.app.fill")
+                        .font(.system(size: 9))
+                    Text("Bring \(active.name) to Front")
+                        .font(.notchCaption.weight(.semibold))
+                }
+                .foregroundStyle(NotchTheme.inkSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
+            }
+            .buttonStyle(PressableButtonStyle())
+        }
+    }
+
+    private var progressRow: some View {
+        ScrubberBar(
+            duration: media.track?.duration ?? 0,
+            elapsed: media.displayedElapsed,
+            accent: media.accent
+        ) { target in
+            media.seek(to: target)
+        }
+    }
+
+    private var transportRow: some View {
+        HStack(spacing: 24) {
+            transportIcon(
+                state.mediaShowsFullLyrics
+                    ? "list.bullet.rectangle.fill"
+                    : "list.bullet.rectangle",
+                size: 15,
+                label: state.mediaShowsFullLyrics ? "Hide full lyrics" : "Show full lyrics",
+                tint: state.mediaShowsFullLyrics ? nil : NotchTheme.inkMuted
+            ) {
+                withAnimation(NotchAnimations.content) {
+                    state.mediaShowsFullLyrics.toggle()
+                }
+            }
+
+            transportIcon(
+                "backward.fill",
+                size: 16,
+                label: "Previous track",
+                isEnabled: media.canControlTransport
+            ) {
+                media.previousTrack()
+            }
+
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
+                    media.togglePlayPause()
+                }
+            } label: {
+                Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(NotchTheme.inkPrimary)
+                    .frame(width: 38, height: 38)
+                    .background(Circle().fill(Color.white.opacity(0.12)))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PressableButtonStyle())
+            .hoverLift(1.08)
+            .disabled(!media.canControlTransport)
+            .opacity(media.canControlTransport ? 1 : 0.4)
+            .contentTransition(.symbolEffect(.replace))
+            .accessibilityLabel(media.isPlaying ? "Pause" : "Play")
+
+            transportIcon(
+                "forward.fill",
+                size: 16,
+                label: "Next track",
+                isEnabled: media.canControlTransport
+            ) {
+                media.nextTrack()
+            }
+
+            transportIcon(state.audio.currentSymbol, size: 15, label: "Switch audio output") {
+                state.audio.cycleToNextDevice()
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var bottomActions: some View {
+        HStack(spacing: 24) {
+            transportIcon(
+                media.isFavorite ? "heart.fill" : "heart",
+                size: 14,
+                label: media.isFavorite ? "Remove from favourites" : "Add to favourites",
+                tint: media.isFavorite ? .red : nil,
+                isEnabled: media.canFavorite
+            ) {
+                withAnimation(NotchAnimations.content) {
+                    media.toggleFavorite()
+                }
+            }
+
+            transportIcon(
+                media.isShuffling ? "shuffle.circle.fill" : "shuffle",
+                size: 14,
+                label: media.isShuffling ? "Turn off shuffle" : "Shuffle",
+                tint: media.isShuffling ? .blue : nil,
+                isEnabled: media.canControlTransport
+            ) {
+                withAnimation(NotchAnimations.content) {
+                    media.toggleShuffle()
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func transportIcon(
+        _ systemImage: String,
+        size: CGFloat,
+        label: String,
+        tint: Color? = nil,
+        isEnabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(tint ?? NotchTheme.inkPrimary)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .modifier(HoverIconModifier())
+        .disabled(!isEnabled)
+        .accessibilityLabel(label)
     }
 
     /// A live readout of what CoreAudio says is playing.
