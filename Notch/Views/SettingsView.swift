@@ -732,12 +732,24 @@ private struct MediaSettingsPane: View {
 
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(auth.state == .signedIn
-                                 ? (auth.userProfile?.displayName.map { "Signed in as \($0)" } ?? "Connected to Spotify Web API")
-                                 : "Spotify Web API & Remote Connect")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(NotchTheme.inkPrimary)
-                                .lineLimit(1)
+                            if auth.state == .signedIn {
+                                if let name = auth.userProfile?.displayName {
+                                    Text("Signed in as \(name)")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(NotchTheme.inkPrimary)
+                                        .lineLimit(1)
+                                } else {
+                                    Text("Connected to Spotify Web API")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(NotchTheme.inkPrimary)
+                                        .lineLimit(1)
+                                }
+                            } else {
+                                Text("Spotify Web API & Remote Connect")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(NotchTheme.inkPrimary)
+                                    .lineLimit(1)
+                            }
                         }
 
                         Spacer(minLength: 8)
