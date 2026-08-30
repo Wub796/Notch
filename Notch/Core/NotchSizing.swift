@@ -74,15 +74,15 @@ enum NotchSizing {
     /// Each screen's natural size at the default width.
     private static func baseSize(for tab: NotchTab) -> CGSize {
         switch tab {
-        case .home: CGSize(width: 860, height: 235)
+        case .home: CGSize(width: 860, height: 205)
         case .media: CGSize(width: 580, height: 315)
         case .weather: CGSize(width: 600, height: 320)
-        case .calendar: CGSize(width: 620, height: 380)
-        case .shelf: CGSize(width: 640, height: 270)
-        case .clipboard: CGSize(width: 660, height: 285)
-        case .tools: CGSize(width: 880, height: 330)
-        case .notes: CGSize(width: 580, height: 300)
-        case .telemetry: CGSize(width: 800, height: 310)
+        case .calendar: CGSize(width: 620, height: 350)
+        case .shelf: CGSize(width: 640, height: 240)
+        case .clipboard: CGSize(width: 660, height: 255)
+        case .tools: CGSize(width: 880, height: 295)
+        case .notes: CGSize(width: 580, height: 265)
+        case .telemetry: CGSize(width: 800, height: 275)
         case .audio: CGSize(width: 880, height: 445)
         }
     }
