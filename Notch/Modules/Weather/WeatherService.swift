@@ -115,6 +115,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        guard !isFetching else { return }
         switch manager.authorizationStatus {
         case .notDetermined:
             break
@@ -178,6 +179,10 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         // A failed fix is not fatal — approximate from the network instead.
+        // Ignore late failures after another location path already started a
+        // fetch; otherwise they can launch a duplicate IP request and race
+        // the successful weather result.
+        guard !isFetching else { return }
         resolveApproximateLocation()
     }
 

@@ -31,6 +31,7 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
     private(set) var failureReason: String?
 
     private var stream: SCStream?
+    private var activeStreamGeneration: Int?
     private var starting = false
     private var captureGeneration = 0
     private let sampleQueue = DispatchQueue(label: "com.notch.audiometer", qos: .userInitiated)
@@ -95,11 +96,10 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
                 configuration.excludesCurrentProcessAudio = true
                 configuration.sampleRate = 48_000
                 configuration.channelCount = 2
-                // No video is consumed, so ask for the smallest, slowest frame
-                // the API will accept rather than a full-screen pipeline.
-                configuration.width = 2
-                configuration.height = 2
-                configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+                // This stream only installs an audio output. Do not configure
+                // a video frame size or interval: ScreenCaptureKit otherwise
+                // creates an unconsumed video output and logs repeated
+                // "stream output NOT found" errors while dropping frames.
                 configuration.queueDepth = 3
 
                 let stream = SCStream(filter: filter, configuration: configuration, delegate: owner)
@@ -114,6 +114,7 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
                         return
                     }
                     self.stream = stream
+                    self.activeStreamGeneration = generation
                     self.starting = false
                     self.failureReason = nil
                 }
@@ -141,6 +142,7 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
         starting = false
         let capture = stream
         stream = nil
+        activeStreamGeneration = nil
         isLive = false
         bands = [0, 0, 0]
         envelope = [0, 0, 0]
@@ -154,9 +156,11 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         DispatchQueue.main.async { [weak self] in
-            self?.stream = nil
-            self?.isLive = false
-            self?.failureReason = error.localizedDescription
+            guard let self, self.stream === stream else { return }
+            self.stream = nil
+            self.activeStreamGeneration = nil
+            self.isLive = false
+            self.failureReason = error.localizedDescription
         }
     }
 
@@ -227,7 +231,7 @@ final class SystemAudioMeter: NSObject, SCStreamOutput, SCStreamDelegate {
 
     /// Fast attack, quick release on pause/silence, capped at 30 updates/sec.
     private func publish(_ measured: [Float]) {
-        guard stream != nil else { return }
+        guard stream != nil, activeStreamGeneration == captureGeneration else { return }
         for index in envelope.indices {
             let target = measured[index]
             let coefficient: Float = target > envelope[index] ? 0.85 : 0.40
