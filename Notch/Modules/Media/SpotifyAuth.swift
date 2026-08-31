@@ -34,9 +34,6 @@ final class SpotifyAuth {
     private(set) var state: State = .signedOut
     private(set) var userProfile: UserProfile?
 
-    /// Default client ID provided for 1-click OAuth authorization.
-    static let defaultClientID = "b84501eb89894e66b44a2c5ef2947ea8"
-
     /// The redirect Spotify sends the browser back to. Registered as a URL
     /// scheme in Info.plist, so the OS hands it to the app.
     static let redirectURI = "notch://spotify-callback"
@@ -77,13 +74,8 @@ final class SpotifyAuth {
         }
     }
 
-    var effectiveClientID: String {
-        let custom = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
-        return custom.isEmpty ? Self.defaultClientID : custom
-    }
-
     var hasValidClientID: Bool {
-        !effectiveClientID.isEmpty
+        !clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private init() {
@@ -127,9 +119,9 @@ final class SpotifyAuth {
 
     /// Opens Spotify's consent page in the browser with PKCE authorization.
     func signIn() {
-        let targetID = effectiveClientID
+        let targetID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !targetID.isEmpty else {
-            state = .failed("Please configure a Spotify Client ID in Settings.")
+            state = .failed("Please enter your Spotify App Client ID from the Developer Dashboard.")
             DispatchQueue.main.async {
                 SettingsWindowController.shared.show()
             }
@@ -205,7 +197,7 @@ final class SpotifyAuth {
 
     private func exchange(code: String, verifier: String) async {
         let body = [
-            "client_id": effectiveClientID,
+            "client_id": clientID.trimmingCharacters(in: .whitespacesAndNewlines),
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": Self.redirectURI,
@@ -221,7 +213,7 @@ final class SpotifyAuth {
         }
         guard let refresh = Self.storedRefreshToken() else { return nil }
         await requestToken(body: [
-            "client_id": effectiveClientID,
+            "client_id": clientID.trimmingCharacters(in: .whitespacesAndNewlines),
             "grant_type": "refresh_token",
             "refresh_token": refresh,
         ])

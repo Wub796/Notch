@@ -537,7 +537,7 @@ private struct MediaSettingsPane: View {
     @Bindable var settings = NotchSettings.shared
     private var auth = SpotifyAuth.shared
     private var permissions = IntegrationPermissions.shared
-    @State private var showAdvancedSpotify = false
+    @State private var hasCopiedURI = false
 
     var body: some View {
         SettingsPane {
@@ -639,90 +639,146 @@ private struct MediaSettingsPane: View {
             spotifyProviderRow
             Divider().padding(.leading, 58)
             appleMusicProviderRow
-            Divider().padding(.leading, 58)
-            spotifyAdvancedRow
         }
     }
 
     /// Spotify Provider Row: Shows live Web API connection and native integration.
     private var spotifyProviderRow: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color(red: 29/255, green: 185/255, blue: 84/255))
-                    .frame(width: 34, height: 34)
-                Image(systemName: "music.note.list")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
-            }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color(red: 29/255, green: 185/255, blue: 84/255))
+                        .frame(width: 34, height: 34)
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                }
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text("Spotify")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(NotchTheme.inkPrimary)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text("Spotify")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(NotchTheme.inkPrimary)
+
+                        if auth.state == .signedIn {
+                            Text("Connected")
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.green.opacity(0.18)))
+                                .foregroundStyle(.green)
+                        }
+                    }
 
                     if auth.state == .signedIn {
-                        Text("Connected")
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.green.opacity(0.18)))
-                            .foregroundStyle(.green)
+                        if let name = auth.userProfile?.displayName {
+                            Text("Signed in as \(name) • Connected across all devices")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        } else {
+                            Text("Connected to Spotify Web API • Works even when app is closed")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    } else {
+                        Text("Native macOS playback works with zero login. Connect Web API for Spotify Connect & remote control.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
                     }
                 }
 
+                Spacer(minLength: 8)
+
                 if auth.state == .signedIn {
-                    if let name = auth.userProfile?.displayName {
-                        Text("Signed in as \(name) • Connected across all devices")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    } else {
-                        Text("Connected to Spotify Web API • Works even when app is closed")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                    Button("Disconnect") {
+                        withAnimation { auth.signOut() }
                     }
-                } else if case let .failed(msg) = auth.state {
-                    Text(msg)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.red)
-                        .lineLimit(1)
-                } else {
-                    Text("Authorize to connect playback, library, queue & lyrics.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                } else if auth.state == .authorizing {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Authorizing…")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
-            Spacer(minLength: 8)
+            if auth.state != .signedIn {
+                VStack(alignment: .leading, spacing: 8) {
+                    if case let .failed(msg) = auth.state {
+                        Text(msg)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.red)
+                    }
 
-            switch auth.state {
-            case .signedIn:
-                Button("Disconnect") {
-                    withAnimation { auth.signOut() }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Connect Spotify Web API (3 Quick Steps):")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(NotchTheme.inkPrimary)
 
-            case .authorizing:
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("Authorizing…")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
+                        HStack(spacing: 8) {
+                            Button {
+                                NSWorkspace.shared.open(URL(string: "https://developer.spotify.com/dashboard")!)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.up.right.square")
+                                        .font(.system(size: 10))
+                                    Text("1. Open Developer Dashboard")
+                                        .font(.system(size: 11))
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
 
-            case .signedOut, .failed:
-                Button("Allow / Connect") {
-                    auth.signIn()
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(SpotifyAuth.redirectURI, forType: .string)
+                                hasCopiedURI = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    hasCopiedURI = false
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: hasCopiedURI ? "checkmark" : "doc.on.doc")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(hasCopiedURI ? .green : .primary)
+                                    Text(hasCopiedURI ? "Copied URI!" : "2. Copy Redirect URI")
+                                        .font(.system(size: 11))
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+
+                        HStack(spacing: 8) {
+                            TextField("3. Paste App Client ID here", text: Binding(
+                                get: { settings.spotifyClientID },
+                                set: { auth.clientID = $0 }
+                            ))
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11).monospaced())
+
+                            Button("Connect Spotify") {
+                                auth.signIn()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color(red: 29/255, green: 185/255, blue: 84/255))
+                            .controlSize(.small)
+                            .disabled(auth.clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                    .padding(10)
+                    .background {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(.quaternary.opacity(0.35))
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(red: 29/255, green: 185/255, blue: 84/255))
-                .controlSize(.small)
-                .help("Connects to Spotify via Web Authorization")
             }
         }
         .padding(.horizontal, 14)
@@ -799,57 +855,6 @@ private struct MediaSettingsPane: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-    }
-
-    /// Optional Spotify Developer Client ID configuration.
-    private var spotifyAdvancedRow: some View {
-        DisclosureGroup(isExpanded: $showAdvancedSpotify) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Standard Spotify connection works out of the box with zero setup. If you have your own Spotify Developer App Client ID, you can configure it below:")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 8) {
-                    TextField("Custom Spotify Client ID (Optional)", text: Binding(
-                        get: { settings.spotifyClientID },
-                        set: { auth.clientID = $0 }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11).monospaced())
-
-                    Button("Developer Dashboard") {
-                        NSWorkspace.shared.open(
-                            URL(string: "https://developer.spotify.com/dashboard")!
-                        )
-                    }
-                    .buttonStyle(.link)
-                    .font(.system(size: 11))
-                    .lineLimit(1)
-
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(SpotifyAuth.redirectURI, forType: .string)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "doc.on.doc")
-                                .font(.system(size: 10))
-                            Text("Copy URI")
-                                .font(.system(size: 11))
-                                .lineLimit(1)
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
-            .padding(.top, 4)
-        } label: {
-            Text("Advanced Spotify Developer Settings (Optional)")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
     }
 
     /// The visualiser's source. The measured option is a real capture of the
