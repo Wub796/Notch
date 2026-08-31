@@ -115,7 +115,7 @@ struct SpotifyClient {
 extension SpotifyClient {
     // MARK: Profile
 
-    struct Profile: Equatable {
+    struct Profile: Equatable, Codable {
         let id: String
         let displayName: String
     }
@@ -137,7 +137,7 @@ extension SpotifyClient {
 
     // MARK: Playlists
 
-    struct Playlist: Identifiable, Equatable {
+    struct Playlist: Identifiable, Equatable, Codable {
         let id: String
         let name: String
         let uri: String
@@ -374,7 +374,7 @@ extension SpotifyClient {
 
     // MARK: Saved songs
 
-    struct SavedTrack: Identifiable, Equatable {
+    struct SavedTrack: Identifiable, Equatable, Codable {
         let id: String
         let title: String
         let artist: String
@@ -441,8 +441,8 @@ extension SpotifyClient {
 
     // MARK: Discovery
 
-    struct Item: Identifiable, Equatable {
-        enum Kind: String { case track, album, playlist, artist }
+    struct Item: Identifiable, Equatable, Codable {
+        enum Kind: String, Codable { case track, album, playlist, artist }
 
         let id: String
         let title: String

@@ -3,7 +3,7 @@ import Foundation
 import Observation
 
 /// Represents a playlist from Apple Music.
-struct AppleMusicPlaylist: Identifiable, Hashable {
+struct AppleMusicPlaylist: Identifiable, Hashable, Codable {
     let id: String
     let name: String
     let trackCount: Int
@@ -15,6 +15,7 @@ struct AppleMusicPlaylist: Identifiable, Hashable {
 @Observable
 final class AppleMusicLibrary {
     static let shared = AppleMusicLibrary()
+    private static let cacheKey = "notch.applemusic.playlists.cache"
 
     private(set) var playlists: [AppleMusicPlaylist] = []
     private(set) var isLoading = false
@@ -22,6 +23,13 @@ final class AppleMusicLibrary {
 
     var isAuthorized: Bool {
         IntegrationPermissions.shared.musicStatus(for: .appleMusic) == .granted
+    }
+
+    init() {
+        if let data = UserDefaults.standard.data(forKey: Self.cacheKey),
+           let cached = try? JSONDecoder().decode([AppleMusicPlaylist].self, from: data) {
+            playlists = cached
+        }
     }
 
     /// Fetches all playlists from the macOS Music app asynchronously.
@@ -81,6 +89,9 @@ final class AppleMusicLibrary {
                 guard let self else { return }
                 if !parsed.isEmpty {
                     self.playlists = parsed
+                    if let encoded = try? JSONEncoder().encode(parsed) {
+                        UserDefaults.standard.set(encoded, forKey: Self.cacheKey)
+                    }
                 }
                 self.isLoading = false
                 self.lastLoad = Date()
@@ -88,11 +99,12 @@ final class AppleMusicLibrary {
         }
     }
 
-    /// Plays a playlist by name in Apple Music.
+    /// Plays a playlist by name in Apple Music, launching the Music app if needed.
     func play(playlistName: String) {
         let escaped = playlistName.replacingOccurrences(of: "\"", with: "\\\"")
         let source = """
         tell application "Music"
+            activate
             try
                 play (first user playlist whose name is "\(escaped)")
             on error

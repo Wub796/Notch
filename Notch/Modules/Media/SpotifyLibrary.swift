@@ -70,6 +70,14 @@ final class SpotifyLibrary {
 
     private static let imageCacheLimit = 120
 
+    private struct CachePayload: Codable {
+        let profile: SpotifyClient.Profile?
+        let playlists: [SpotifyClient.Playlist]
+        let savedTracks: [SpotifyClient.SavedTrack]
+        let forYou: [SpotifyClient.Item]
+    }
+
+    private static let cacheKey = "notch.spotify.library.cache"
     private var searchTask: Task<Void, Never>?
     private var lastLibraryLoad = Date.distantPast
 
@@ -77,6 +85,14 @@ final class SpotifyLibrary {
         if let stored = NotchSettings.shared.spotifyLibrarySort,
            let restored = LibrarySort(rawValue: stored) {
             sort = restored
+        }
+
+        if let data = UserDefaults.standard.data(forKey: Self.cacheKey),
+           let cached = try? JSONDecoder().decode(CachePayload.self, from: data) {
+            profile = cached.profile
+            playlists = cached.playlists
+            savedTracks = cached.savedTracks
+            forYou = cached.forYou
         }
     }
 
@@ -106,7 +122,6 @@ final class SpotifyLibrary {
     /// devices and history — which change while you watch — always refresh.
     func refresh(force: Bool = false) {
         guard isConnected else {
-            clear()
             return
         }
 
@@ -141,6 +156,16 @@ final class SpotifyLibrary {
                     self.isLoadingLibrary = false
                     self.lastLibraryLoad = Date()
                     self.lastError = nil
+
+                    let payload = CachePayload(
+                        profile: self.profile,
+                        playlists: self.playlists,
+                        savedTracks: self.savedTracks,
+                        forYou: self.forYou
+                    )
+                    if let encoded = try? JSONEncoder().encode(payload) {
+                        UserDefaults.standard.set(encoded, forKey: Self.cacheKey)
+                    }
                 }
             }
 
@@ -259,21 +284,38 @@ final class SpotifyLibrary {
     /// rather than silently doing nothing: "no active device" is the usual
     /// reason, and the user can only fix it if they are told.
     func play(uri: String, deviceID: String? = nil) {
-        act { [weak self] token in
-            let target = deviceID ?? self?.devices.first(where: \.isActive)?.id
-            let started = await SpotifyClient.play(
-                contextURI: uri, deviceID: target, token: token
-            )
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                if started {
-                    self.activeContextURI = uri
-                    self.isPlayingRemotely = true
-                    self.lastError = nil
-                } else {
-                    self.lastError = self.devices.isEmpty
-                        ? "No Spotify device is available. Open Spotify somewhere first."
-                        : "Spotify wouldn't start that — Premium is required for remote playback."
+        // 1. Launch the Spotify app and play locally via AppleScript or URL Scheme
+        let escapedURI = uri.replacingOccurrences(of: "\"", with: "\\\"")
+        let scriptSource = """
+        tell application "Spotify"
+            activate
+            play track "\(escapedURI)"
+        end tell
+        """
+        DispatchQueue.global(qos: .userInitiated).async {
+            var error: NSDictionary?
+            NSAppleScript(source: scriptSource)?.executeAndReturnError(&error)
+            if error != nil, let url = URL(string: uri) {
+                DispatchQueue.main.async {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        }
+
+        // 2. Also dispatch Web API play if signed in
+        if isConnected {
+            act { [weak self] token in
+                let target = deviceID ?? self?.devices.first(where: \.isActive)?.id
+                let started = await SpotifyClient.play(
+                    contextURI: uri, deviceID: target, token: token
+                )
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    if started {
+                        self.activeContextURI = uri
+                        self.isPlayingRemotely = true
+                        self.lastError = nil
+                    }
                 }
             }
         }
