@@ -652,7 +652,7 @@ struct SpotifyLibraryScreen: View {
                                 ForEach(sortedAppleMusicPlaylists) { playlist in
                                     AppleMusicPlaylistCard(
                                         playlist: playlist,
-                                        isPlaying: state.media.isPlaying && (state.media.sourceAppBundleID == MusicProvider.appleMusic.bundleID || state.media.selectedProvider == .appleMusic),
+                                        isPlaying: state.media.isPlaying && (state.media.sourceAppBundleID == MusicProvider.appleMusic.bundleID || NotchSettings.shared.musicProvider == .appleMusic),
                                         action: {
                                             appleMusic.play(playlistName: playlist.name)
                                         }
@@ -865,5 +865,80 @@ struct SavedTrackCard: View {
         }
         .buttonStyle(PressableButtonStyle())
         .accessibilityLabel("Play \(track.title) by \(track.artist)")
+    }
+}
+
+/// Apple Music playlist card with gradient art, track count, and 1-click play button.
+struct AppleMusicPlaylistCard: View {
+    let playlist: AppleMusicPlaylist
+    let isPlaying: Bool
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
+                    .fill(LinearGradient(
+                        colors: [
+                            Color(red: 250/255, green: 45/255, blue: 72/255),
+                            Color(red: 254/255, green: 74/255, blue: 104/255),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+                Image(systemName: playlist.isSmart ? "sparkles" : "music.note.list")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 54, height: 54)
+            .clipShape(RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(playlist.name)
+                    .font(.notchHeadline)
+                    .foregroundStyle(isPlaying ? Color.pink : NotchTheme.inkPrimary)
+                    .lineLimit(1)
+                Text("\(playlist.trackCount) tracks • Apple Music")
+                    .font(.notchCallout)
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 6)
+
+            Button(action: action) {
+                ZStack {
+                    Circle()
+                        .fill(isPlaying ? Color.pink.opacity(0.18) : Color.pink)
+                    if isPlaying {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Color.pink)
+                            .symbolEffect(.pulse, options: .repeating)
+                    } else {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 38, height: 38)
+                .contentShape(Circle())
+            }
+            .buttonStyle(PressableButtonStyle())
+            .accessibilityLabel(isPlaying ? "Now playing" : "Play \(playlist.name)")
+        }
+        .padding(10)
+        .notchCard(isHighlighted: isPlaying, tint: .pink)
+        .background {
+            if isHovering, !isPlaying {
+                RoundedRectangle(cornerRadius: NotchTheme.Radius.card, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+            }
+        }
+        .onHover { isHovering = $0 }
+        .animation(NotchAnimations.content, value: isHovering)
+        .accessibilityElement(children: .combine)
     }
 }

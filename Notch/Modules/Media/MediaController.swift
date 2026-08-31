@@ -110,7 +110,7 @@ final class MediaController {
     /// set on the perl-bridge path.
     private(set) var sourceMediaType: String?
 
-    private var selectedProvider: MusicProvider {
+    var selectedProvider: MusicProvider {
         NotchSettings.shared.musicProvider
     }
 
