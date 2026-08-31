@@ -152,7 +152,10 @@ struct DevicesScreenView: View {
             .animation(NotchAnimations.content, value: state.mediaShowsFullLyrics)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear { spotify.refresh() }
+        .onAppear {
+            spotify.refresh()
+            state.appleMusic.refresh()
+        }
         .onChange(of: spotify.isConnected) { _, connected in
             if connected { spotify.refresh(force: true) }
         }
@@ -513,8 +516,6 @@ struct DevicesScreenView: View {
             .background(Capsule().fill(Color.white.opacity(0.08)))
         }
     }
-
-    /// One capsule holding the Now, Library, and Audio sections.
     private var sectionSwitch: some View {
         HStack(spacing: 4) {
             // Discover is intentionally omitted; Audio remains available as
@@ -535,11 +536,11 @@ struct DevicesScreenView: View {
         .padding(3)
         .background(Capsule().fill(Color.white.opacity(0.06)))
         .fixedSize()
+        .id(state.devicesSection)
+        .animation(NotchAnimations.content, value: state.devicesSection)
+        .animation(NotchAnimations.content, value: state.mediaShowsFullLyrics)
     }
 
-    /// The selected capsule is one view that moves between the pills rather
-    /// than a fill switching off here and on there — the difference between a
-    /// switch that slides and one that blinks.
     private func pill(
         title: String,
         symbol: String,
@@ -582,6 +583,8 @@ struct SpotifyLibraryScreen: View {
     let state: NotchState
 
     private var spotify: SpotifyLibrary { state.spotify }
+    private var appleMusic: AppleMusicLibrary { state.appleMusic }
+    @State private var filterProvider: MusicProvider? = nil
 
     private static let columns = [
         GridItem(.flexible(), spacing: 12),
@@ -589,42 +592,95 @@ struct SpotifyLibraryScreen: View {
         GridItem(.flexible(), spacing: 12),
     ]
 
+    private var hasAnyPlaylists: Bool {
+        !spotify.playlists.isEmpty || !spotify.savedTracks.isEmpty || !appleMusic.playlists.isEmpty
+    }
+
+    private var isLoading: Bool {
+        spotify.isLoadingLibrary || appleMusic.isLoading
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
 
             Group {
-                if !spotify.isConnected {
-                    Text("Connect Spotify in Settings to load your library.")
-                        .font(.notchBody)
-                        .foregroundStyle(NotchTheme.inkMuted)
+                if !hasAnyPlaylists {
+                    if isLoading {
+                        VStack(spacing: 8) {
+                            ProgressView().controlSize(.regular)
+                            Text("Loading your playlists & library…")
+                                .font(.notchBody)
+                                .foregroundStyle(NotchTheme.inkMuted)
+                        }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if spotify.playlists.isEmpty && spotify.savedTracks.isEmpty {
-                    Text(spotify.isLoadingLibrary ? "Loading your library…" : "No saved music yet.")
-                        .font(.notchBody)
-                        .foregroundStyle(NotchTheme.inkMuted)
+                    } else {
+                        VStack(spacing: 12) {
+                            Image(systemName: "music.note.list")
+                                .font(.system(size: 32))
+                                .foregroundStyle(NotchTheme.inkMuted)
+                            Text("No playlists loaded yet.")
+                                .font(.notchHeadline)
+                                .foregroundStyle(NotchTheme.inkPrimary)
+                            Text("Connect Spotify in Settings or open Apple Music to display your playlists.")
+                                .font(.notchBody)
+                                .foregroundStyle(NotchTheme.inkSecondary)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 340)
+                            HStack(spacing: 10) {
+                                Button("Open Settings") {
+                                    SettingsWindowController.shared.show()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+
+                                Button("Refresh Library") {
+                                    spotify.refresh(force: true)
+                                    appleMusic.refresh(force: true)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 } else {
                     ScrollView(.vertical, showsIndicators: false) {
                         LazyVGrid(columns: Self.columns, spacing: NotchTheme.Space.m) {
-                            ForEach(spotify.savedTracks) { track in
-                                SavedTrackCard(
-                                    track: track,
-                                    artwork: spotify.image(for: track.artworkURL),
-                                    action: { spotify.play(uri: track.uri) }
-                                )
+                            // 1. Apple Music Playlists
+                            if filterProvider == nil || filterProvider == .appleMusic {
+                                ForEach(sortedAppleMusicPlaylists) { playlist in
+                                    AppleMusicPlaylistCard(
+                                        playlist: playlist,
+                                        isPlaying: state.media.isPlaying && (state.media.sourceAppBundleID == MusicProvider.appleMusic.bundleID || state.media.selectedProvider == .appleMusic),
+                                        action: {
+                                            appleMusic.play(playlistName: playlist.name)
+                                        }
+                                    )
+                                }
                             }
-                            ForEach(spotify.sortedPlaylists) { playlist in
-                                PlaylistCard(
-                                    playlist: playlist,
-                                    artwork: spotify.image(for: playlist.artworkURL),
-                                    isPlaying: isPlaying(playlist),
-                                    action: { spotify.play(uri: playlist.uri) }
-                                )
+
+                            // 2. Spotify Playlists & Saved Tracks
+                            if filterProvider == nil || filterProvider == .spotify {
+                                ForEach(spotify.savedTracks) { track in
+                                    SavedTrackCard(
+                                        track: track,
+                                        artwork: spotify.image(for: track.artworkURL),
+                                        action: { spotify.play(uri: track.uri) }
+                                    )
+                                }
+                                ForEach(spotify.sortedPlaylists) { playlist in
+                                    PlaylistCard(
+                                        playlist: playlist,
+                                        artwork: spotify.image(for: playlist.artworkURL),
+                                        isPlaying: isPlaying(playlist),
+                                        action: { spotify.play(uri: playlist.uri) }
+                                    )
+                                }
                             }
                         }
-                    .padding(.bottom, 10)
-                    .animation(.notchSpring, value: spotify.sortedPlaylists)
+                        .padding(.bottom, 10)
+                        .animation(.notchSpring, value: spotify.sortedPlaylists)
                     }
                     .notchScrollFade(12)
                 }
@@ -632,6 +688,19 @@ struct SpotifyLibraryScreen: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear {
+            spotify.refresh()
+            appleMusic.refresh()
+        }
+    }
+
+    private var sortedAppleMusicPlaylists: [AppleMusicPlaylist] {
+        switch spotify.sort {
+        case .name:
+            return appleMusic.playlists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .owner, .recents:
+            return appleMusic.playlists
+        }
     }
 
     /// The playing playlist, by the context the account reports — falling back
@@ -643,33 +712,45 @@ struct SpotifyLibraryScreen: View {
 
     private var header: some View {
         ScreenHeader("Library", subtitle: "Playlists sorted by \(spotify.sort.title)") {
-            Menu {
-                ForEach(SpotifyLibrary.LibrarySort.allCases) { option in
-                    Button {
-                        withAnimation(NotchAnimations.content) { spotify.sort = option }
-                    } label: {
-                        if spotify.sort == option {
-                            Label(option.title, systemImage: "checkmark")
-                        } else {
-                            Text(option.title)
+            HStack(spacing: 8) {
+                if !appleMusic.playlists.isEmpty && (!spotify.playlists.isEmpty || !spotify.savedTracks.isEmpty) {
+                    Picker("", selection: $filterProvider) {
+                        Text("All").tag(MusicProvider?.none)
+                        Text("Apple Music").tag(MusicProvider?.some(.appleMusic))
+                        Text("Spotify").tag(MusicProvider?.some(.spotify))
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 190)
+                }
+
+                Menu {
+                    ForEach(SpotifyLibrary.LibrarySort.allCases) { option in
+                        Button {
+                            withAnimation(NotchAnimations.content) { spotify.sort = option }
+                        } label: {
+                            if spotify.sort == option {
+                                Label(option.title, systemImage: "checkmark")
+                            } else {
+                                Text(option.title)
+                            }
                         }
                     }
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(spotify.sort.title)
+                            .font(.notchBody.weight(.bold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundStyle(NotchTheme.inkPrimary)
                 }
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(spotify.sort.title)
-                        .font(.notchBody.weight(.bold))
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .foregroundStyle(NotchTheme.inkPrimary)
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel("Sort playlists")
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .accessibilityLabel("Sort playlists")
         }
     }
 }
