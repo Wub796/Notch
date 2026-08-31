@@ -519,14 +519,70 @@ final class MediaController {
         // actual player is paused.
         updateLyricActivityTimer()
 
-        // Send exactly one command. The old path sent a system media key,
-        // MediaRemote command, and provider AppleScript for one click; players
-        // could therefore toggle twice and appear not to respond. A selected
-        // provider owns its transport, otherwise use the entitlement-safe
-        // adapter/direct bridge, with the system key as the generic fallback.
+        // 1. Browser media (YouTube, web videos)
+        if isBrowserVideo || isShowingBrowserSnapshot {
+            toggleBrowserPlayback()
+            return
+        }
+
+        // 2. Specific Selected Provider
         if let provider = selectedProvider.appleScriptAppName {
+            if selectedProvider == .spotify,
+               SpotifyAuth.shared.state == .signedIn,
+               NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
+                Task {
+                    if let token = await SpotifyAuth.shared.validAccessToken() {
+                        if newState {
+                            await SpotifyClient.resume(token: token)
+                        } else {
+                            await SpotifyClient.pause(token: token)
+                        }
+                    }
+                }
+                return
+            }
             runProviderCommand(appName: provider, command: "playpause")
-        } else if useAdapter {
+            return
+        }
+
+        // 3. Automatic provider detection
+        if let bundle = sourceAppBundleID {
+            if bundle == MusicProvider.spotify.bundleID {
+                runProviderCommand(appName: "Spotify", command: "playpause")
+                return
+            } else if bundle == MusicProvider.appleMusic.bundleID {
+                runProviderCommand(appName: "Music", command: "playpause")
+                return
+            } else if Self.browserTargets.contains(where: { $0.bundleID == bundle }) {
+                toggleBrowserPlayback()
+                return
+            }
+        }
+
+        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
+            runProviderCommand(appName: "Spotify", command: "playpause")
+            return
+        }
+
+        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty {
+            runProviderCommand(appName: "Music", command: "playpause")
+            return
+        }
+
+        if SpotifyAuth.shared.state == .signedIn {
+            Task {
+                if let token = await SpotifyAuth.shared.validAccessToken() {
+                    if newState {
+                        await SpotifyClient.resume(token: token)
+                    } else {
+                        await SpotifyClient.pause(token: token)
+                    }
+                }
+            }
+            return
+        }
+
+        if useAdapter {
             adapter.sendCommand(.togglePlayPause)
         } else if useMediaRemote {
             bridge.send(.togglePlayPause)
@@ -536,10 +592,58 @@ final class MediaController {
     }
 
     func nextTrack() {
+        if isBrowserVideo || isShowingBrowserSnapshot {
+            nextBrowserTrack()
+            return
+        }
+
         if let provider = selectedProvider.appleScriptAppName {
+            if selectedProvider == .spotify,
+               SpotifyAuth.shared.state == .signedIn,
+               NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
+                Task {
+                    if let token = await SpotifyAuth.shared.validAccessToken() {
+                        await SpotifyClient.next(token: token)
+                    }
+                }
+                return
+            }
             runProviderCommand(appName: provider, command: "next track")
             return
         }
+
+        if let bundle = sourceAppBundleID {
+            if bundle == MusicProvider.spotify.bundleID {
+                runProviderCommand(appName: "Spotify", command: "next track")
+                return
+            } else if bundle == MusicProvider.appleMusic.bundleID {
+                runProviderCommand(appName: "Music", command: "next track")
+                return
+            } else if Self.browserTargets.contains(where: { $0.bundleID == bundle }) {
+                nextBrowserTrack()
+                return
+            }
+        }
+
+        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
+            runProviderCommand(appName: "Spotify", command: "next track")
+            return
+        }
+
+        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty {
+            runProviderCommand(appName: "Music", command: "next track")
+            return
+        }
+
+        if SpotifyAuth.shared.state == .signedIn {
+            Task {
+                if let token = await SpotifyAuth.shared.validAccessToken() {
+                    await SpotifyClient.next(token: token)
+                }
+            }
+            return
+        }
+
         if useAdapter {
             adapter.sendCommand(.nextTrack)
         } else if useMediaRemote {
@@ -550,10 +654,58 @@ final class MediaController {
     }
 
     func previousTrack() {
+        if isBrowserVideo || isShowingBrowserSnapshot {
+            previousBrowserTrack()
+            return
+        }
+
         if let provider = selectedProvider.appleScriptAppName {
+            if selectedProvider == .spotify,
+               SpotifyAuth.shared.state == .signedIn,
+               NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
+                Task {
+                    if let token = await SpotifyAuth.shared.validAccessToken() {
+                        await SpotifyClient.previous(token: token)
+                    }
+                }
+                return
+            }
             runProviderCommand(appName: provider, command: "previous track")
             return
         }
+
+        if let bundle = sourceAppBundleID {
+            if bundle == MusicProvider.spotify.bundleID {
+                runProviderCommand(appName: "Spotify", command: "previous track")
+                return
+            } else if bundle == MusicProvider.appleMusic.bundleID {
+                runProviderCommand(appName: "Music", command: "previous track")
+                return
+            } else if Self.browserTargets.contains(where: { $0.bundleID == bundle }) {
+                previousBrowserTrack()
+                return
+            }
+        }
+
+        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
+            runProviderCommand(appName: "Spotify", command: "previous track")
+            return
+        }
+
+        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty {
+            runProviderCommand(appName: "Music", command: "previous track")
+            return
+        }
+
+        if SpotifyAuth.shared.state == .signedIn {
+            Task {
+                if let token = await SpotifyAuth.shared.validAccessToken() {
+                    await SpotifyClient.previous(token: token)
+                }
+            }
+            return
+        }
+
         if useAdapter {
             adapter.sendCommand(.previousTrack)
         } else if useMediaRemote {
@@ -573,14 +725,282 @@ final class MediaController {
         displayedElapsed = clamped
         lyrics.updateCurrentLine(for: clamped)
 
+        if isBrowserVideo || isShowingBrowserSnapshot {
+            seekBrowser(to: clamped)
+            return
+        }
+
         if let provider = selectedProvider.appleScriptAppName {
+            if selectedProvider == .spotify,
+               SpotifyAuth.shared.state == .signedIn,
+               NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
+                Task {
+                    if let token = await SpotifyAuth.shared.validAccessToken() {
+                        await SpotifyClient.seek(positionMs: Int(clamped * 1000), token: token)
+                    }
+                }
+                return
+            }
             runProviderCommand(appName: provider, command: "set player position to \(Int(clamped))")
-        } else if useAdapter {
+            return
+        }
+
+        if let bundle = sourceAppBundleID {
+            if bundle == MusicProvider.spotify.bundleID {
+                runProviderCommand(appName: "Spotify", command: "set player position to \(Int(clamped))")
+                return
+            } else if bundle == MusicProvider.appleMusic.bundleID {
+                runProviderCommand(appName: "Music", command: "set player position to \(Int(clamped))")
+                return
+            }
+        }
+
+        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
+            runProviderCommand(appName: "Spotify", command: "set player position to \(Int(clamped))")
+            return
+        }
+
+        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty {
+            runProviderCommand(appName: "Music", command: "set player position to \(Int(clamped))")
+            return
+        }
+
+        if SpotifyAuth.shared.state == .signedIn {
+            Task {
+                if let token = await SpotifyAuth.shared.validAccessToken() {
+                    await SpotifyClient.seek(positionMs: Int(clamped * 1000), token: token)
+                }
+            }
+            return
+        }
+
+        if useAdapter {
             adapter.seek(to: clamped)
         } else if useMediaRemote, bridge.canSeek {
             bridge.setElapsedTime(clamped)
         } else {
             runMusicCommand("set player position to \(Int(clamped))")
+        }
+    }
+
+    private func toggleBrowserPlayback() {
+        for browser in Self.browserTargets {
+            guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else { continue }
+            let js = "(function(){var p=document.querySelector('#movie_player');if(p&&p.getPlayerState){if(p.getPlayerState()===1){p.pauseVideo();return 'paused';}else{p.playVideo();return 'playing';}}var v=document.querySelector('video');if(v){if(v.paused){v.play();return 'playing';}else{v.pause();return 'paused';}}return 'none';})();"
+            let scriptSource: String
+            if browser.isChromium {
+                scriptSource = """
+                tell application "\(browser.name)"
+                    if (count of windows) is 0 then return ""
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            set u to URL of t
+                            set n to title of t
+                            if u contains "youtube.com" or u contains "youtu.be" or n contains " - YouTube" or n contains "YouTube Music" then
+                                try
+                                    tell t
+                                        return (execute javascript "\(js)") as text
+                                    end tell
+                                end try
+                            end if
+                        end repeat
+                    end repeat
+                    return ""
+                end tell
+                """
+            } else {
+                scriptSource = """
+                tell application "\(browser.name)"
+                    if (count of windows) is 0 then return ""
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            set u to URL of t
+                            set n to name of t
+                            if u contains "youtube.com" or u contains "youtu.be" or n contains " - YouTube" or n contains "YouTube Music" then
+                                try
+                                    return (do JavaScript "\(js)" in t) as text
+                                end try
+                            end if
+                        end repeat
+                    end repeat
+                    return ""
+                end tell
+                """
+            }
+
+            var error: NSDictionary?
+            if let script = NSAppleScript(source: scriptSource) {
+                let result = script.executeAndReturnError(&error)
+                if error == nil, let res = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   res == "playing" || res == "paused" {
+                    return
+                }
+            }
+        }
+        SystemMediaKeySender.togglePlayPause()
+    }
+
+    private func nextBrowserTrack() {
+        for browser in Self.browserTargets {
+            guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else { continue }
+            let js = "(function(){var nextBtn=document.querySelector('.ytp-next-button')||document.querySelector('button.next-button')||document.querySelector('tp-yt-paper-icon-button.next-button');if(nextBtn){nextBtn.click();return 'clicked';}return 'none';})();"
+            let scriptSource: String
+            if browser.isChromium {
+                scriptSource = """
+                tell application "\(browser.name)"
+                    if (count of windows) is 0 then return ""
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            set u to URL of t
+                            set n to title of t
+                            if u contains "youtube.com" or u contains "youtu.be" or n contains " - YouTube" or n contains "YouTube Music" then
+                                try
+                                    tell t
+                                        return (execute javascript "\(js)") as text
+                                    end tell
+                                end try
+                            end if
+                        end repeat
+                    end repeat
+                    return ""
+                end tell
+                """
+            } else {
+                scriptSource = """
+                tell application "\(browser.name)"
+                    if (count of windows) is 0 then return ""
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            set u to URL of t
+                            set n to name of t
+                            if u contains "youtube.com" or u contains "youtu.be" or n contains " - YouTube" or n contains "YouTube Music" then
+                                try
+                                    return (do JavaScript "\(js)" in t) as text
+                                end try
+                            end if
+                        end repeat
+                    end repeat
+                    return ""
+                end tell
+                """
+            }
+
+            var error: NSDictionary?
+            if let script = NSAppleScript(source: scriptSource) {
+                let result = script.executeAndReturnError(&error)
+                if error == nil, let res = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), res == "clicked" {
+                    return
+                }
+            }
+        }
+        SystemMediaKeySender.nextTrack()
+    }
+
+    private func previousBrowserTrack() {
+        for browser in Self.browserTargets {
+            guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else { continue }
+            let js = "(function(){var prevBtn=document.querySelector('.ytp-prev-button')||document.querySelector('button.previous-button')||document.querySelector('tp-yt-paper-icon-button.previous-button');if(prevBtn){prevBtn.click();return 'clicked';}var v=document.querySelector('video');if(v){v.currentTime=0;return 'reset';}return 'none';})();"
+            let scriptSource: String
+            if browser.isChromium {
+                scriptSource = """
+                tell application "\(browser.name)"
+                    if (count of windows) is 0 then return ""
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            set u to URL of t
+                            set n to title of t
+                            if u contains "youtube.com" or u contains "youtu.be" or n contains " - YouTube" or n contains "YouTube Music" then
+                                try
+                                    tell t
+                                        return (execute javascript "\(js)") as text
+                                    end tell
+                                end try
+                            end if
+                        end repeat
+                    end repeat
+                    return ""
+                end tell
+                """
+            } else {
+                scriptSource = """
+                tell application "\(browser.name)"
+                    if (count of windows) is 0 then return ""
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            set u to URL of t
+                            set n to name of t
+                            if u contains "youtube.com" or u contains "youtu.be" or n contains " - YouTube" or n contains "YouTube Music" then
+                                try
+                                    return (do JavaScript "\(js)" in t) as text
+                                end try
+                            end if
+                        end repeat
+                    end repeat
+                    return ""
+                end tell
+                """
+            }
+
+            var error: NSDictionary?
+            if let script = NSAppleScript(source: scriptSource) {
+                let result = script.executeAndReturnError(&error)
+                if error == nil, let res = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), res == "clicked" || res == "reset" {
+                    return
+                }
+            }
+        }
+        SystemMediaKeySender.previousTrack()
+    }
+
+    private func seekBrowser(to seconds: TimeInterval) {
+        for browser in Self.browserTargets {
+            guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else { continue }
+            let js = "(function(){var p=document.querySelector('#movie_player');if(p&&p.seekTo){p.seekTo(\(seconds),true);return 'seeked';}var v=document.querySelector('video');if(v){v.currentTime=\(seconds);return 'seeked';}return 'none';})();"
+            let scriptSource: String
+            if browser.isChromium {
+                scriptSource = """
+                tell application "\(browser.name)"
+                    if (count of windows) is 0 then return ""
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            set u to URL of t
+                            set n to title of t
+                            if u contains "youtube.com" or u contains "youtu.be" or n contains " - YouTube" or n contains "YouTube Music" then
+                                try
+                                    tell t
+                                        return (execute javascript "\(js)") as text
+                                    end tell
+                                end try
+                            end if
+                        end repeat
+                    end repeat
+                    return ""
+                end tell
+                """
+            } else {
+                scriptSource = """
+                tell application "\(browser.name)"
+                    if (count of windows) is 0 then return ""
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            set u to URL of t
+                            set n to name of t
+                            if u contains "youtube.com" or u contains "youtu.be" or n contains " - YouTube" or n contains "YouTube Music" then
+                                try
+                                    return (do JavaScript "\(js)" in t) as text
+                                end try
+                            end if
+                        end repeat
+                    end repeat
+                    return ""
+                end tell
+                """
+            }
+
+            var error: NSDictionary?
+            if let script = NSAppleScript(source: scriptSource) {
+                _ = script.executeAndReturnError(&error)
+            }
         }
     }
 
@@ -736,7 +1156,9 @@ final class MediaController {
     /// its result, so it goes to a background queue and the state is re-read
     /// afterwards.
     private func runProviderCommand(appName: String, command: String) {
-        guard fallbackAppIsRunning else { return }
+        let bundleID = appName == "Spotify" ? MusicProvider.spotify.bundleID : "com.apple.Music"
+        let isRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
+
         let source = "tell application \"\(appName)\" to \(command)"
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -751,7 +1173,7 @@ final class MediaController {
                     self.pendingClearWork?.cancel()
                     self.pendingClearWork = nil
                     self.apply(snapshot)
-                } else {
+                } else if !isRunning {
                     self.clearTrackAfterGrace()
                 }
             }

@@ -41,6 +41,7 @@ enum SystemMediaKeySender {
             if let cgEvent = ev?.cgEvent {
                 cgEvent.post(tap: .cghidEventTap)
                 cgEvent.post(tap: .cgSessionEventTap)
+                cgEvent.post(tap: .cgAnnotatedSessionEventTap)
             }
         }
 

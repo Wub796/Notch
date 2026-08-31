@@ -277,6 +277,31 @@ extension SpotifyClient {
         return await put(path, token: token, body: body.isEmpty ? nil : body)
     }
 
+    @discardableResult
+    static func pause(token: String) async -> Bool {
+        await put("me/player/pause", token: token)
+    }
+
+    @discardableResult
+    static func resume(token: String) async -> Bool {
+        await put("me/player/play", token: token)
+    }
+
+    @discardableResult
+    static func next(token: String) async -> Bool {
+        await post("me/player/next", token: token)
+    }
+
+    @discardableResult
+    static func previous(token: String) async -> Bool {
+        await post("me/player/previous", token: token)
+    }
+
+    @discardableResult
+    static func seek(positionMs: Int, token: String) async -> Bool {
+        await put("me/player/seek?position_ms=\(positionMs)", token: token)
+    }
+
     // MARK: Currently playing
 
     private struct CurrentlyPlayingResponse: Decodable {
@@ -598,6 +623,15 @@ extension SpotifyClient {
     }
 
     // MARK: Transport
+
+    /// `POST` with an optional JSON body.
+    private static func post(
+        _ path: String,
+        token: String,
+        body: [String: Any]? = nil
+    ) async -> Bool {
+        await write(path, method: "POST", token: token, body: body)
+    }
 
     /// `PUT` with an optional JSON body. Spotify answers these with `204 No
     /// Content`, so success is the status code and nothing else.
