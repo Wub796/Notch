@@ -542,17 +542,17 @@ final class MediaController {
                 }
                 return
             }
-            runProviderCommand(appName: provider, command: "playpause")
+            runProviderCommand(appName: provider, command: newState ? "play" : "pause")
             return
         }
 
         // 3. Automatic provider detection
         if let bundle = sourceAppBundleID {
             if bundle == MusicProvider.spotify.bundleID {
-                runProviderCommand(appName: "Spotify", command: "playpause")
+                runProviderCommand(appName: "Spotify", command: newState ? "play" : "pause")
                 return
             } else if bundle == MusicProvider.appleMusic.bundleID {
-                runProviderCommand(appName: "Music", command: "playpause")
+                runProviderCommand(appName: "Music", command: newState ? "play" : "pause")
                 return
             } else if Self.browserTargets.contains(where: { $0.bundleID == bundle }) {
                 toggleBrowserPlayback()
@@ -561,12 +561,12 @@ final class MediaController {
         }
 
         if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
-            runProviderCommand(appName: "Spotify", command: "playpause")
+            runProviderCommand(appName: "Spotify", command: newState ? "play" : "pause")
             return
         }
 
         if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty {
-            runProviderCommand(appName: "Music", command: "playpause")
+            runProviderCommand(appName: "Music", command: newState ? "play" : "pause")
             return
         }
 
@@ -1162,27 +1162,19 @@ final class MediaController {
 
         let source = "tell application \"\(appName)\" to \(command)"
 
-        // Send MediaRemote command concurrently as well to guarantee system media sync
-        if command == "playpause" {
-            if useAdapter { adapter.sendCommand(.togglePlayPause) }
-            else if useMediaRemote { bridge.send(.togglePlayPause) }
-        } else if command == "next track" {
-            if useAdapter { adapter.sendCommand(.nextTrack) }
-            else if useMediaRemote { bridge.send(.nextTrack) }
-        } else if command == "previous track" {
-            if useAdapter { adapter.sendCommand(.previousTrack) }
-            else if useMediaRemote { bridge.send(.previousTrack) }
-        }
-
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var error: NSDictionary?
             NSAppleScript(source: source)?.executeAndReturnError(&error)
 
             if error != nil {
                 DispatchQueue.main.async {
-                    if command == "playpause" { SystemMediaKeySender.togglePlayPause() }
-                    else if command == "next track" { SystemMediaKeySender.nextTrack() }
-                    else if command == "previous track" { SystemMediaKeySender.previousTrack() }
+                    if command == "playpause" || command == "pause" || command == "play" {
+                        SystemMediaKeySender.togglePlayPause()
+                    } else if command == "next track" {
+                        SystemMediaKeySender.nextTrack()
+                    } else if command == "previous track" {
+                        SystemMediaKeySender.previousTrack()
+                    }
                 }
             }
 
