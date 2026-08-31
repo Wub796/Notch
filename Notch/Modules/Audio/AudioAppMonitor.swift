@@ -390,7 +390,7 @@ final class AudioAppMonitor {
         guard #available(macOS 14.4, *), let object = processObject(for: pid) else { return }
         var address = address(processVolumeSelector)
         var volume = min(max(level, 0), 1)
-        var size = UInt32(MemoryLayout<Float>.size)
+        let size = UInt32(MemoryLayout<Float>.size)
         _ = AudioObjectSetPropertyData(object, &address, 0, nil, size, &volume)
     }
 

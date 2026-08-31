@@ -87,6 +87,20 @@ struct NotchContainerView: View {
         }
     }
 
+    /// True when the current transient activity renders a HUD bar in the
+    /// expanded slab. Only `.volume` and `.brightness` do — everything else
+    /// falls through `expandedHUD`'s switch to `EmptyView`, so this is the
+    /// same condition the overlay needs (and the reason the old
+    /// `if let hud = expandedHUD` couldn't work: the property always returns
+    /// a view, never nil).
+    private var hasExpandedHUD: Bool {
+        guard let transient = state.activities.transient else { return false }
+        switch transient {
+        case .volume, .brightness: return true
+        default: return false
+        }
+    }
+
     private var notchBody: some View {
         ZStack(alignment: .top) {
             slab
@@ -119,8 +133,8 @@ struct NotchContainerView: View {
                 // closed/peek slab. Reuse the same dropped bar so a media-key
                 // tap shows its level while the panel is expanded too.
                 if state.mode == .expanded,
-                   let hud = expandedHUD {
-                    hud
+                   hasExpandedHUD {
+                    expandedHUD
                         .transition(NotchAnimations.activitySwap)
                 }
             }
