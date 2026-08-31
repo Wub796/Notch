@@ -140,8 +140,8 @@ final class NotchState {
     var isShowingExpandedHUD: Bool {
         guard let transient = activities.transient else { return false }
         switch transient {
-        case .volume, .brightness: true
-        default: false
+        case .volume, .brightness: return true
+        default: return false
         }
     }
 
