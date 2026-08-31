@@ -1414,9 +1414,7 @@ final class MediaController {
         }
 
         // If a dedicated music player (Spotify or Apple Music) is running with a track, ignore browser reports!
-        let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
-        let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
-        if isBrowser && (spotifyRunning || musicRunning) && hasTrack && !isBrowserVideo {
+        if isBrowser && isMusicConnectedOrActive {
             return
         }
 
@@ -1553,7 +1551,7 @@ final class MediaController {
     /// provider is what the notch controls — so a playing Spotify/Music track
     /// demotes the source on the spot instead of losing to a YouTube tab.
     private func probeBrowserForPlayingMedia(avoidPrompt: Bool) {
-        if isPlaying && !isBrowserVideo { return }
+        if isMusicConnectedOrActive { return }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             // With avoidPrompt, consent is pre-checked before any script
@@ -1572,7 +1570,7 @@ final class MediaController {
 
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.useMediaRemote else { return }
-                if self.isPlaying && !self.isBrowserVideo && !isPlayer {
+                if self.isMusicConnectedOrActive && !isPlayer {
                     return
                 }
                 if isPlayer {
@@ -1604,15 +1602,15 @@ final class MediaController {
     /// without this a closed tab would leave a ghost track on screen.
     private func tickBrowserProbe() {
         guard useMediaRemote else { return }
-        // If a dedicated music player is actively playing, don't let browser probe hijack the session
-        if isPlaying && !isBrowserVideo {
+        // If a dedicated music player is connected or active, don't let browser probe hijack the session
+        if isMusicConnectedOrActive {
             return
         }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let snapshot = self?.browserYouTubeSnapshot(avoidPrompt: false)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                if self.isPlaying && !self.isBrowserVideo {
+                if self.isMusicConnectedOrActive {
                     return
                 }
                 guard let snapshot else {
@@ -1971,14 +1969,25 @@ final class MediaController {
         return nil
     }
 
-    private static func boolValue(_ value: Any?) -> Bool? {
-        if let value = value as? Bool { return value }
-        if let value = value as? NSNumber { return value.boolValue }
-        if let value = value as? String { return Bool(value) }
-        return nil
+    var isMusicConnectedOrActive: Bool {
+        let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
+        let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
+        let isSpotifyAuth = SpotifyAuth.shared.state == .signedIn
+
+        if spotifyRunning || musicRunning || isSpotifyAuth {
+            if hasTrack && !isBrowserVideo {
+                return true
+            }
+            if isPlaying && !isBrowserVideo {
+                return true
+            }
+        }
+        return false
     }
 
     private func browserYouTubeSnapshot(avoidPrompt: Bool) -> Snapshot? {
+        guard !isMusicConnectedOrActive else { return nil }
+
         for browser in Self.browserTargets {
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else {
                 continue
