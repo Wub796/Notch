@@ -32,6 +32,10 @@ final class AppleMusicLibrary {
         }
     }
 
+    var isMusicRunning: Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty
+    }
+
     /// Fetches all playlists from the macOS Music app asynchronously.
     func refresh(force: Bool = false) {
         guard IntegrationPermissions.isInstalled(.appleMusic) else { return }
@@ -41,19 +45,33 @@ final class AppleMusicLibrary {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let scriptSource = """
             tell application "Music"
-                if not (exists user playlists) then return ""
-                set pIDs to persistent ID of user playlists
-                set pNames to name of user playlists
-                set pCounts to count of tracks of user playlists
-                set pSmart to smart of user playlists
                 set outText to ""
-                repeat with i from 1 to count of pIDs
-                    set curID to item i of pIDs
-                    set curName to item i of pNames
-                    set curCount to item i of pCounts
-                    set curSmart to item i of pSmart as string
-                    set outText to outText & curID & "<;>" & curName & "<;>" & (curCount as string) & "<;>" & curSmart & "\n"
-                end repeat
+                try
+                    repeat with p in user playlists
+                        try
+                            set pID to persistent ID of p
+                            set pName to name of p
+                            set pCount to count of tracks of p
+                            set pSmart to smart of p
+                            if pName is not "Library" and pName is not "Music" and pName is not "Downloaded" and pName is not "Genius" then
+                                set outText to outText & pID & "<;>" & pName & "<;>" & (pCount as string) & "<;>" & (pSmart as string) & "\n"
+                            end if
+                        end try
+                    end repeat
+                on error
+                    try
+                        repeat with p in playlists
+                            try
+                                set pID to persistent ID of p
+                                set pName to name of p
+                                set pCount to count of tracks of p
+                                if pName is not "Library" and pName is not "Music" and pName is not "Downloaded" and pName is not "Genius" and pName is not "Internet Radio" then
+                                    set outText to outText & pID & "<;>" & pName & "<;>" & (pCount as string) & "<;>false\n"
+                                end if
+                            end try
+                        end repeat
+                    end try
+                end try
                 return outText
             end tell
             """
@@ -95,6 +113,19 @@ final class AppleMusicLibrary {
                 }
                 self.isLoading = false
                 self.lastLoad = Date()
+            }
+        }
+    }
+
+    /// Launches Apple Music and loads playlists.
+    func openMusicApp() {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Music") {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { [weak self] _, _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    self?.refresh(force: true)
+                }
             }
         }
     }

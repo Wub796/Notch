@@ -610,24 +610,43 @@ struct SpotifyLibraryScreen: View {
                             Text("No playlists loaded yet.")
                                 .font(.notchHeadline)
                                 .foregroundStyle(NotchTheme.inkPrimary)
-                            Text("Connect Spotify in Settings or open Apple Music to display your playlists.")
+                            Text("Open Apple Music or connect Spotify to load and access your playlists.")
                                 .font(.notchBody)
                                 .foregroundStyle(NotchTheme.inkSecondary)
                                 .multilineTextAlignment(.center)
                                 .frame(maxWidth: 340)
-                            HStack(spacing: 10) {
-                                Button("Open Settings") {
-                                    SettingsWindowController.shared.show()
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
 
-                                Button("Refresh Library") {
-                                    spotify.refresh(force: true)
-                                    appleMusic.refresh(force: true)
+                            VStack(spacing: 8) {
+                                HStack(spacing: 10) {
+                                    if !appleMusic.isMusicRunning {
+                                        Button("Open Apple Music") {
+                                            appleMusic.openMusicApp()
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.small)
+                                    } else if !appleMusic.isAuthorized {
+                                        Button("Grant Music Permission") {
+                                            IntegrationPermissions.shared.grantMusicAccess(for: .appleMusic)
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.small)
+                                    }
+
+                                    if !spotify.isConnected {
+                                        Button("Connect Spotify") {
+                                            SettingsWindowController.shared.show()
+                                        }
+                                        .buttonStyle(appleMusic.isMusicRunning ? .borderedProminent : .bordered)
+                                        .controlSize(.small)
+                                    }
+
+                                    Button("Refresh Library") {
+                                        spotify.refresh(force: true)
+                                        appleMusic.refresh(force: true)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
                                 }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
