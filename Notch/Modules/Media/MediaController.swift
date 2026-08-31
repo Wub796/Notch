@@ -539,6 +539,7 @@ final class MediaController {
     private func tickProgress() {
         displayedElapsed = currentElapsed
         onNormalizedTrackChange?(normalizedTrack)
+        // Lyric highlighting must never advance while playback is paused.
         guard isPlaying, !isBrowserVideo else { return }
         lyrics.updateCurrentLine(for: displayedElapsed)
     }
