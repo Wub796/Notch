@@ -292,9 +292,13 @@ final class MediaRemoteAdapter {
         }
         if let value = state[Key.duration] as? Double {
             info[MediaRemoteBridge.InfoKey.duration] = value
+        } else if let value = state[Key.duration] as? Int {
+            info[MediaRemoteBridge.InfoKey.duration] = Double(value)
         }
         if let value = state[Key.elapsedTime] as? Double {
             info[MediaRemoteBridge.InfoKey.elapsedTime] = value
+        } else if let value = state[Key.elapsedTime] as? Int {
+            info[MediaRemoteBridge.InfoKey.elapsedTime] = Double(value)
         }
         if let rawTimestamp = state[Key.timestamp] as? String,
            let date = Self.timestampDate(from: rawTimestamp) {
@@ -302,6 +306,8 @@ final class MediaRemoteAdapter {
         }
         if let value = state[Key.playbackRate] as? Double {
             info[MediaRemoteBridge.InfoKey.playbackRate] = value
+        } else if let value = state[Key.playbackRate] as? Int {
+            info[MediaRemoteBridge.InfoKey.playbackRate] = Double(value)
         } else if let playing = state[Key.playing] as? Bool {
             // playbackRate is optional in the payload; the controller derives
             // the transport state from it, so synthesize it from `playing`.

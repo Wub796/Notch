@@ -17,6 +17,33 @@ final class MediaController {
 
     private(set) var track: Track?
     private(set) var artwork: NSImage?
+
+    /// Normalized metadata consumed by clients that need one source-independent
+    /// media value. The legacy properties below remain the UI's source of truth.
+    var normalizedTrack: NotchMediaTrack? {
+        guard let track else { return nil }
+        return NotchMediaTrack(
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            artwork: artwork,
+            duration: track.duration,
+            currentPosition: currentElapsed,
+            isPlaying: isPlaying,
+            mediaSource: normalizedSource
+        )
+    }
+
+    private var normalizedSource: NotchMediaSource {
+        switch sourceAppBundleID {
+        case MusicProvider.spotify.bundleID:
+            return .spotify
+        case "com.apple.Music":
+            return .appleMusic
+        default:
+            return .genericSystem
+        }
+    }
     private(set) var isPlaying = false {
         didSet {
             guard isPlaying != oldValue else { return }
@@ -44,6 +71,11 @@ final class MediaController {
 
     let lyrics = LyricsEngine()
 
+    /// Emits the same normalized value used by the UI whenever metadata or
+    /// playback position changes. Position ticks are local and never perform
+    /// IPC or disk work.
+    var onNormalizedTrackChange: ((NotchMediaTrack?) -> Void)?
+
     /// Queue and artist detail from Spotify, when it is connected. Empty
     /// otherwise — nothing else on macOS exposes a playback queue.
     private(set) var queue: [SpotifyClient.QueueItem] = []
@@ -67,6 +99,11 @@ final class MediaController {
     private(set) var sourceAppIcon: NSImage?
     private var sourceAppPID: Int32 = 0
     private(set) var sourceAppBundleID: String?
+
+    /// True while the current metadata came from a YouTube/web-video probe.
+    /// This is deliberately exposed so every media surface uses the same
+    /// source-priority rule instead of independently guessing from app names.
+    private(set) var isBrowserVideo = false
 
     /// The adapter's mediaType for the current source ("...TypeMusic" vs
     /// "...TypeAudio"), so callers can tell music from generic audio. Only
@@ -118,6 +155,7 @@ final class MediaController {
     private var pendingClearWork: DispatchWorkItem?
     private var browserProbeTimer: Timer?
     private var isActive = false
+    private var mediaNotificationObservers: [NSObjectProtocol] = []
 
     /// True while the shown track came from the browser fallback. MediaRemote
     /// can't see browsers on gated macOS, so an empty reply while this is set
@@ -156,7 +194,7 @@ final class MediaController {
             // adapter as the MediaRemote source or fall back to the dlopen
             // bridge. Waiting for the verdict keeps the two sources from
             // racing each other at launch.
-            DispatchQueue.global(qos: .userInitiated).async {
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let functional = MediaRemoteAdapter.verifyFunctional()
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
@@ -189,16 +227,32 @@ final class MediaController {
         useMediaRemote = true
         bridge.registerForNotifications()
         let center = NotificationCenter.default
-        center.addObserver(
-            forName: MediaRemoteBridge.infoDidChange, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.refreshFromMediaRemote()
-        }
-        center.addObserver(
-            forName: MediaRemoteBridge.isPlayingDidChange, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.refreshFromMediaRemote()
-        }
+        mediaNotificationObservers = [
+            center.addObserver(
+                forName: MediaRemoteBridge.infoDidChange, object: nil, queue: .main
+            ) { [weak self] _ in
+                self?.refreshFromMediaRemote()
+            },
+            center.addObserver(
+                forName: MediaRemoteBridge.isPlayingDidChange, object: nil, queue: .main
+            ) { [weak self] _ in
+                self?.refreshFromMediaRemote()
+            },
+            DistributedNotificationCenter.default().addObserver(
+                forName: Notification.Name("com.apple.iTunes.playerInfo"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.refreshFromMediaRemote()
+            },
+            DistributedNotificationCenter.default().addObserver(
+                forName: Notification.Name("com.spotify.client.PlaybackStateChanged"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.refreshFromMediaRemote()
+            }
+        ]
         refreshFromMediaRemote()
     }
 
@@ -255,6 +309,17 @@ final class MediaController {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.track == nil else { return }
                 self.apply(snapshot)
+            }
+            return
+        }
+
+        // No player answered — check the browsers for web media (YouTube,
+        // etc.). Consent-gated exactly like the players: a launch probe must
+        // never be what raises the Automation dialog.
+        if let browserSnap = browserYouTubeSnapshot(avoidPrompt: true) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.track == nil else { return }
+                self.apply(browserSnap)
             }
             return
         }
@@ -336,13 +401,17 @@ final class MediaController {
 
         if useMediaRemote {
             refreshFromMediaRemote()
+            // Browser metadata is independent of MediaRemote and must also be
+            // refreshed whenever the Audio/media surface becomes visible.
+            probeBrowserForPlayingMedia(avoidPrompt: false)
             // While the notch is open and MediaRemote is the source, a
             // browser-derived track needs a probe of its own to stay honest:
             // MediaRemote never answers for browsers, so nothing else would
             // tell us when the tab closes or the video changes.
-            browserProbeTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            browserProbeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
                 self?.tickBrowserProbe()
             }
+            tickBrowserProbe()
             // On Macs where MediaRemote is gated, its answers are silence and
             // the demotion counter only advances one refresh per open — music
             // that was already playing took several open/close rounds to appear.
@@ -427,6 +496,7 @@ final class MediaController {
 
     private func tickProgress() {
         displayedElapsed = currentElapsed
+        onNormalizedTrackChange?(normalizedTrack)
         guard isPlaying else { return }
         lyrics.updateCurrentLine(for: displayedElapsed)
     }
@@ -707,9 +777,23 @@ final class MediaController {
                     self.handleEmptyMediaRemoteReply()
                     return
                 }
-                // Real MediaRemote info is authoritative: it replaces any
-                // browser-derived track.
-                self.isShowingBrowserSnapshot = false
+
+                let title = (info[MediaRemoteBridge.InfoKey.title] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let isBrowser = self.sourceAppBundleID.map { bundle in Self.browserTargets.contains(where: { $0.bundleID == bundle }) } ?? false
+
+                // If MediaRemote reports for a browser without a title, defer to the browser probe.
+                if isBrowser && title.isEmpty {
+                    return
+                }
+
+                if isBrowser {
+                    self.isShowingBrowserSnapshot = true
+                    self.isBrowserVideo = true
+                } else {
+                    self.isShowingBrowserSnapshot = false
+                    self.isBrowserVideo = false
+                }
+
                 guard self.providerAllowsCurrentSource() else {
                     // A different app is playing than the one selected — show
                     // nothing until the chosen provider takes over.
@@ -756,14 +840,33 @@ final class MediaController {
             // away. A browser-derived track must not be blanked by it — the
             // browser probe owns keeping that honest — same as the
             // direct-bridge path.
-            if isShowingBrowserSnapshot { return }
+            if isShowingBrowserSnapshot {
+                return
+            }
+
             handleEmptyMediaRemoteReply()
             return
         }
-        isShowingBrowserSnapshot = false
         if let pid = info[MediaRemoteAdapter.Key.processIdentifier] as? Int {
             updateSourceApp(pid: Int32(pid))
         }
+
+        let title = (info[MediaRemoteBridge.InfoKey.title] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let isBrowser = sourceAppBundleID.map { bundle in Self.browserTargets.contains(where: { $0.bundleID == bundle }) } ?? false
+
+        // If MediaRemote reports for a browser without a title, defer to the browser probe.
+        if isBrowser && title.isEmpty {
+            return
+        }
+
+        if isBrowser {
+            isShowingBrowserSnapshot = true
+            isBrowserVideo = true
+        } else {
+            isShowingBrowserSnapshot = false
+            isBrowserVideo = false
+        }
+
         sourceMediaType = info[MediaRemoteAdapter.Key.mediaType] as? String
         guard providerAllowsCurrentSource() else {
             apply([:])
@@ -796,16 +899,29 @@ final class MediaController {
             return
         }
 
-        isShowingBrowserSnapshot = false
         consecutiveEmptyReplies = 0
         pendingClearWork?.cancel()
         pendingClearWork = nil
 
         var newTrack = Track()
-        newTrack.title = info[MediaRemoteBridge.InfoKey.title] as? String ?? ""
+        var rawTitle = info[MediaRemoteBridge.InfoKey.title] as? String ?? ""
+        if rawTitle.hasSuffix(" - YouTube") {
+            rawTitle = String(rawTitle.dropLast(" - YouTube".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if rawTitle.hasSuffix(" - YouTube Music") {
+            rawTitle = String(rawTitle.dropLast(" - YouTube Music".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        newTrack.title = rawTitle
         newTrack.artist = info[MediaRemoteBridge.InfoKey.artist] as? String ?? ""
         newTrack.album = info[MediaRemoteBridge.InfoKey.album] as? String ?? ""
         newTrack.duration = info[MediaRemoteBridge.InfoKey.duration] as? TimeInterval ?? 0
+
+        let isBrowser = sourceAppBundleID.map { bundle in Self.browserTargets.contains(where: { $0.bundleID == bundle }) } ?? false
+        if isBrowser {
+            isShowingBrowserSnapshot = true
+            isBrowserVideo = true
+            if newTrack.album.isEmpty { newTrack.album = "YouTube" }
+            if newTrack.artist.isEmpty { newTrack.artist = "YouTube" }
+        }
 
         elapsedAnchor = info[MediaRemoteBridge.InfoKey.elapsedTime] as? TimeInterval ?? 0
         anchorDate = info[MediaRemoteBridge.InfoKey.timestamp] as? Date ?? Date()
@@ -832,6 +948,7 @@ final class MediaController {
         }
 
         updateTrackIfChanged(newTrack)
+        onNormalizedTrackChange?(normalizedTrack)
     }
 
     /// An empty MediaRemote reply is ambiguous: either nothing is playing, or
@@ -889,14 +1006,18 @@ final class MediaController {
                     // here on (it also starts its 2s polling).
                     self.demoteToAppleEvents()
                 } else {
-                    guard self.track == nil || self.isShowingBrowserSnapshot else { return }
-                    // The probe is the authoritative answer — cancel any
-                    // pending "nothing playing" clear so the track sticks.
+                    // YouTube is intentionally allowed to replace stale
+                    // player metadata in the visible media tabs.
                     self.pendingClearWork?.cancel()
                     self.pendingClearWork = nil
                     self.isShowingBrowserSnapshot = true
+                    self.isBrowserVideo = true
                 }
-                self.apply(snapshot)
+                if isPlayer {
+                    self.apply(snapshot)
+                } else {
+                    self.applyBrowserSnapshot(snapshot)
+                }
             }
         }
     }
@@ -908,21 +1029,68 @@ final class MediaController {
     /// without this a closed tab would leave a ghost track on screen.
     private func tickBrowserProbe() {
         // The timer only exists while the notch is open and MediaRemote is the
-        // source, so the one state that matters here is the browser track.
-        guard useMediaRemote, isShowingBrowserSnapshot else { return }
+        // source. It probes the browser every couple of seconds regardless of
+        // what is currently showing: gated MediaRemote never answers for
+        // browsers, so an open notch with a YouTube video running would
+        // otherwise sit on "Nothing Playing" forever — nothing would ever
+        // establish the browser track. avoidPrompt tracks isActive so the
+        // first open can raise the Automation consent prompt for the browser;
+        // a real player's track outranks a YouTube tab.
+        guard useMediaRemote else { return }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let snapshot = self?.browserYouTubeSnapshot(avoidPrompt: true) else {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, self.isShowingBrowserSnapshot else { return }
-                    self.finishClearingTrack()
-                }
-                return
-            }
+            let snapshot = self?.browserYouTubeSnapshot(avoidPrompt: false)
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.isShowingBrowserSnapshot else { return }
-                self.apply(snapshot)
+                guard let self else { return }
+                guard let snapshot else {
+                    // Browser went away (tab closed) — clear only a track that
+                    // actually came from the browser probe.
+                    if self.isShowingBrowserSnapshot {
+                        self.finishClearingTrack()
+                    }
+                    return
+                }
+                // YouTube is the preferred visible source in the media tabs.
+                // A browser result replaces stale Music/Spotify metadata while
+                // the video is playing, rather than waiting for the old track
+                // to disappear first.
+                self.isShowingBrowserSnapshot = true
+                self.isBrowserVideo = true
+                self.pendingClearWork?.cancel()
+                self.pendingClearWork = nil
+                self.applyBrowserSnapshot(snapshot)
             }
         }
+    }
+
+    private func applyBrowserSnapshot(_ snapshot: Snapshot) {
+        isShowingBrowserSnapshot = true
+        isBrowserVideo = true
+        sourceAppName = snapshot.appName
+        sourceAppBundleID = snapshot.bundleID
+        sourceAppPID = 0
+        if let artworkURL = snapshot.artworkURL {
+            loadBrowserArtwork(from: artworkURL)
+        }
+        apply(snapshot)
+        // `apply(_:)` deliberately updates the common source fields, so
+        // restore the browser identity after it has finished. Otherwise the
+        // next MediaRemote/app refresh can make the UI fall back to Music.
+        isShowingBrowserSnapshot = true
+        isBrowserVideo = true
+        sourceAppName = snapshot.appName
+        sourceAppBundleID = snapshot.bundleID
+    }
+
+    private func loadBrowserArtwork(from url: URL) {
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let data, let image = NSImage(data: data) else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isShowingBrowserSnapshot else { return }
+                self.artwork = image
+                self.updateAccentIfNeeded(for: data)
+                self.onNormalizedTrackChange?(self.normalizedTrack)
+            }
+        }.resume()
     }
 
     /// One AppleScript probe when the notch opens, covering the gated-
@@ -1077,7 +1245,10 @@ final class MediaController {
 
     private func updateTrackIfChanged(_ newTrack: Track) {
         let previous = track
-        guard newTrack != previous else { return }
+        guard newTrack != previous else {
+            onNormalizedTrackChange?(normalizedTrack)
+            return
+        }
         track = newTrack.title.isEmpty ? nil : newTrack
 
         // Announce track-to-track changes, not the initial pickup at launch.
@@ -1106,6 +1277,7 @@ final class MediaController {
             followersLabel = nil
             lastSpotifyLookup = nil
         }
+        onNormalizedTrackChange?(normalizedTrack)
     }
 
     // MARK: - Apple Events fallback (the selected provider)
@@ -1167,35 +1339,68 @@ final class MediaController {
         let isChromium: Bool
     }
 
+    private struct YouTubeMediaState {
+        let title: String
+        let youtuber: String
+        let thumbnailURL: String
+        let progress: Double
+        let duration: TimeInterval
+    }
+
     private static let browserTargets: [BrowserTarget] = [
         BrowserTarget(name: "Safari", bundleID: "com.apple.Safari", isChromium: false),
         BrowserTarget(name: "Google Chrome", bundleID: "com.google.Chrome", isChromium: true),
+        BrowserTarget(name: "Google Chrome Canary", bundleID: "com.google.Chrome.canary", isChromium: true),
         BrowserTarget(name: "Arc", bundleID: "company.thebrowser.Browser", isChromium: true),
         BrowserTarget(name: "Brave Browser", bundleID: "com.brave.Browser", isChromium: true),
         BrowserTarget(name: "Microsoft Edge", bundleID: "com.microsoft.edgemac", isChromium: true),
         BrowserTarget(name: "Vivaldi", bundleID: "com.vivaldi.Vivaldi", isChromium: true),
-        BrowserTarget(name: "Orion", bundleID: "com.kagi.kagisafari", isChromium: false)
+        BrowserTarget(name: "Orion", bundleID: "com.kagi.kagisafari", isChromium: false),
+        BrowserTarget(name: "Opera", bundleID: "com.operasoftware.Opera", isChromium: true),
+        BrowserTarget(name: "Opera GX", bundleID: "com.operasoftware.OperaGX", isChromium: true),
+        BrowserTarget(name: "Zen Browser", bundleID: "app.zen-browser.zen", isChromium: false),
+        BrowserTarget(name: "Chromium", bundleID: "org.chromium.Chromium", isChromium: true)
     ]
 
     private static func extractYouTubeVideoID(from urlString: String) -> String? {
-        if let url = URL(string: urlString),
-           let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+        guard let url = URL(string: urlString) else { return nil }
+
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
            let v = components.queryItems?.first(where: { $0.name == "v" })?.value,
            !v.isEmpty {
             return v
         }
-        // Short links: youtu.be/<id> with an optional ?query or #fragment.
-        // The #t= start-time fragment is the standard share format, and a
-        // raw string split on "?"/"&" would carry "#t=30" into the ID,
-        // corrupting the thumbnail and oEmbed URLs built from it. Parsing
-        // also makes a bare "youtu.be/" return nil instead of an empty ID.
+
         if urlString.contains("youtu.be/") {
-            if let url = URL(string: urlString),
-               let id = url.pathComponents.dropFirst().first,
-               !id.isEmpty {
-                return id
+            if let id = url.pathComponents.dropFirst().first, !id.isEmpty {
+                return id.components(separatedBy: "?").first?.components(separatedBy: "&").first?.components(separatedBy: "#").first
             }
         }
+
+        let pathComponents = url.pathComponents
+        for prefix in ["shorts", "embed", "live", "v"] {
+            if let idx = pathComponents.firstIndex(of: prefix), idx + 1 < pathComponents.count {
+                let candidate = pathComponents[idx + 1]
+                if !candidate.isEmpty {
+                    return candidate.components(separatedBy: "?").first?.components(separatedBy: "&").first?.components(separatedBy: "#").first
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private static func doubleValue(_ value: Any?) -> Double? {
+        if let value = value as? Double { return value }
+        if let value = value as? NSNumber { return value.doubleValue }
+        if let value = value as? String { return Double(value) }
+        return nil
+    }
+
+    private static func boolValue(_ value: Any?) -> Bool? {
+        if let value = value as? Bool { return value }
+        if let value = value as? NSNumber { return value.boolValue }
+        if let value = value as? String { return Bool(value) }
         return nil
     }
 
@@ -1211,38 +1416,54 @@ final class MediaController {
                 continue
             }
 
+            // The DOM script is what carries the real payload: the rendered
+            // title (no " - YouTube" suffix), the channel name, the video ID
+            // for the thumbnail, and the live currentTime/duration for the
+            // progress bar. Chromium exposes it through `execute javascript`;
+            // Safari through `do JavaScript`, falling back to the tab-title
+            // path when "Allow JavaScript from Apple Events" is off.
+            let js = "(function(){try{var title=(document.querySelector('h1.ytd-watch-metadata')||document.querySelector('h1')).innerText||document.title;var channel=(document.querySelector('#upload-info #channel-name a')||document.querySelector('ytd-channel-name a')).innerText||'';var p=document.querySelector('#movie_player');var d=p&&p.getDuration?p.getDuration():0;var c=p&&p.getCurrentTime?p.getCurrentTime():0;var id=p&&p.getVideoData?p.getVideoData().video_id:'';var playing=false;try{playing=p&&p.getPlayerState?p.getPlayerState()===1:(function(){var v=document.querySelector('video');return !!v&&!v.paused&&!v.ended;})();}catch(e){}return JSON.stringify({title:title,youtuber:channel,thumbnail:id?'https://img.youtube.com/vi/'+id+'/maxresdefault.jpg':'',progress:d>0?c/d:0,duration:d,playing:playing});}catch(e){return '';}})();"
+
             let scriptSource: String
             if browser.isChromium {
                 scriptSource = """
                 tell application "\(browser.name)"
-                    if (count of windows) > 0 then
-                        repeat with w in windows
-                            repeat with t in tabs of w
-                                set u to URL of t
-                                set n to title of t
-                                if u contains "youtube.com/watch" or u contains "youtu.be" or u contains "music.youtube.com" or n contains " - YouTube" then
+                    if (count of windows) is 0 then return ""
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            set u to URL of t
+                            set n to title of t
+                            if u contains "youtube.com/watch" or u contains "youtu.be" or u contains "music.youtube.com" or u contains "youtube.com/shorts" or u contains "youtube.com/live" or u contains "youtube.com/embed" or n contains " - YouTube" or n contains "YouTube Music" then
+                                try
+                                    tell t
+                                        return (execute javascript "\(js)") as text
+                                    end tell
+                                on error
                                     return n & "||" & u
-                                end if
-                            end repeat
+                                end try
+                            end if
                         end repeat
-                    end if
+                    end repeat
                     return ""
                 end tell
                 """
             } else {
                 scriptSource = """
                 tell application "\(browser.name)"
-                    if (count of windows) > 0 then
-                        repeat with w in windows
-                            repeat with t in tabs of w
-                                set u to URL of t
-                                set n to name of t
-                                if u contains "youtube.com/watch" or u contains "youtu.be" or u contains "music.youtube.com" or n contains " - YouTube" then
+                    if (count of windows) is 0 then return ""
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            set u to URL of t
+                            set n to name of t
+                            if u contains "youtube.com/watch" or u contains "youtu.be" or u contains "music.youtube.com" or u contains "youtube.com/shorts" or u contains "youtube.com/live" or u contains "youtube.com/embed" or n contains " - YouTube" or n contains "YouTube Music" then
+                                try
+                                    return (do JavaScript "\(js)" in t) as text
+                                on error
                                     return n & "||" & u
-                                end if
-                            end repeat
+                                end try
+                            end if
                         end repeat
-                    end if
+                    end repeat
                     return ""
                 end tell
                 """
@@ -1251,10 +1472,45 @@ final class MediaController {
             var error: NSDictionary?
             guard let script = NSAppleScript(source: scriptSource) else { continue }
             let result = script.executeAndReturnError(&error)
-            guard error == nil, let raw = result.stringValue, !raw.isEmpty, raw.contains("||") else {
+            guard error == nil, let raw = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty else {
                 continue
             }
 
+            // The DOM script returns JSON on its own — no "||" separator —
+            // so the legacy tab-title path must only run when the reply is
+            // not JSON. (The old guard demanded "||", which silently threw
+            // away every Chromium reply and left "Nothing Playing" on screen
+            // while YouTube played.)
+            if let data = raw.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let jsTitle = json["title"] as? String,
+               !jsTitle.isEmpty {
+                let channel = json["youtuber"] as? String ?? "YouTube"
+                let thumbnail = json["thumbnail"] as? String ?? ""
+                let progress = Self.doubleValue(json["progress"])
+                    .map { min(max($0, 0), 1) } ?? 0
+                let duration = max(Self.doubleValue(json["duration"]) ?? 0, 0)
+
+                var track = Track()
+                track.title = jsTitle
+                track.artist = channel
+                track.album = "YouTube"
+                track.duration = duration
+                return Snapshot(
+                    track: track,
+                    elapsed: progress * duration,
+                    duration: duration,
+                    isPlaying: Self.boolValue(json["playing"]) ?? true,
+                    bundleID: browser.bundleID,
+                    appName: browser.name,
+                    artworkURL: thumbnail.isEmpty ? nil : URL(string: thumbnail),
+                    isBrowser: true
+                )
+            }
+
+            // Legacy tab-title path: "Title - YouTube||https://…".
+            guard raw.contains("||") else { continue }
             let parts = raw.components(separatedBy: "||")
             guard parts.count >= 2 else { continue }
 
@@ -1291,11 +1547,10 @@ final class MediaController {
             track.title = title
             track.artist = artist
             track.album = "YouTube"
-            track.duration = 0
-
             return Snapshot(
                 track: track,
                 elapsed: 0,
+                duration: 0,
                 isPlaying: true,
                 bundleID: browser.bundleID,
                 appName: browser.name,
@@ -1363,6 +1618,7 @@ final class MediaController {
     private struct Snapshot {
         var track: Track
         var elapsed: TimeInterval
+        var duration: TimeInterval = 0
         var isPlaying: Bool
         var bundleID: String?
         var appName: String?
@@ -1390,6 +1646,7 @@ final class MediaController {
                     return Snapshot(
                         track: newTrack,
                         elapsed: TimeInterval(parts[4].replacingOccurrences(of: ",", with: ".")) ?? 0,
+                        duration: newTrack.duration,
                         isPlaying: parts[5] == "playing",
                         bundleID: fallbackBundleID,
                         appName: fallbackAppName,
@@ -1415,8 +1672,14 @@ final class MediaController {
 
     private func apply(_ snapshot: Snapshot) {
         isShowingBrowserSnapshot = snapshot.isBrowser
-        if snapshot.isBrowser {
-            // Browser snapshots carry no real position (elapsed is always 0);
+        isBrowserVideo = snapshot.isBrowser
+        if snapshot.duration > 0 {
+            // The DOM-based browser snapshot reports real currentTime/duration,
+            // so anchor on it and let extrapolation glide between 2s polls.
+            elapsedAnchor = snapshot.elapsed
+            anchorDate = Date()
+        } else if snapshot.isBrowser {
+            // Legacy browser snapshots carry no real position (elapsed is 0);
             // re-anchoring on every poll — the 2s probe re-applies the same
             // snapshot — would snap the progress bar back to zero repeatedly.
             // Count forward from the last anchor; only a new video resets it.
@@ -1429,9 +1692,11 @@ final class MediaController {
             anchorDate = Date()
         }
         isPlaying = snapshot.isPlaying
+        onNormalizedTrackChange?(normalizedTrack)
 
         let isNewTrack = snapshot.track != track
         updateTrackIfChanged(snapshot.track)
+        onNormalizedTrackChange?(normalizedTrack)
         updateLyricActivityTimer()
 
         if let bundleID = snapshot.bundleID {
@@ -1449,14 +1714,25 @@ final class MediaController {
         // Artwork only matters when the track actually changed — re-downloading
         // the YouTube thumbnail on every 2s probe poll would be a network
         // request every couple of seconds for the same video.
+        if snapshot.duration > 0, let current = track, current.duration != snapshot.duration {
+            var updated = current
+            updated.duration = snapshot.duration
+            track = updated
+        }
+
         if let artworkURL = snapshot.artworkURL, isNewTrack {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 if let data = try? Data(contentsOf: artworkURL), let image = NSImage(data: data) {
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self, self.track == snapshot.track else { return }
-                        self.artwork = image
-                        self.updateAccentIfNeeded(for: data)
-                    }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self,
+                          self.isShowingBrowserSnapshot,
+                          self.track?.title == snapshot.track.title,
+                          self.track?.artist == snapshot.track.artist
+                    else { return }
+                    self.artwork = image
+                    self.updateAccentIfNeeded(for: data)
+                    self.onNormalizedTrackChange?(self.normalizedTrack)
+                }
                 }
             }
         } else if isNewTrack {
@@ -1534,6 +1810,7 @@ final class MediaController {
 
     private func finishClearingTrack() {
         isShowingBrowserSnapshot = false
+        isBrowserVideo = false
         track = nil
         artwork = nil
         isPlaying = false
@@ -1608,6 +1885,18 @@ final class MediaController {
                 }
             }
         }
+    }
+
+    deinit {
+        mediaNotificationObservers.forEach { observer in
+            NotificationCenter.default.removeObserver(observer)
+            DistributedNotificationCenter.default().removeObserver(observer)
+        }
+        progressTimer?.invalidate()
+        fallbackTimer?.invalidate()
+        lyricActivityTimer?.invalidate()
+        browserProbeTimer?.invalidate()
+        adapter.stop()
     }
 
     private func runMusicCommand(_ command: String) {

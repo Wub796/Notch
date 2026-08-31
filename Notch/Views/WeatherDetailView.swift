@@ -118,7 +118,8 @@ struct WeatherDetailView: View {
         HStack(spacing: 6) {
             Image(systemName: systemImage)
                 .font(.system(size: 12))
-                .symbolRenderingMode(.multicolor)
+                .foregroundStyle(systemImage == "thermometer.medium" ? .orange :
+                                   systemImage == "wind" ? .cyan : .blue)
             Text(text)
                 .font(.notchCallout.weight(.semibold).monospacedDigit())
                 .foregroundStyle(NotchTheme.inkSecondary)
@@ -140,6 +141,7 @@ struct WeatherDetailView: View {
         ))
         .font(.system(size: 74))
         .symbolRenderingMode(.multicolor)
+        .foregroundStyle(weather.isDay ? .yellow : .indigo)
         .frame(width: 112, height: 104)
         .accessibilityHidden(true)
     }

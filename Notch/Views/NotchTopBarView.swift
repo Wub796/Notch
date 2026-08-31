@@ -14,7 +14,6 @@ struct NotchTopBarView: View {
         (.shelf, "archivebox", "Shelf"),
         (.clipboard, "doc.on.clipboard", "Clipboard"),
         (.notes, "note.text", "Notes"),
-        (.audio, "hifispeaker.2.fill", "Devices"),
         (.telemetry, "gauge.with.dots.needle.50percent", "System Stats"),
     ]
 
@@ -52,10 +51,8 @@ struct NotchTopBarView: View {
     }
 
     private var leadingControls: some View {
-        // The rail is six icons; on a narrow module its flank can be too
-        // small for them at the full 28pt size, which used to push the last
-        // icons under the hardware notch. It shrinks to fit the flank so it
-        // always stays visible beside the notch.
+        // Keep the rail icons at their standard size; selected modules widen
+        // the slab rather than shrinking the controls.
         HStack(spacing: railSpacing) {
             NotchIconButton(
                 systemImage: "gearshape",
@@ -85,24 +82,8 @@ struct NotchTopBarView: View {
         }
     }
 
-    /// Rail icon size: the full 28pt when the flank is wide enough for six
-    /// of them at the standard 13pt spacing, then 24pt, then 22pt — each tier
-    /// is exactly as small as it has to be so the whole rail stays visible
-    /// beside the notch instead of its rightmost icons sliding under it.
-    private var railIconSize: CGFloat {
-        if flankWidth >= 6 * 28 + 5 * 13 { return 28 }
-        if flankWidth >= 6 * 24 + 5 * 2 { return 24 }
-        return 22
-    }
-
-    /// Rail spacing, derived so six icons at `railIconSize` always fit the
-    /// flank (with a 2pt floor so they never touch).
-    private var railSpacing: CGFloat {
-        let count: CGFloat = 6
-        let maxSpacing = count * railIconSize + 5 * 13
-        guard flankWidth < maxSpacing else { return 13 }
-        return max((flankWidth - count * railIconSize) / 5, 2)
-    }
+    private let railIconSize: CGFloat = 28
+    private let railSpacing: CGFloat = 13
 
     /// Three status controls, as in the reference: the battery pill, the
     /// active Focus, and keep-awake.
@@ -155,12 +136,12 @@ struct BatteryPill: View {
     var body: some View {
         HStack(spacing: 1.5) {
             ZStack {
-                RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .stroke(.white.opacity(0.5), lineWidth: 1.2)
 
                 // Level fill, inset inside the outline.
                 GeometryReader { proxy in
-                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
                         .fill(fillColor.opacity(showsPercentage ? 0.3 : 0.85))
                         .frame(width: max(proxy.size.width * CGFloat(percent) / 100, 2))
                         .animation(NotchAnimations.content, value: percent)
@@ -222,11 +203,8 @@ struct DetailHeaderView<Trailing: View>: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            NotchBackButton {
-                state.select(.home)
-            }
-            .frame(width: flankWidth, alignment: .leading)
-            .clipped()
+            Color.clear
+                .frame(width: flankWidth)
 
             Rectangle()
                 .fill(.black)
@@ -238,6 +216,16 @@ struct DetailHeaderView<Trailing: View>: View {
                 .clipped()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topLeading) {
+            // The back control belongs beside the physical notch, not in the
+            // center of the left flank. Pin it to the header's outer side so
+            // it remains visible even when the module width changes.
+            NotchBackButton {
+                state.select(.home)
+            }
+            .padding(.top, 2)
+            .padding(.leading, 18)
+        }
     }
 }
 

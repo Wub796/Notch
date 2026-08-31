@@ -31,21 +31,21 @@ extension NotchTheme {
     /// 22 on the next.
     enum Radius {
         /// Panels and list rows.
-        static let card: CGFloat = 18
+        static let card: CGFloat = 22
         /// Anything sitting inside a card.
-        static let tile: CGFloat = 12
+        static let tile: CGFloat = 15
         /// Small square glyph holders and thumbnails.
-        static let thumb: CGFloat = 8
+        static let thumb: CGFloat = 10
     }
 
     /// The spacing ladder. Screens use these rather than arbitrary numbers so
     /// the rhythm carries from one panel to the next.
     enum Space {
-        static let xs: CGFloat = 4
-        static let s: CGFloat = 8
-        static let m: CGFloat = 12
-        static let l: CGFloat = 16
-        static let xl: CGFloat = 22
+        static let xs: CGFloat = 5
+        static let s: CGFloat = 9
+        static let m: CGFloat = 13
+        static let l: CGFloat = 17
+        static let xl: CGFloat = 24
     }
 }
 

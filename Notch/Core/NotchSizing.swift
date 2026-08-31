@@ -15,7 +15,7 @@ enum NotchSizing {
     static let cornerRadiusInsets: (
         opened: (top: CGFloat, bottom: CGFloat),
         closed: (top: CGFloat, bottom: CGFloat)
-    ) = (opened: (top: 19, bottom: 24), closed: (top: 0, bottom: 14))
+    ) = (opened: (top: 19, bottom: 24), closed: (top: 12, bottom: 14))
 
     /// Transparent margin the panel window keeps around the slab so the drop
     /// shadow is never clipped by the window bounds.
@@ -61,13 +61,14 @@ enum NotchSizing {
     /// these screens are genuinely different shapes, and forcing a month grid
     /// and a weather hero into the same box shrank both past legibility. The
     /// width preference now scales them together rather than setting one.
-    static func openNotchSize(for tab: NotchTab) -> CGSize {
+    static func openNotchSize(for tab: NotchTab, showsLyrics: Bool = true) -> CGSize {
         let base = baseSize(for: tab)
         let scale = min(max(NotchSettings.shared.openNotchWidth, minimumOpenWidth),
                         maxAllowedOpenWidth()) / defaultOpenWidth
+        let height = min(base.height * scale, maximumOpenHeight)
         return CGSize(
             width: min(base.width * scale, maxAllowedOpenWidth()),
-            height: min(base.height * scale, maximumOpenHeight)
+            height: tab == .media && !showsLyrics ? max(height - 46, 150) : height
         )
     }
 
@@ -97,13 +98,16 @@ enum NotchSizing {
     /// of points short of the hardware cutout; this margin keeps everything
     /// laid out beside the notch — header flanks, the collapsed wings, the
     /// hover probe — clear of the real notch even then.
-    static let notchCoverageBleed: CGFloat = 8
+    static let notchCoverageBleed: CGFloat = 18
 
     /// Each screen's natural size at the default width.
     private static func baseSize(for tab: NotchTab) -> CGSize {
         switch tab {
         case .home: CGSize(width: 860, height: 205)
-        case .media: CGSize(width: 580, height: 330)
+        // The standalone compact media surface is no longer used; media opens
+        // from the home card into the full player layout.
+        case .media: CGSize(width: 900, height: 255)
+        case .audio: CGSize(width: 880, height: 390)
         case .weather: CGSize(width: 600, height: 320)
         case .calendar: CGSize(width: 620, height: 350)
         case .shelf: CGSize(width: 640, height: 240)
@@ -111,7 +115,6 @@ enum NotchSizing {
         case .tools: CGSize(width: 880, height: 295)
         case .notes: CGSize(width: 580, height: 265)
         case .telemetry: CGSize(width: 800, height: 275)
-        case .audio: CGSize(width: 880, height: 280)
         }
     }
 

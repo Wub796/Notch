@@ -65,15 +65,10 @@ struct NotchContainerView: View {
                 alignment: .top
             )
             .background(.black)
-            // Solid top edge bonding to guarantee zero gap or hairline
-            // separation from the screen bezel. Drawn before the clip: an
-            // unclipped strip poked past the pill's rounded corners, which is
-            // the two little corner steps against the screen edge.
-            .overlay(alignment: .top) {
-                Rectangle()
-                    .fill(.black)
-                    .frame(height: 3)
-            }
+            // Keep the top edge bonded to the screen while the shape still
+            // rounds into it. The clip is applied after the background, so
+            // the rounded intersections remain visible instead of becoming
+            // square corner steps.
             .clipShape(shape)
             // Only the open slab and the hovered pill cast a shadow; a closed
             // pill sitting on the black notch does not need one.

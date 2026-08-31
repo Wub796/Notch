@@ -49,13 +49,18 @@ struct MediaPlayerView: View {
 
             bottomActions
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .padding(.bottom, 18)
     }
 
     // MARK: - Active Audio State
 
     private var activeAudioApp: AudioAppMonitor.App? {
         state.audioApps.apps.first(where: \.isPlaying)
+    }
+
+    private var isBrowserVideo: Bool {
+        media.isBrowserVideo
     }
 
     private var displayTitle: String {
@@ -266,7 +271,7 @@ struct MediaPlayerView: View {
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .lineLimit(1)
 
-            if isAudioActive {
+            if isAudioActive && !isBrowserVideo {
                 Image(systemName: "waveform")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.green)
@@ -381,9 +386,6 @@ struct MediaPlayerView: View {
                 media.nextTrack()
             }
 
-            transportIcon(state.audio.currentSymbol, size: 15, label: "Switch audio output") {
-                state.audio.cycleToNextDevice()
-            }
         }
         .frame(maxWidth: .infinity)
     }

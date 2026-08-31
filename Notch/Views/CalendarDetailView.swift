@@ -19,8 +19,8 @@ struct CalendarDetailView: View {
             if state.calendar.isMonthView {
                 monthGrid
             } else {
-                VStack(alignment: .leading, spacing: 16) {
-                    dateHeader
+                VStack(alignment: .leading, spacing: 12) {
+                    calendarToolbar
                     weekStrip
                     bodyContent
                 }
@@ -33,42 +33,75 @@ struct CalendarDetailView: View {
         }
     }
 
-    // MARK: - Date header
+    // MARK: - Calendar toolbar
 
-    /// The big blue day number beside its weekday, month and year, as in the
-    /// reference. The month carries the weight and the year sits under it a
-    /// size down; all three lines share the same left edge.
-    private var dateHeader: some View {
-        let selected = state.calendar.selectedDate
-
-        return HStack(alignment: .center, spacing: 12) {
-            Text("\(calendar.component(.day, from: selected))")
-                .font(.system(size: 40, weight: .heavy, design: .rounded).monospacedDigit())
-                .foregroundStyle(.blue)
-                .fixedSize()
-
-            VStack(alignment: .leading, spacing: -1) {
-                Text(weekdayName(of: selected).uppercased())
-                    .font(.system(size: 12, weight: .heavy, design: .rounded))
-                    .tracking(0.6)
-                    .foregroundStyle(NotchTheme.inkSecondary)
-                    .fixedSize()
-
-                Text(selected.formatted(.dateTime.month(.wide)))
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+    /// Keeps the month and year together on the left while leaving the
+    /// calendar controls on the right. The compact header avoids repeating the
+    /// selected day and weekday already shown by the calendar grid.
+    private var calendarToolbar: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: -2) {
+                Text(state.calendar.selectedDate.formatted(.dateTime.month(.wide)))
+                    .font(.system(size: 25, weight: .heavy, design: .rounded))
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .fixedSize()
-
-                Text(selected.formatted(.dateTime.year()))
-                    .font(.notchBody.monospacedDigit())
+                Text(state.calendar.selectedDate.formatted(.dateTime.year()))
+                    .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .fixedSize()
             }
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            calendarControls
         }
+        .frame(maxWidth: .infinity)
         .contentTransition(.numericText())
         .animation(.notchSpring, value: state.calendar.selectedDate)
+    }
+
+    @ViewBuilder
+    private var calendarControls: some View {
+        HStack(spacing: 8) {
+            NotchIconButton(
+                systemImage: "chevron.left",
+                help: "Previous month"
+            ) {
+                state.calendar.moveSelectedDay(by: -28)
+            }
+            NotchIconButton(
+                systemImage: "chevron.right",
+                help: "Next month"
+            ) {
+                state.calendar.moveSelectedDay(by: 28)
+            }
+        }
+    }
+
+    /// The month grid's page-by-month chevron, hugged close to the title.
+    private func monthButton(
+        _ systemImage: String,
+        _ help: String,
+        _ action: @escaping () -> Void
+    ) -> some View {
+        NotchIconButton(systemImage: systemImage, help: help, size: 24, action: action)
+    }
+
+    /// Small chevron that nudges the year, sitting on the year's baseline.
+    private func yearButton(
+        _ systemImage: String,
+        _ help: String,
+        _ action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 9, weight: .heavy))
+                .foregroundStyle(NotchTheme.inkSecondary)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .help(help)
+        .accessibilityLabel(help)
     }
 
     // MARK: - Week strip
@@ -102,7 +135,45 @@ struct CalendarDetailView: View {
                 calendar.date(byAdding: .day, value: $0, to: gridStart)
             }
 
-            VStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
+                // The month grid has no toolbar of its own (the week view's
+                // date header is only shown there), so carry the month and year
+                // here as a full pager: flanking chevrons page by month, and a
+                // small stepper under the year pages by year — a single click
+                // per month or year instead of many week-long hops.
+                HStack(alignment: .center, spacing: 10) {
+                    monthButton("chevron.left", "Previous month") {
+                        state.calendar.moveSelectedMonth(-1)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    VStack(spacing: 1) {
+                        Text(state.calendar.selectedDate.formatted(.dateTime.month(.wide)))
+                            .font(.system(size: 24, weight: .heavy, design: .rounded))
+                            .foregroundStyle(NotchTheme.inkPrimary)
+                        HStack(spacing: 6) {
+                            yearButton("chevron.left", "Previous year") {
+                                state.calendar.moveSelectedYear(-1)
+                            }
+                            Text(state.calendar.selectedDate.formatted(.dateTime.year()))
+                                .font(.system(size: 14, weight: .bold, design: .rounded).monospacedDigit())
+                                .foregroundStyle(NotchTheme.inkSecondary)
+                            yearButton("chevron.right", "Next year") {
+                                state.calendar.moveSelectedYear(1)
+                            }
+                        }
+                    }
+                    .contentTransition(.numericText())
+                    .animation(.notchSpring, value: state.calendar.selectedDate)
+
+                    Spacer(minLength: 4)
+
+                    monthButton("chevron.right", "Next month") {
+                        state.calendar.moveSelectedMonth(1)
+                    }
+                }
+
                 HStack(spacing: 4) {
                     ForEach(Array("MTWTFSS".enumerated()), id: \.offset) { _, letter in
                         Text(String(letter))

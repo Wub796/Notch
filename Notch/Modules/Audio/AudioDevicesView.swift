@@ -46,16 +46,15 @@ enum AudioScreenTab: String, CaseIterable, Identifiable {
 /// account's Connect devices over the Web API — remote, and controllable
 /// wherever they are. AirPlay and System are this Mac's own CoreAudio
 /// outputs, fully interactive. Apps lists every process CoreAudio says is
-/// running output — any device audio, not just the now-playing app — but its
-/// level is read-only: macOS exposes observing a process's audio, never
-/// setting its volume. Sapphire ships an audio HAL plug-in for that; drawing
-/// a slider that moves and changes nothing would be worse than saying so.
+/// running output and exposes each process's independent volume level.
 struct AudioDevicesView: View {
     let state: NotchState
 
     private var activeAudioApp: AudioAppMonitor.App? {
         state.audioApps.apps.first(where: \.isPlaying)
     }
+
+    @State private var appVolumes: [String: Float] = [:]
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -71,7 +70,7 @@ struct AudioDevicesView: View {
                 case .spotify: spotifyRows
                 }
             }
-            .padding(.bottom, 2)
+            .padding(.bottom, 6)
             // Rows arrive and leave as an app starts or stops making sound,
             // which now happens the instant CoreAudio says so — so they slide
             // rather than appear.
@@ -95,13 +94,11 @@ struct AudioDevicesView: View {
         }
     }
 
-    /// The real-time meter is opt-in and can fail for reasons the user can
-    /// fix — the permission was revoked, or there is no display to capture.
-    /// It used to fail silently, leaving the visualiser quietly back on its
-    /// fallback with nothing to say why.
+    /// The data-only meter has no permission-gated failure path; retain this
+    /// hook for compatibility with the shared layout.
     @ViewBuilder
     private var meterFailureNotice: some View {
-        if state.settings.realtimeAudioMeter, let reason = state.audioMeter.failureReason {
+        if let reason = state.audioMeter.failureReason {
             HStack(spacing: NotchTheme.Space.s) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 13, weight: .semibold))
@@ -135,20 +132,29 @@ struct AudioDevicesView: View {
 
     private var spotify: SpotifyLibrary { state.spotify }
 
+    private var audioBannerTitle: String {
+        if let activeAudioApp { return activeAudioApp.name }
+        if let title = state.media.track?.title, !title.isEmpty { return title }
+        return "Playing Audio"
+    }
+
+    private var audioBannerArtist: String {
+        if activeAudioApp != nil { return "Active audio" }
+        if let artist = state.media.track?.artist, !artist.isEmpty { return artist }
+        return "Playing audio"
+    }
+
     @ViewBuilder
     private var nowPlayingBanner: some View {
         if state.media.isPlaying || activeAudioApp != nil {
-            let title = !(state.media.track?.title.isEmpty ?? true) ? (state.media.track?.title ?? "Playing") : (activeAudioApp?.name ?? "Playing Audio")
-            let artist = !(state.media.track?.artist.isEmpty ?? true) ? (state.media.track?.artist ?? "Active Media") : "Playing in \(activeAudioApp?.name ?? "Browser")"
-
             HStack(spacing: 12) {
                 // Video thumbnail / Album art / App icon
                 Group {
-                    if let artwork = state.media.artwork {
+                    if activeAudioApp == nil, let artwork = state.media.artwork {
                         Image(nsImage: artwork)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                    } else if let icon = state.media.sourceAppIcon ?? activeAudioApp?.icon {
+                    } else if let icon = activeAudioApp?.icon ?? state.media.sourceAppIcon {
                         Image(nsImage: icon)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
@@ -165,10 +171,12 @@ struct AudioDevicesView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(title)
-                            .font(.notchBody.weight(.bold))
-                            .foregroundStyle(NotchTheme.inkPrimary)
-                            .lineLimit(1)
+                        MarqueeText(
+                            text: audioBannerTitle,
+                            font: .notchBody.weight(.bold),
+                            width: 240
+                        )
+                        .foregroundStyle(NotchTheme.inkPrimary)
 
                         Image(systemName: "waveform")
                             .font(.system(size: 10, weight: .bold))
@@ -176,7 +184,7 @@ struct AudioDevicesView: View {
                             .symbolEffect(.variableColor.iterative, options: .repeating)
                     }
 
-                    Text(artist)
+                    Text(audioBannerArtist)
                         .font(.notchCaption)
                         .foregroundStyle(NotchTheme.inkSecondary)
                         .lineLimit(1)
@@ -196,8 +204,8 @@ struct AudioDevicesView: View {
                     }
 
                     RoundIconButton(
-                        systemImage: state.media.isPlaying ? "play.fill" : "pause.fill",
-                        help: state.media.isPlaying ? "Play" : "Pause"
+                        systemImage: state.media.isPlaying && activeAudioApp == nil ? "play.fill" : "pause.fill",
+                        help: state.media.isPlaying && activeAudioApp == nil ? "Play" : "Pause"
                     ) {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
                             state.media.togglePlayPause()
@@ -212,6 +220,61 @@ struct AudioDevicesView: View {
     }
 
     // MARK: - Spotify Connect
+
+struct SpotifyDeviceCard: View {
+    let device: SpotifyClient.Device
+    let onSelect: () -> Void
+    let onVolume: (Double) -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                Image(systemName: device.symbolName).font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(device.isActive ? Color.green : NotchTheme.inkSecondary).frame(width: 30)
+                Text(device.name).font(.notchHeadline).foregroundStyle(NotchTheme.inkPrimary).lineLimit(1)
+                Spacer(minLength: 8)
+                if device.isActive { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
+                else { Button("Switch", action: onSelect).buttonStyle(PressableButtonStyle()) }
+            }
+            if device.supportsVolume { SpotifyVolumeBar(percent: device.volumePercent ?? 0, onChange: onVolume) }
+        }.padding(NotchTheme.Space.l).frame(maxWidth: .infinity, alignment: .leading)
+            .notchCard(isHighlighted: device.isActive, tint: .green)
+    }
+}
+
+struct SpotifyVolumeBar: View {
+    let percent: Int
+    let onChange: (Double) -> Void
+    @State private var dragFraction: Double?
+    var body: some View {
+        GeometryReader { proxy in
+            let fraction = dragFraction ?? min(max(Double(percent) / 100, 0), 1)
+            ZStack(alignment: .leading) {
+                Capsule().fill(NotchTheme.surfaceHover)
+                Capsule().fill(Color.accentColor).frame(width: max(proxy.size.width * fraction, 120))
+                HStack { Text("Volume").font(.notchHeadline); Spacer(); Text("\(Int((fraction * 100).rounded())) %").font(.notchHeadline.monospacedDigit()) }
+                    .foregroundStyle(.white).padding(.horizontal, 22)
+            }.contentShape(Capsule()).gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                guard proxy.size.width > 0 else { return }
+                let next = min(max(value.location.x / proxy.size.width, 0), 1)
+                dragFraction = next; onChange(next)
+            }.onEnded { _ in dragFraction = nil })
+        }.frame(height: 52)
+    }
+}
+
+struct SpotifyConnectPrompt: View {
+    let message: String
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "music.note.house.fill").font(.system(size: 28)).foregroundStyle(.green)
+            Text(message).font(.notchBody).multilineTextAlignment(.center)
+            Text("Connect your Spotify account in Settings to sync playlists, recent listening, and Spotify Connect.")
+                .font(.notchFootnote).foregroundStyle(NotchTheme.inkMuted).multilineTextAlignment(.center)
+            Button("Open Media Settings") { SettingsWindowController.shared.show() }.buttonStyle(PressableButtonStyle())
+        }.padding(.vertical, 20).frame(maxWidth: .infinity)
+    }
+}
+
 
     @ViewBuilder
     private var spotifyRows: some View {
@@ -344,11 +407,13 @@ struct AudioDevicesView: View {
                     title: app.name,
                     status: app.isPlaying ? "Playing" : "Idle",
                     statusIsLive: app.isPlaying,
-                    // Read-only: this is the system level the app plays
-                    // through, because macOS exposes no per-process volume.
-                    level: Double(state.audio.volume),
+                    level: Double(appVolumes[app.id] ?? app.volume() ?? 1),
                     isHighlighted: app.isPlaying,
-                    onLevelChange: nil,
+                    onLevelChange: { level in
+                        let value = Float(level)
+                        appVolumes[app.id] = value
+                        app.setVolume(value)
+                    },
                     onSelect: { app.activate() }
                 ) {
                     RoundIconButton(
@@ -374,9 +439,8 @@ struct AudioDevicesView: View {
             }
 
             Text(state.audioApps.canObserveProcesses
-                 ? "Playing is read from CoreAudio, so this covers any app "
-                    + "making sound. The level is the system output — macOS "
-                    + "has no per-application volume without an audio driver."
+                 ? "Adjust each app independently. Changes use CoreAudio's "
+                    + "per-process output level."
                  : "macOS 14.4 or later is needed to tell which apps are "
                     + "actually making sound; this lists media apps that are "
                     + "running.")
@@ -516,10 +580,10 @@ private struct LevelBar: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(NotchTheme.surfaceHover)
 
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.accentColor)
                     .frame(width: max(0, min(geometry.size.width * level, geometry.size.width)))
 

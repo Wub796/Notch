@@ -66,6 +66,26 @@ final class CalendarController {
         selectedDate = date
     }
 
+    /// Steps `selectedDate` to a neighbouring month, keeping the day of the
+    /// month (clamped, so 31 Jan can move to Feb 28 rather than rolling over
+    /// into March). Page-by-month is what the month grid's chevrons use.
+    func moveSelectedMonth(_ offset: Int) {
+        let cal = Calendar.current
+        let comps = cal.dateComponents([.year, .month, .day], from: selectedDate)
+        guard let firstOfMonth = cal.date(from: DateComponents(year: comps.year, month: comps.month)),
+              let targetFirst = cal.date(byAdding: .month, value: offset, to: firstOfMonth),
+              let daysInMonth = cal.range(of: .day, in: .month, for: targetFirst)?.count,
+              let day = cal.date(bySetting: .day, value: min(comps.day ?? 1, daysInMonth), of: targetFirst)
+        else { return }
+        moveSelectedDay(to: day)
+    }
+
+    /// Steps `selectedDate` by whole years (Feb 29 clamps to Feb 28).
+    func moveSelectedYear(_ offset: Int) {
+        guard let target = Calendar.current.date(byAdding: .year, value: offset, to: selectedDate) else { return }
+        moveSelectedDay(to: target)
+    }
+
     /// The next event starting within the live-activity window, published in
     /// the collapsed notch wings.
     private(set) var upcomingSoon: ScheduleItem?

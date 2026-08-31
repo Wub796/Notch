@@ -56,12 +56,12 @@ struct ActivityWingLayout<Leading: View, Trailing: View>: View {
     var body: some View {
         HStack(spacing: 0) {
             leading
-                .padding(.leading, 13)
+                .padding(.leading, 18)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Color.clear
                 .frame(width: notchWidth)
             trailing
-                .padding(.trailing, 14)
+                .padding(.trailing, 18)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

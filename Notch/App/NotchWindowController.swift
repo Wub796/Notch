@@ -176,7 +176,11 @@ final class NotchWindowController: NSWindowController {
     }
 
     func showPanel() {
-        window?.orderFrontRegardless()
+        guard let panel = window else { return }
+        panel.orderFrontRegardless()
+        // Reassert visibility after lock-screen transitions. The panel is
+        // nonactivating, so this does not steal focus from the login UI.
+        panel.orderFrontRegardless()
     }
 }
 
@@ -221,7 +225,7 @@ final class NotchHostingView: NSHostingView<NotchContainerView> {
             width = state.expandedSize.width + NotchSizing.shadowPadding * 2
             height = state.expandedSize.height + NotchSizing.shadowPadding
         } else {
-            width = max(state.hoverProbeSize.width, state.collapsedSize.width) + 16
+            width = max(state.hoverProbeSize.width, state.collapsedSize.width) + 20
             height = max(state.hoverProbeSize.height, state.collapsedSize.height) + 12
         }
 

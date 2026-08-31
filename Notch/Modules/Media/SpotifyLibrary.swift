@@ -28,6 +28,7 @@ final class SpotifyLibrary {
 
     private(set) var profile: SpotifyClient.Profile?
     private(set) var playlists: [SpotifyClient.Playlist] = []
+    private(set) var savedTracks: [SpotifyClient.SavedTrack] = []
     private(set) var devices: [SpotifyClient.Device] = []
     private(set) var forYou: [SpotifyClient.Item] = []
     private(set) var searchResults: [SpotifyClient.Item] = []
@@ -128,13 +129,15 @@ final class SpotifyLibrary {
                 async let profile = SpotifyClient.profile(token: token)
                 async let playlists = SpotifyClient.playlists(token: token)
                 async let history = SpotifyClient.recentlyPlayed(token: token)
-                let loaded = await (profile, playlists, history)
+                async let savedTracks = SpotifyClient.savedTracks(token: token)
+                let loaded = await (profile, playlists, history, savedTracks)
 
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     self.profile = loaded.0 ?? self.profile
                     if !loaded.1.isEmpty { self.playlists = loaded.1 }
                     self.forYou = Self.shelf(history: loaded.2, playlists: loaded.1)
+                    self.savedTracks = loaded.3
                     self.isLoadingLibrary = false
                     self.lastLibraryLoad = Date()
                     self.lastError = nil
@@ -177,6 +180,7 @@ final class SpotifyLibrary {
     func clear() {
         profile = nil
         playlists = []
+        savedTracks = []
         devices = []
         forYou = []
         searchResults = []

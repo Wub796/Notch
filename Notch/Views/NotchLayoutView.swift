@@ -78,7 +78,7 @@ struct NotchLayoutView: View {
                 // Hovering the closed pill widens it slightly, the way both
                 // references pad their wings out on hover. The amount is the
                 // user's "hover grow" preference.
-                .padding(.horizontal, isHovering ? state.hoverExpansion : 0)
+                .padding(.horizontal, isHovering ? min(state.hoverExpansion, 5) : 0)
                 .transition(.opacity)
                 .zIndex(2)
         }
@@ -167,6 +167,8 @@ struct NotchLayoutView: View {
             HomeDashboardView(state: state, namespace: namespace)
         case .media:
             MediaPlayerView(state: state, namespace: namespace)
+        case .audio:
+            DevicesScreenView(state: state, namespace: namespace)
         case .weather:
             WeatherDetailView(state: state)
         case .calendar:
@@ -181,8 +183,6 @@ struct NotchLayoutView: View {
             NotesView(state: state)
         case .telemetry:
             TelemetryView(telemetry: state.telemetry)
-        case .audio:
-            DevicesScreenView(state: state, namespace: namespace)
         }
     }
 }

@@ -277,6 +277,42 @@ extension SpotifyClient {
         return await put(path, token: token, body: body.isEmpty ? nil : body)
     }
 
+    // MARK: Currently playing
+
+    private struct CurrentlyPlayingResponse: Decodable {
+        let is_playing: Bool
+        let progress_ms: Int?
+        let item: Item?
+
+        struct Item: Decodable {
+            let name: String
+            let duration_ms: Int
+            let artists: [Artist]
+            let album: Album
+            let id: String?
+            struct Artist: Decodable { let name: String }
+            struct Album: Decodable { let name: String; let images: [Image] }
+            struct Image: Decodable { let url: String }
+        }
+    }
+
+    static func currentlyPlaying(token: String) async -> NotchMediaTrack? {
+        guard let data = await get("me/player/currently-playing", token: token),
+              let response = try? JSONDecoder().decode(CurrentlyPlayingResponse.self, from: data),
+              let item = response.item
+        else { return nil }
+        return NotchMediaTrack(
+            title: item.name,
+            artist: item.artists.first?.name ?? "",
+            album: item.album.name,
+            artwork: nil,
+            duration: TimeInterval(item.duration_ms) / 1000,
+            currentPosition: TimeInterval(response.progress_ms ?? 0) / 1000,
+            isPlaying: response.is_playing,
+            mediaSource: .spotify
+        )
+    }
+
     // MARK: Playback state
 
     struct Playback: Equatable {
@@ -312,6 +348,52 @@ extension SpotifyClient {
     }
 
     // MARK: Saved songs
+
+    struct SavedTrack: Identifiable, Equatable {
+        let id: String
+        let title: String
+        let artist: String
+        let album: String
+        let artworkURL: URL?
+        let uri: String
+    }
+
+    private struct SavedTracksResponse: Decodable {
+        let items: [Entry]
+        struct Entry: Decodable {
+            let track: Track?
+            struct Track: Decodable {
+                let id: String?
+                let name: String
+                let uri: String
+                let artists: [Artist]
+                let album: Album
+                struct Artist: Decodable { let name: String }
+                struct Album: Decodable {
+                    let name: String
+                    let images: [Image]?
+                    struct Image: Decodable { let url: String }
+                }
+            }
+        }
+    }
+
+    static func savedTracks(token: String) async -> [SavedTrack] {
+        guard let data = await get("me/tracks?limit=50", token: token),
+              let response = try? JSONDecoder().decode(SavedTracksResponse.self, from: data)
+        else { return [] }
+        return response.items.compactMap { entry in
+            guard let track = entry.track, let id = track.id else { return nil }
+            return SavedTrack(
+                id: id,
+                title: track.name,
+                artist: track.artists.first?.name ?? "",
+                album: track.album.name,
+                artworkURL: track.album.images?.first.flatMap { URL(string: $0.url) },
+                uri: track.uri
+            )
+        }
+    }
 
     /// Whether the track is in the account's Liked Songs.
     static func isSaved(trackID: String, token: String) async -> Bool {

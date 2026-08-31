@@ -34,12 +34,17 @@ final class SpotifyAuth {
     private(set) var state: State = .signedOut
     private(set) var userProfile: UserProfile?
 
-    /// Built-in public Spotify client ID for seamless 1-click PKCE sign-in.
-    static let defaultClientID = "b84570cb1e6d4ba4beff1d4715f5c35b"
+    /// Default client ID provided for 1-click OAuth authorization.
+    static let defaultClientID = "b84501eb89894e66b44a2c5ef2947ea8"
 
     /// The redirect Spotify sends the browser back to. Registered as a URL
     /// scheme in Info.plist, so the OS hands it to the app.
     static let redirectURI = "notch://spotify-callback"
+
+    /// PKCE is the supported OAuth flow for a desktop app: no client secret
+    /// is shipped, and the authorization code is bound to this one request by
+    /// the verifier. Spotify's scopes below determine exactly what the user
+    /// is asked to grant.
 
     /// Everything the Devices screen and the player need, and nothing more:
     /// reading and steering playback, the account's playlists, its listening
@@ -72,8 +77,13 @@ final class SpotifyAuth {
         }
     }
 
+    var effectiveClientID: String {
+        let custom = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return custom.isEmpty ? Self.defaultClientID : custom
+    }
+
     var hasValidClientID: Bool {
-        !clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !effectiveClientID.isEmpty
     }
 
     private init() {
@@ -93,12 +103,23 @@ final class SpotifyAuth {
     }
 
     private func refreshState() {
-        if Self.storedRefreshToken() != nil {
-            state = .signedIn
-            Task { await fetchUserProfile() }
-        } else {
+        // A refresh token is only a credential candidate. It may be revoked,
+        // expired, or belong to a different client ID, so it is not enough to
+        // display "Connected". Validate it before publishing signedIn.
+        guard Self.storedRefreshToken() != nil, hasValidClientID else {
             state = .signedOut
             userProfile = nil
+            accessToken = nil
+            return
+        }
+
+        state = .authorizing
+        Task { [weak self] in
+            guard let self, await self.validAccessToken() != nil else { return }
+            await self.fetchUserProfile()
+            await MainActor.run {
+                self.state = .signedIn
+            }
         }
     }
 
@@ -106,9 +127,9 @@ final class SpotifyAuth {
 
     /// Opens Spotify's consent page in the browser with PKCE authorization.
     func signIn() {
-        let trimmedID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedID.isEmpty else {
-            state = .failed("Please enter your Spotify Client ID in Settings.")
+        let targetID = effectiveClientID
+        guard !targetID.isEmpty else {
+            state = .failed("Please configure a Spotify Client ID in Settings.")
             DispatchQueue.main.async {
                 SettingsWindowController.shared.show()
             }
@@ -120,10 +141,11 @@ final class SpotifyAuth {
 
         var components = URLComponents(string: "https://accounts.spotify.com/authorize")!
         components.queryItems = [
-            .init(name: "client_id", value: trimmedID),
+            .init(name: "client_id", value: targetID),
             .init(name: "response_type", value: "code"),
             .init(name: "redirect_uri", value: Self.redirectURI),
             .init(name: "scope", value: Self.scopes),
+            .init(name: "show_dialog", value: "true"),
             .init(name: "code_challenge_method", value: "S256"),
             .init(name: "code_challenge", value: Self.challenge(for: verifier)),
         ]
@@ -183,7 +205,7 @@ final class SpotifyAuth {
 
     private func exchange(code: String, verifier: String) async {
         let body = [
-            "client_id": clientID,
+            "client_id": effectiveClientID,
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": Self.redirectURI,
@@ -199,7 +221,7 @@ final class SpotifyAuth {
         }
         guard let refresh = Self.storedRefreshToken() else { return nil }
         await requestToken(body: [
-            "client_id": clientID,
+            "client_id": effectiveClientID,
             "grant_type": "refresh_token",
             "refresh_token": refresh,
         ])
@@ -222,8 +244,11 @@ final class SpotifyAuth {
         var request = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        var formAllowed = CharacterSet.alphanumerics
+        formAllowed.insert(charactersIn: "-._~")
         request.httpBody = body
-            .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "")" }
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: formAllowed) ?? "")" }
             .joined(separator: "&")
             .data(using: .utf8)
 
@@ -235,15 +260,23 @@ final class SpotifyAuth {
                 self.accessTokenExpiry = Date().addingTimeInterval(TimeInterval(token.expiresIn))
                 if let refresh = token.refreshToken {
                     Self.storeRefreshToken(refresh)
+                } else if body["grant_type"] == "authorization_code" {
+                    // Authorization-code responses are expected to include a
+                    // refresh token. Do not persist a partial connection.
+                    Self.deleteRefreshToken()
                 }
                 self.state = .signedIn
             }
         } catch {
             await MainActor.run {
-                // A refresh that fails usually means the grant was revoked, so
-                // drop it rather than retrying against a dead token forever.
+                // A refresh that fails means the grant is no longer usable.
+                // Delete it immediately so a relaunch cannot report a false
+                // connected state from the stale Keychain entry.
                 Self.deleteRefreshToken()
-                self.state = .failed("Spotify sign-in failed. Try connecting again.")
+                self.accessToken = nil
+                self.accessTokenExpiry = .distantPast
+                self.userProfile = nil
+                self.state = .signedOut
             }
         }
     }

@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Single-line text that scrolls horizontally when it doesn't fit
-/// (boring.notch-style). Falls back to tail truncation under Reduce Motion.
+/// Single-line text that scrolls horizontally when it doesn't fit. Titles that
+/// fit are rendered exactly once; long titles use two copies for a seamless
+/// looping marquee.
 struct MarqueeText: View {
     let text: String
     let font: Font
@@ -9,64 +10,63 @@ struct MarqueeText: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var textWidth: CGFloat = 0
+    @State private var animate = false
 
-    private var needsScrolling: Bool {
+    private static let gap: CGFloat = 32
+    private static let pointsPerSecond: Double = 22
+
+    private var shouldScroll: Bool {
         textWidth > width && !reduceMotion
+    }
+
+    private var measuredText: some View {
+        Text(text)
+            .font(font)
+            .fixedSize()
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { textWidth = proxy.size.width }
+                        .onChange(of: proxy.size.width) { _, newWidth in
+                            textWidth = newWidth
+                        }
+                }
+            }
     }
 
     var body: some View {
         Group {
-            if needsScrolling {
-                MarqueeScroller(text: text, font: font, textWidth: textWidth)
-                    .id(text)
+            if shouldScroll {
+                HStack(spacing: Self.gap) {
+                    measuredText
+                    Text(text)
+                        .font(font)
+                        .fixedSize()
+                }
+                .offset(x: animate ? -(textWidth + Self.gap) : 0)
             } else {
-                Text(text)
-                    .font(font)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                measuredText
             }
+        }
+        .animation(
+            shouldScroll
+                ? .linear(
+                    duration: Double(textWidth + Self.gap) / Self.pointsPerSecond
+                )
+                .delay(1.0)
+                .repeatForever(autoreverses: false)
+                : nil,
+            value: animate
+        )
+        .onAppear {
+            if shouldScroll { animate = true }
+        }
+        .onChange(of: shouldScroll) { _, scrolling in
+            animate = scrolling
         }
         .frame(width: width, alignment: .leading)
         .clipped()
-        .background {
-            // Invisible measurement copy; re-measures when the text changes.
-            Text(text)
-                .font(font)
-                .fixedSize()
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear.onAppear { textWidth = proxy.size.width }
-                    }
-                }
-                .hidden()
-                .id(text)
-        }
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(text)
-    }
-}
-
-private struct MarqueeScroller: View {
-    let text: String
-    let font: Font
-    let textWidth: CGFloat
-
-    @State private var animate = false
-
-    private static let gap: CGFloat = 28
-    private static let pointsPerSecond: Double = 32
-
-    var body: some View {
-        HStack(spacing: Self.gap) {
-            Text(text).font(font).fixedSize()
-            Text(text).font(font).fixedSize()
-        }
-        .offset(x: animate ? -(textWidth + Self.gap) : 0)
-        .animation(
-            .linear(duration: Double(textWidth + Self.gap) / Self.pointsPerSecond)
-                .delay(1.2)
-                .repeatForever(autoreverses: false),
-            value: animate
-        )
-        .onAppear { animate = true }
     }
 }

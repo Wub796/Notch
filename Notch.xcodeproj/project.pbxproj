@@ -129,20 +129,9 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
-/* Begin PBXSourcesBuildPhase section */
-		4E0000000000000000000021 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXSourcesBuildPhase section */
-
 /* Begin PBXShellScriptBuildPhase section */
 		4E0000000000000000000023 /* Embed MediaRemoteAdapter */ = {
 			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 0;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -162,6 +151,16 @@
 			shellScript = "set -eu\nsource=\"$SRCROOT/Notch/MediaRemoteAdapter/MediaRemoteAdapter.framework\"\ndestination=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/MediaRemoteAdapter.framework\"\nmkdir -p \"$(dirname \"$destination\")\"\nrm -rf \"$destination\"\nditto \"$source\" \"$destination\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4E0000000000000000000021 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
 		4E0000000000000000000050 /* Debug */ = {

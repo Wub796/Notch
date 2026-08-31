@@ -9,8 +9,9 @@ import Observation
 /// process — so "is this app making sound" is a fact that can be read rather
 /// than guessed. That covers device audio generally: a browser tab, a game, a
 /// call, anything, not only whatever holds the now-playing session.
-///
-/// Setting a process's volume is still not exposed; only observing it is.
+///    /// Per-process volume is exposed through the CoreAudio process object's
+    /// `voul` property on supported macOS releases.
+
 ///
 /// The three selectors are spelled as four-character codes rather than by
 /// name. `kAudioHardwarePropertyProcessObjectList` and friends only exist in
@@ -35,6 +36,14 @@ final class AudioAppMonitor {
 
         func activate() {
             NSRunningApplication(processIdentifier: pid)?.activate()
+        }
+
+        func volume() -> Float? {
+            AudioAppMonitor.readProcessVolume(for: pid)
+        }
+
+        func setVolume(_ level: Float) {
+            AudioAppMonitor.writeProcessVolume(level, for: pid)
         }
     }
 
@@ -315,6 +324,7 @@ final class AudioAppMonitor {
     private static let processObjectListSelector = fourCharCode("prs#")
     private static let processPIDSelector = fourCharCode("ppid")
     private static let processIsRunningOutputSelector = fourCharCode("piro")
+    private static let processVolumeSelector = fourCharCode("voul")
 
     private static func fourCharCode(_ value: String) -> AudioObjectPropertySelector {
         value.utf8.reduce(0) { ($0 << 8) + AudioObjectPropertySelector($1) }
@@ -357,6 +367,31 @@ final class AudioAppMonitor {
         guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &pid) == noErr,
               pid > 0 else { return nil }
         return pid
+    }
+
+    @available(macOS 14.4, *)
+    private static func processObject(for pid: pid_t) -> AudioObjectID? {
+        audioProcessObjects().first { processID(of: $0) == pid }
+    }
+
+    private static func readProcessVolume(for pid: pid_t) -> Float? {
+        guard #available(macOS 14.4, *) else { return nil }
+        guard let object = processObject(for: pid) else { return nil }
+        var address = address(processVolumeSelector)
+        var volume: Float = 1
+        var size = UInt32(MemoryLayout<Float>.size)
+        guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &volume) == noErr else {
+            return nil
+        }
+        return min(max(volume, 0), 1)
+    }
+
+    private static func writeProcessVolume(_ level: Float, for pid: pid_t) {
+        guard #available(macOS 14.4, *), let object = processObject(for: pid) else { return }
+        var address = address(processVolumeSelector)
+        var volume = min(max(level, 0), 1)
+        var size = UInt32(MemoryLayout<Float>.size)
+        _ = AudioObjectSetPropertyData(object, &address, 0, nil, size, &volume)
     }
 
     @available(macOS 14.4, *)

@@ -6,7 +6,7 @@ import SwiftUI
 /// Outside the view for the same reason `AudioScreenTab` is: `NotchState`
 /// holds the selection, and it must not depend on a view type compiling.
 enum DevicesSection: String, CaseIterable, Identifiable {
-    case now, library, discover, audio
+    case now, library, audio
 
     var id: String { rawValue }
 
@@ -14,7 +14,6 @@ enum DevicesSection: String, CaseIterable, Identifiable {
         switch self {
         case .now: "Now"
         case .library: "Library"
-        case .discover: "Discover"
         case .audio: "Audio"
         }
     }
@@ -23,9 +22,39 @@ enum DevicesSection: String, CaseIterable, Identifiable {
         switch self {
         case .now: "music.note.list"
         case .library: "books.vertical.fill"
-        case .discover: "magnifyingglass"
         case .audio: "hifispeaker.fill"
         }
+    }
+}
+
+/// The Now page's fixed column heights, shared with NotchState so the slab can
+/// size itself to the page without a runtime measurement — the same arrangement
+/// HomeDashboardMetrics uses for the dashboard. Keep these in step with the
+/// layout below.
+///
+/// Only Now swaps in its own budget: it is a short fixed column, while Library
+/// and Audio are content-filled surfaces that legitimately want the full Audio
+/// slab height. Sizing the whole tab to Now would starve those two, so the fit
+/// is scoped to this one section.
+enum DevicesScreenMetrics {
+    /// The hero row (artwork, track info, account chip + section switch).
+    static let heroRowHeight: CGFloat = 82
+    /// Vertical gap between the top-level stacked rows.
+    static let sectionSpacing: CGFloat = 8
+    /// The centered synced-lyric line shown when lyrics are toggled on.
+    static let centeredLyricsHeight: CGFloat = 46
+    /// progress + transport + heart/shuffle rows, their spacing and top inset.
+    static let playbackControlsHeight: CGFloat = 108
+    /// Extra inset kept beneath the heart/shuffle row so the icons clear the
+    /// slab's rounded bottom edge instead of sitting flush against it. The
+    /// slab's structural `openContentInset` adds a little more on top of this.
+    static let bottomSafePadding: CGFloat = 20
+
+    static func naturalNowHeight(showsLyrics: Bool) -> CGFloat {
+        let base = heroRowHeight + sectionSpacing + playbackControlsHeight
+        return showsLyrics
+            ? base + sectionSpacing + centeredLyricsHeight
+            : base
     }
 }
 
@@ -49,21 +78,29 @@ struct DevicesScreenView: View {
     }
 
     private var displayTitle: String {
-        if let title = media.track?.title, !title.isEmpty {
+        // YouTube metadata is authoritative for browser video; otherwise
+        // active CoreAudio apps describe the Audio page's current source.
+        if media.isBrowserVideo, let title = media.track?.title, !title.isEmpty {
             return title
         }
         if let active = activeAudioApp {
             return active.name
         }
+        if let title = media.track?.title, !title.isEmpty {
+            return title
+        }
         return "Nothing Playing"
     }
 
     private var displayArtist: String {
-        if let artist = media.track?.artist, !artist.isEmpty {
+        if media.isBrowserVideo, let artist = media.track?.artist, !artist.isEmpty {
             return artist
         }
         if activeAudioApp != nil {
             return "Active Audio"
+        }
+        if let artist = media.track?.artist, !artist.isEmpty {
+            return artist
         }
         return "Nothing is playing"
     }
@@ -74,7 +111,24 @@ struct DevicesScreenView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            topHeroRow
+            Group {
+                if state.devicesSection == .audio {
+                    sectionSwitch
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 6)
+                } else {
+                    topHeroRow
+                        .transition(.opacity.combined(with: .offset(y: -4)))
+                }
+            }
+            .animation(NotchAnimations.content, value: state.devicesSection)
+
+            if state.devicesSection == .now && state.mediaShowsFullLyrics {
+                centeredLyrics
+                    .transition(.opacity)
+            } else if state.devicesSection == .library {
+                thinBottomBuffer
+            }
 
             Group {
                 switch state.devicesSection {
@@ -82,8 +136,6 @@ struct DevicesScreenView: View {
                     nowPlaybackSection
                 case .library:
                     SpotifyLibraryScreen(state: state)
-                case .discover:
-                    SpotifyDiscoverScreen(state: state)
                 case .audio:
                     AudioDevicesView(state: state)
                 }
@@ -97,6 +149,7 @@ struct DevicesScreenView: View {
             )
             .id(state.devicesSection)
             .animation(NotchAnimations.content, value: state.devicesSection)
+            .animation(NotchAnimations.content, value: state.mediaShowsFullLyrics)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { spotify.refresh() }
@@ -122,7 +175,7 @@ struct DevicesScreenView: View {
                         )
                         .foregroundStyle(NotchTheme.inkPrimary)
 
-                        liveAudioBadge
+
                     }
 
                     artistRow
@@ -130,66 +183,82 @@ struct DevicesScreenView: View {
                     subtitleButtons
                 }
             }
+            .padding(.top, 6)
 
             Spacer(minLength: 8)
 
-            // RIGHT: Section buttons & 3D lyrics directly underneath Library & Discover
-            VStack(alignment: .trailing, spacing: 2) {
-                HStack(spacing: 8) {
-                    accountChip
-                    sectionSwitch
-                }
-
-                ThreeDLyricsView(
-                    lyrics: media.lyrics,
-                    accent: media.accent,
-                    onSelect: { time in
-                        media.seek(to: time + 0.05)
-                    }
-                )
-                .frame(maxWidth: 290, alignment: .trailing)
+            // RIGHT: account and section controls only. Lyrics belong solely
+            // to Now and are centered below the hero.
+            HStack(spacing: 8) {
+                accountChip
+                sectionSwitch
             }
         }
-        .frame(height: 78)
+        .frame(minHeight: 78, maxHeight: 78)
+    }
+
+    private var centeredLyrics: some View {
+        ThreeDLyricsView(
+            lyrics: media.lyrics,
+            accent: media.accent,
+            onSelect: { time in
+                media.seek(to: time + 0.05)
+            }
+        )
+        .frame(maxWidth: .infinity)
+        .frame(height: 46)
+        .clipped()
+        .transition(.opacity)
+    }
+
+    private var thinBottomBuffer: some View {
+        Capsule()
+            .fill(Color.white.opacity(0.09))
+            .frame(width: 58, height: 3)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 2)
+            .accessibilityHidden(true)
     }
 
     // MARK: - Now Playback Controls (Lifted Higher)
 
     private var nowPlaybackSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             progressRow
-
-            if state.mediaShowsFullLyrics {
-                LyricsView(lyrics: media.lyrics, accent: media.accent) { time in
-                    media.seek(to: time + 0.05)
-                }
-                .frame(height: 85)
-                .transition(.opacity)
-            }
 
             transportRow
 
             bottomActions
         }
         .frame(maxWidth: .infinity)
+        .padding(.top, 4)
     }
 
     // MARK: - Media Artwork & Info Subcomponents
 
     private var artwork: some View {
         Group {
-            if let image = media.artwork {
+            if media.isBrowserVideo, let image = media.artwork {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-            } else if let icon = media.sourceAppIcon ?? activeAudioApp?.icon {
+            } else if let active = activeAudioApp, let icon = active.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .padding(14)
+            } else if let image = media.artwork {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else if let icon = media.sourceAppIcon {
                 Image(nsImage: icon)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .padding(14)
                     .background(Color.white.opacity(0.08))
             } else {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(Color.white.opacity(0.06))
                     .overlay {
                         Image(systemName: "music.note")
@@ -199,7 +268,7 @@ struct DevicesScreenView: View {
             }
         }
         .frame(width: 76, height: 76)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: media.accent.opacity(0.38), radius: 14, y: 5)
     }
@@ -308,9 +377,11 @@ struct DevicesScreenView: View {
                     ? "list.bullet.rectangle.fill"
                     : "list.bullet.rectangle",
                 size: 15,
-                label: state.mediaShowsFullLyrics ? "Hide full lyrics" : "Show full lyrics",
+                label: state.mediaShowsFullLyrics ? "Hide lyrics" : "Show lyrics",
                 tint: state.mediaShowsFullLyrics ? nil : NotchTheme.inkMuted
             ) {
+                // Toggle the synced lyric line on the Now page without
+                // opening a separate text-only lyrics screen.
                 withAnimation(NotchAnimations.content) {
                     state.mediaShowsFullLyrics.toggle()
                 }
@@ -353,17 +424,6 @@ struct DevicesScreenView: View {
                 media.nextTrack()
             }
 
-            transportIcon(state.audio.currentSymbol, size: 15, label: "Switch audio output") {
-                // cycleToNextDevice is a no-op with fewer than two devices
-                // (and the system can refuse the switch), so confirm only when
-                // the output actually changed.
-                let before = state.audio.currentDeviceID
-                state.audio.cycleToNextDevice()
-                guard state.audio.currentDeviceID != before else { return }
-                let name = state.audio.devices
-                    .first { $0.id == state.audio.currentDeviceID }?.name
-                state.showToast("Output: \(name ?? "Default")", symbol: state.audio.currentSymbol)
-            }
         }
         .frame(maxWidth: .infinity)
     }
@@ -418,40 +478,6 @@ struct DevicesScreenView: View {
         .accessibilityLabel(label)
     }
 
-    /// A live readout of what CoreAudio says is playing.
-    @ViewBuilder
-    private var liveAudioBadge: some View {
-        let playing = state.audioApps.apps.filter(\.isPlaying)
-
-        if state.audioApps.isAnyAudioPlaying || !playing.isEmpty {
-            HStack(spacing: 5) {
-                Image(systemName: "waveform")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.green)
-                    .symbolEffect(.variableColor.iterative, options: .repeating)
-
-                Text(Self.playingLabel(playing))
-                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(NotchTheme.inkSecondary)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 22)
-            .background(Capsule().fill(Color.green.opacity(0.14)))
-            .transition(.opacity.combined(with: .scale(scale: 0.9)))
-            .accessibilityLabel("Audio playing")
-            .accessibilityValue(Self.playingLabel(playing))
-        }
-    }
-
-    private static func playingLabel(_ playing: [AudioAppMonitor.App]) -> String {
-        switch playing.count {
-        case 0: "Audio playing"
-        case 1: playing[0].name
-        default: "\(playing[0].name) +\(playing.count - 1)"
-        }
-    }
-
     @ViewBuilder
     private var accountChip: some View {
         if spotify.isConnected {
@@ -488,10 +514,11 @@ struct DevicesScreenView: View {
         }
     }
 
-    /// One capsule holding the four sections, and — when Audio is up — the
-    /// four output tabs after a divider, exactly as the reference nests them.
+    /// One capsule holding the Now, Library, and Audio sections.
     private var sectionSwitch: some View {
         HStack(spacing: 4) {
+            // Discover is intentionally omitted; Audio remains available as
+            // the destination of the media page's speaker button.
             ForEach(DevicesSection.allCases) { section in
                 pill(
                     title: section.title,
@@ -503,26 +530,6 @@ struct DevicesScreenView: View {
                         state.devicesSection = section
                     }
                 }
-            }
-
-            if state.devicesSection == .audio {
-                Rectangle()
-                    .fill(.white.opacity(0.14))
-                    .frame(width: 1, height: 20)
-                    .padding(.horizontal, 4)
-                    .transition(.opacity)
-
-                ForEach(AudioScreenTab.allCases) { tab in
-                    pill(
-                        title: tab.title,
-                        symbol: tab.symbol,
-                        isActive: state.audioTab == tab,
-                        geometryID: "audioPill"
-                    ) {
-                        withAnimation(NotchAnimations.content) { state.audioTab = tab }
-                    }
-                }
-                .transition(.opacity)
             }
         }
         .padding(3)
@@ -586,33 +593,45 @@ struct SpotifyLibraryScreen: View {
         VStack(alignment: .leading, spacing: 12) {
             header
 
-            if !spotify.isConnected {
-                SpotifyConnectPrompt(
-                    message: "Connect Spotify to browse your playlists here."
-                )
-            } else if spotify.playlists.isEmpty {
-                Text(spotify.isLoadingLibrary ? "Loading your library…" : "No playlists yet.")
-                    .font(.notchBody)
-                    .foregroundStyle(NotchTheme.inkMuted)
-                    .frame(maxWidth: .infinity, minHeight: 80)
-            } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVGrid(columns: Self.columns, spacing: NotchTheme.Space.m) {
-                        ForEach(spotify.sortedPlaylists) { playlist in
-                            PlaylistCard(
-                                playlist: playlist,
-                                artwork: spotify.image(for: playlist.artworkURL),
-                                isPlaying: isPlaying(playlist),
-                                action: { spotify.play(uri: playlist.uri) }
-                            )
+            Group {
+                if !spotify.isConnected {
+                    Text("Connect Spotify in Settings to load your library.")
+                        .font(.notchBody)
+                        .foregroundStyle(NotchTheme.inkMuted)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if spotify.playlists.isEmpty && spotify.savedTracks.isEmpty {
+                    Text(spotify.isLoadingLibrary ? "Loading your library…" : "No saved music yet.")
+                        .font(.notchBody)
+                        .foregroundStyle(NotchTheme.inkMuted)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVGrid(columns: Self.columns, spacing: NotchTheme.Space.m) {
+                            ForEach(spotify.savedTracks) { track in
+                                SavedTrackCard(
+                                    track: track,
+                                    artwork: spotify.image(for: track.artworkURL),
+                                    action: { spotify.play(uri: track.uri) }
+                                )
+                            }
+                            ForEach(spotify.sortedPlaylists) { playlist in
+                                PlaylistCard(
+                                    playlist: playlist,
+                                    artwork: spotify.image(for: playlist.artworkURL),
+                                    isPlaying: isPlaying(playlist),
+                                    action: { spotify.play(uri: playlist.uri) }
+                                )
+                            }
                         }
-                    }
-                    .padding(.bottom, 4)
+                    .padding(.bottom, 10)
                     .animation(.notchSpring, value: spotify.sortedPlaylists)
+                    }
+                    .notchScrollFade(12)
                 }
-                .notchScrollFade(12)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     /// The playing playlist, by the context the account reports — falling back
@@ -734,366 +753,36 @@ struct PlaylistCard: View {
     }
 }
 
-// MARK: - Discover
-
-/// Search across Spotify, over a shelf of what the account actually played
-/// recently mixed with its own playlists.
-struct SpotifyDiscoverScreen: View {
-    let state: NotchState
-
-    @FocusState private var searchFocused: Bool
-
-    private var spotify: SpotifyLibrary { state.spotify }
-
-    private static let resultColumns = [
-        GridItem(.adaptive(minimum: 108, maximum: 140), spacing: 12)
-    ]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            searchField
-
-            if !spotify.isConnected {
-                SpotifyConnectPrompt(
-                    message: "Connect Spotify to search and see what you've been playing."
-                )
-            } else if spotify.query.trimmingCharacters(in: .whitespaces).count >= 2 {
-                results
-            } else {
-                shelf
-            }
-        }
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(NotchTheme.inkMuted)
-
-            TextField("Search songs, artists, albums…", text: Binding(
-                get: { spotify.query },
-                set: { spotify.query = $0 }
-            ))
-            .textFieldStyle(.plain)
-            .font(.notchBody.weight(.medium))
-            .foregroundStyle(NotchTheme.inkPrimary)
-            .focused($searchFocused)
-            .disabled(!spotify.isConnected)
-
-            if !spotify.query.isEmpty {
-                Button {
-                    spotify.query = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
-                        .foregroundStyle(NotchTheme.inkMuted)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear search")
-            }
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 42)
-        .background(Capsule().fill(Color.white.opacity(searchFocused ? 0.12 : 0.06)))
-    }
-
-    private var shelf: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(Self.greeting())
-                .font(.notchDisplay)
-                .foregroundStyle(NotchTheme.inkPrimary)
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("For You")
-                    .font(.notchHeadline)
-                    .foregroundStyle(NotchTheme.inkPrimary)
-
-                if spotify.forYou.isEmpty {
-                    Text(spotify.isLoadingLibrary
-                         ? "Loading…"
-                         : "Play something and it will show up here.")
-                        .font(.notchCallout)
-                        .foregroundStyle(NotchTheme.inkMuted)
-                        .frame(height: 60)
-                } else {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(alignment: .top, spacing: NotchTheme.Space.l) {
-                            ForEach(spotify.forYou) { item in
-                                DiscoverTile(
-                                    item: item,
-                                    artwork: spotify.image(for: item.artworkURL),
-                                    action: { spotify.play(uri: item.uri) }
-                                )
-                            }
-                        }
-                        .padding(.horizontal, 2)
-                    }
-                    .notchScrollFadeHorizontal(10)
-                }
-            }
-            .padding(NotchTheme.Space.l)
-            .notchCard()
-        }
-    }
-
-    @ViewBuilder
-    private var results: some View {
-        if spotify.searchResults.isEmpty {
-            Text(spotify.isSearching ? "Searching…" : "Nothing found.")
-                .font(.notchBody)
-                .foregroundStyle(NotchTheme.inkMuted)
-                .frame(maxWidth: .infinity, minHeight: 80)
-        } else {
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVGrid(columns: Self.resultColumns, alignment: .leading, spacing: 14) {
-                    ForEach(spotify.searchResults) { item in
-                        DiscoverTile(
-                            item: item,
-                            artwork: spotify.image(for: item.artworkURL),
-                            action: { spotify.play(uri: item.uri) }
-                        )
-                    }
-                }
-                .padding(.bottom, 4)
-            }
-        }
-    }
-
-    /// The reference greets by time of day; so does this.
-    static func greeting(at date: Date = Date()) -> String {
-        switch Calendar.current.component(.hour, from: date) {
-        case 0 ..< 5: "Good night"
-        case 5 ..< 12: "Good morning"
-        case 12 ..< 18: "Good afternoon"
-        default: "Good evening"
-        }
-    }
-}
-
-/// One card on a Discover shelf or in a search result grid.
-struct DiscoverTile: View {
-    let item: SpotifyClient.Item
+struct SavedTrackCard: View {
+    let track: SpotifyClient.SavedTrack
     let artwork: NSImage?
     let action: () -> Void
 
-    @State private var isHovering = false
-
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 7) {
-                ZStack {
+            HStack(spacing: 10) {
+                Group {
                     if let artwork {
                         Image(nsImage: artwork).resizable().aspectRatio(contentMode: .fill)
                     } else {
-                        RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
-                            .fill(NotchTheme.surfaceHover)
-                        Image(systemName: item.kind == .artist ? "person.fill" : "music.note")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(NotchTheme.inkMuted)
-                    }
-
-                    if isHovering {
-                        Circle()
-                            .fill(.black.opacity(0.55))
-                            .frame(width: 32, height: 32)
-                            .overlay {
-                                Image(systemName: "play.fill")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(.white)
-                            }
-                            .transition(.opacity)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white.opacity(0.08))
+                            .overlay { Image(systemName: "music.note") }
                     }
                 }
-                .frame(width: 108, height: 108)
-                .clipShape(RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous))
-
-                Text(item.title)
-                    .font(.notchBody.weight(.bold))
-                    .foregroundStyle(NotchTheme.inkPrimary)
-                    .lineLimit(1)
-
-                Text(item.subtitle)
-                    .font(.notchCaption)
-                    .foregroundStyle(NotchTheme.inkSecondary)
-                    .lineLimit(1)
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(track.title).font(.notchCallout.weight(.bold)).lineLimit(1)
+                    Text(track.artist).font(.notchCaption).foregroundStyle(NotchTheme.inkSecondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "play.fill").foregroundStyle(.green)
             }
-            .frame(width: 108, alignment: .leading)
-            .contentShape(Rectangle())
+            .padding(10)
+            .notchCard()
         }
         .buttonStyle(PressableButtonStyle())
-        .onHover { isHovering = $0 }
-        .animation(NotchAnimations.content, value: isHovering)
-        .accessibilityLabel("Play \(item.title) by \(item.subtitle)")
-    }
-}
-
-// MARK: - Spotify Connect device card
-
-/// A Connect device: its name and whether it is the active one, over the wide
-/// volume bar the reference puts under it. The bar is draggable and the value
-/// is the device's own, not this Mac's output level.
-struct SpotifyDeviceCard: View {
-    let device: SpotifyClient.Device
-    let onSelect: () -> Void
-    let onVolume: (Double) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 14) {
-                Image(systemName: device.symbolName)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(device.isActive ? Color.green : NotchTheme.inkSecondary)
-                    .frame(width: 30)
-
-                Text(device.name)
-                    .font(.notchHeadline)
-                    .foregroundStyle(NotchTheme.inkPrimary)
-                    .lineLimit(1)
-
-                Spacer(minLength: 8)
-
-                if device.isActive {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color.green)
-                        .accessibilityLabel("Active device")
-                } else {
-                    Button(action: onSelect) {
-                        Text("Switch")
-                            .font(.notchCallout.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .frame(height: 28)
-                            .background(Capsule().fill(Color.accentColor))
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(PressableButtonStyle())
-                    .accessibilityLabel("Move playback to \(device.name)")
-                }
-            }
-
-            if device.supportsVolume {
-                SpotifyVolumeBar(
-                    percent: device.volumePercent ?? 0,
-                    onChange: onVolume
-                )
-            } else {
-                Text("This device doesn't accept volume changes from Spotify.")
-                    .font(.notchCaption)
-                    .foregroundStyle(NotchTheme.inkMuted)
-            }
-        }
-        .padding(NotchTheme.Space.l)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .notchCard(isHighlighted: device.isActive, tint: .green)
-    }
-}
-
-/// The wide blue volume bar: the label and the reading sit inside the fill,
-/// and dragging anywhere along it sets the level.
-struct SpotifyVolumeBar: View {
-    let percent: Int
-    let onChange: (Double) -> Void
-
-    @State private var dragFraction: Double?
-
-    private var fraction: Double {
-        dragFraction ?? min(max(Double(percent) / 100, 0), 1)
-    }
-
-    var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(NotchTheme.surfaceHover)
-
-                Capsule()
-                    .fill(Color.accentColor)
-                    // A minimum so the label never sits on a bare track at 0.
-                    .frame(width: max(width * fraction, 120))
-
-                HStack(spacing: 8) {
-                    Text("Volume")
-                        .font(.notchHeadline)
-                    Spacer(minLength: 8)
-                    Text("\(Int((fraction * 100).rounded())) %")
-                        .font(.notchHeadline.monospacedDigit())
-                        .contentTransition(.numericText())
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 22)
-            }
-            .frame(height: 52)
-            .contentShape(Capsule())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        guard width > 0 else { return }
-                        dragFraction = min(max(value.location.x / width, 0), 1)
-                        onChange(dragFraction ?? 0)
-                    }
-                    .onEnded { _ in
-                        if let dragFraction { onChange(dragFraction) }
-                        dragFraction = nil
-                    }
-            )
-        }
-        .frame(height: 52)
-        .animation(.easeOut(duration: 0.15), value: percent)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Device volume")
-        .accessibilityValue("\(percent) percent")
-    }
-}
-
-/// Shown wherever a screen needs the account and there isn't one.
-struct SpotifyConnectPrompt: View {
-    let message: String
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "music.note.house.fill")
-                .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(Color.green)
-
-            Text(message)
-                .font(.notchBody)
-                .foregroundStyle(NotchTheme.inkPrimary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("Connect your Spotify account in Settings to sync playlists, recent listening, and Spotify Connect.")
-                .font(.notchFootnote)
-                .foregroundStyle(NotchTheme.inkMuted)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
-
-            Button {
-                SettingsWindowController.shared.show()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 11))
-                    Text("Open Media Settings")
-                        .font(.notchCaption.weight(.bold))
-                        .lineLimit(1)
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 16)
-                .frame(height: 30)
-                .background(Capsule().fill(Color.green.opacity(0.85)))
-                .contentShape(Capsule())
-            }
-            .buttonStyle(PressableButtonStyle())
-        }
-        .padding(.vertical, 20)
-        .padding(.horizontal, NotchTheme.Space.l)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: NotchTheme.Radius.card, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-        )
+        .accessibilityLabel("Play \(track.title) by \(track.artist)")
     }
 }

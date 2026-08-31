@@ -36,9 +36,6 @@ struct ExpandedNotchView: View {
                 calendarHeaderTrailing(maxWidth: width)
             }
         case .audio:
-            // The Devices screen draws its own title and section switch, so
-            // the strip carries only the way back — the module rail here would
-            // have been a second, competing set of destinations.
             DetailHeaderView(state: state) { _ in
                 EmptyView()
             }

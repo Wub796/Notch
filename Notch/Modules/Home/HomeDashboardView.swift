@@ -54,6 +54,9 @@ struct HomeDashboardView: View {
     }
 
     private var displayTitle: String {
+        if state.media.isBrowserVideo, let title = state.media.track?.title, !title.isEmpty {
+            return title
+        }
         if let title = state.media.track?.title, !title.isEmpty {
             return title
         }
@@ -64,6 +67,9 @@ struct HomeDashboardView: View {
     }
 
     private var displayArtist: String {
+        if state.media.isBrowserVideo, let artist = state.media.track?.artist, !artist.isEmpty {
+            return artist
+        }
         if let artist = state.media.track?.artist, !artist.isEmpty {
             return artist
         }
@@ -90,9 +96,13 @@ struct HomeDashboardView: View {
     private var musicSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 16) {
-                artwork
-                    .contentShape(Rectangle())
-                    .onTapGesture { state.select(.media) }
+                Button {
+                    state.select(.audio)
+                } label: {
+                    artwork
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
 
                 VStack(alignment: .leading, spacing: 2) {
                     // Uppercase and letterspaced, as in the reference: the title is
@@ -144,8 +154,6 @@ struct HomeDashboardView: View {
                     .padding(.top, 4)
                 }
                 .fixedSize(horizontal: true, vertical: false)
-                .contentShape(Rectangle())
-                .onTapGesture { state.select(.media) }
                 .help("Open the full player")
             }
 
@@ -200,7 +208,11 @@ struct HomeDashboardView: View {
 
     private var artwork: some View {
         Group {
-            if let image = state.media.artwork {
+            if state.media.isBrowserVideo, let image = state.media.artwork {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else if let image = state.media.artwork {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)

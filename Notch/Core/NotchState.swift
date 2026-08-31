@@ -13,8 +13,10 @@ enum NotchMode: Equatable {
 enum NotchTab: String {
     /// Combined dashboard hosting music, weather, and calendar.
     case home
-    /// Dedicated player with full lyrics — everything else goes away.
+    /// Full player opened from the Home media area.
     case media
+    /// Audio devices and per-app volume controls.
+    case audio
     /// Full-screen weather detail with an hourly forecast.
     case weather
     /// Week-at-a-glance calendar detail.
@@ -24,8 +26,6 @@ enum NotchTab: String {
     case tools
     case notes
     case telemetry
-    /// Output devices and the apps playing through them.
-    case audio
 }
 
 /// Root observable state for the notch UI. Owns every feature module and
@@ -40,9 +40,14 @@ final class NotchState {
     /// While pinned, the expanded panel ignores hover-out and outside clicks.
     var isPinned = false
 
-    /// Whether the player is showing the full lyrics panel, which makes the
-    /// panel taller. Held here because the size depends on it.
-    var mediaShowsFullLyrics = false
+    /// Whether the Now player is showing its lyrics row, which affects panel
+    /// height. Held here because the window size depends on it.
+    var mediaShowsFullLyrics = false {
+        didSet {
+            guard oldValue != mediaShowsFullLyrics, mode == .expanded else { return }
+            onModeChange?(mode)
+        }
+    }
 
     /// Whether the weather screen shows the five-day strip instead of hourly.
     /// Held here rather than in the view because the chips that toggle it sit
@@ -62,18 +67,34 @@ final class NotchState {
     /// are genuinely different shapes, and forcing both into one box shrank
     /// each past legibility.
     var expandedSize: CGSize {
-        var size = NotchSizing.openNotchSize(for: tab)
-        // Full lyrics need a panel to live in, so the player grows for them
-        // rather than squeezing a scrolling list into a 30pt strip.
-        if tab == .media, mediaShowsFullLyrics {
-            size.height += 110
-        }
+        var size = NotchSizing.openNotchSize(for: tab, showsLyrics: mediaShowsFullLyrics)
+        // The Now page reveals or hides its compact synced lyric line. Keep
+        // the panel fitted to that state so the blank area below the bar is
+        // removed when lyrics are off and restored when they are on.
         // Tabs whose content is a fixed column report their natural height
         // so the slab hugs whatever is showing instead of carrying a black
         // band under it. The measured height is clamped to the budget the
         // tab already had — the panel may shrink to its content, never grow
         // past today's size — and the width stays on the tuned per-tab value.
-        if NotchSizing.fitsHeight(for: tab) {
+        if tab == .media {
+            let minimumPlayerHeight: CGFloat = mediaShowsFullLyrics ? 255 : 220
+            let playerContentHeight: CGFloat = mediaShowsFullLyrics ? 255 : 220
+            size.height = max(size.height, minimumPlayerHeight, CGFloat(playerContentHeight) + topBarHeight + 6 + NotchSizing.openContentInset)
+        } else if tab == .audio, devicesSection == .now {
+            // Now is a short fixed column; the default Audio budget is sized
+            // for Library and Audio, so it top-aligns and leaves a band of
+            // empty panel beneath the heart/shuffle row. Hug the page instead
+            // (growing when the synced lyric line is toggled on) while keeping
+            // a thick safe inset below the row so it never sits on the slab's
+            // rounded bottom edge. The height is set outright, not bumped up
+            // with max, so the slab can shrink down to Now rather than being
+            // locked to the taller Audio budget.
+            let header = topBarHeight + 6 + NotchSizing.openContentInset
+            let moduleHeight = DevicesScreenMetrics.naturalNowHeight(
+                showsLyrics: mediaShowsFullLyrics
+            ) + DevicesScreenMetrics.bottomSafePadding
+            size.height = moduleHeight + header
+        } else if NotchSizing.fitsHeight(for: tab) {
             let header = topBarHeight + 6 + NotchSizing.openContentInset
             let budget = max(size.height - header, NotchSizing.minimumFittedModuleHeight)
             // Home's natural height is derived from its content rather than
@@ -209,7 +230,19 @@ final class NotchState {
     let spotify = SpotifyLibrary()
 
     /// Which screen of the Devices surface is showing.
-    var devicesSection: DevicesSection = .now
+    var devicesSection: DevicesSection = .now {
+        didSet {
+            // The Now page's lyric visibility is local to that page.
+            if oldValue == .now, devicesSection != .now {
+                mediaShowsFullLyrics = false
+            }
+            // The Devices subsections have different vertical budgets; keep
+            // the top edge fixed while the window grows or shrinks below it.
+            if mode == .expanded {
+                onModeChange?(mode)
+            }
+        }
+    }
 
     /// Which output surface the Audio screen is showing.
     var audioTab: AudioScreenTab = .apps
@@ -268,8 +301,7 @@ final class NotchState {
             self?.activities.showTrackChange(title: track.title, artist: track.artist)
         }
 
-        // The output meter is a screen-capture stream, so it runs only while
-        // something is actually playing and only if the user asked for it.
+        // The visualizer is data-only and does not capture screen pixels.
         media.onPlaybackStateChange = { [weak self] _ in
             self?.syncAudioMeter()
         }
@@ -330,8 +362,7 @@ final class NotchState {
 
     /// Starts or stops the real-time meter to match the setting and playback.
     func syncAudioMeter() {
-        // Automatically start real-time meter if permission is granted or setting is enabled
-        if SystemAudioMeter.hasPermission || settings.realtimeAudioMeter {
+        if settings.realtimeAudioMeter {
             if media.isPlaying || audioApps.isAnyAudioPlaying {
                 audioMeter.start()
             } else {
@@ -438,25 +469,32 @@ final class NotchState {
     /// split evenly into two wings, so each side must fit half of this.
     private var activityWingWidth: CGFloat {
         switch collapsedActivity {
-        // Cover on one side, visualiser on the other: neither needs the width
-        // the old glyph-and-temperature pair did.
-        case .music: 112
+        // Keep the established 18pt outer padding, but shorten the closed
+        // music pill again. 96 gives each wing 48pt: enough for the 22pt
+        // cover/visualiser plus the inset without adding unnecessary width.
+        case .music: 96
         // The lyric line lives under the notch and wants room to read; the
         // wings only carry the cover and the visualiser.
-        case .lyrics: 190
+        case .lyrics: 120
         // The charging popup drops a band beneath the notch (like the volume
         // HUD), so the wings only carry the notch's own row content.
-        case .battery(_, true, _): 132
+        case .battery(_, true, _): 82
         // These all drop a bar beneath the notch rather than splitting across
         // the wings, so the wings only carry what stays on the notch's own
         // row — the weather glyph and its temperature.
-        case .timer, .trackChange, .volume, .brightness,
-             .screenLock, .focusMode, .eyeBreak, .accessoryBattery, .meetingSoon:
-            132
+        case .timer, .trackChange, .screenLock, .focusMode, .eyeBreak,
+             .accessoryBattery, .meetingSoon:
+            82
+        // Volume and brightness should not make the closed notch narrower;
+        // their HUD drops below it, but the notch keeps the normal music-pill
+        // width while the indicator is visible.
+        case .volume, .brightness: 96
         // Stays in the wings, so it needs room for the label and the readout.
-        case .battery: 210
-        case .desktopChange: 110
-        case nil: settings.showCompactWeather ? 120 : 0
+        case .battery: 136
+        case .desktopChange: 68
+        // Idle compact weather needs a little more room for the temperature
+        // and its 18pt inset than music does.
+        case nil: settings.showCompactWeather ? 108 : 0
         }
     }
 
@@ -599,8 +637,8 @@ final class NotchState {
     func select(_ newTab: NotchTab) {
         withAnimation(NotchAnimations.content) {
             tab = newTab
-            // Leaving the player resets its lyrics panel, so returning to it
-            // does not reopen at the taller size unexpectedly.
+            // Leaving the player resets its lyric visibility, so returning
+            // to it does not reopen with a stale preference unexpectedly.
             if newTab != .media { mediaShowsFullLyrics = false }
         }
         settings.lastTab = newTab.rawValue
@@ -641,7 +679,7 @@ final class NotchState {
     // MARK: - App lifecycle
 
     /// Everything this app holds that the system would rather it gave back:
-    /// the capture stream, the CoreAudio listeners, the event tap and the
+    /// the audio listeners, the event tap and the
     /// module timers. Called on termination — a screen-capture stream that
     /// outlives the app keeps the recording indicator lit, and an event tap
     /// left enabled is a keystroke the next app does not get.
