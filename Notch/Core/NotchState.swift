@@ -236,7 +236,9 @@ final class NotchState {
     let timer = TimerManager()
     let eyeBreak = EyeBreakManager()
     let shortcuts = ShortcutsManager()
-    let audio = AudioOutputManager()
+    let audio = AudioOutputManager.shared
+    /// Microphone devices and levels — the Audio screen's input control.
+    let audioInput = AudioInputManager()
     let bluetooth = BluetoothBatteryMonitor()
     let brightness = BrightnessController()
     let quickActions = QuickActions()
@@ -301,6 +303,10 @@ final class NotchState {
         // to know the level before the notch has ever been opened, and this
         // adds no polling.
         audio.refresh()
+        audio.startListening()
+        audio.refreshAlertVolume()
+        // startListening does the initial refresh, then keeps it current.
+        audioInput.startListening()
 
         activities.onActivityChange = { [weak self] in
             guard let self else { return }
@@ -330,6 +336,11 @@ final class NotchState {
                 self.refreshAudioApps()
             }
             self.syncAudioMeter()
+        }
+        // Pinning an app keeps it listed; the monitor re-reads the list with
+        // the pinned set applied.
+        settings.onPinnedAudioAppsChanged = { [weak self] _ in
+            self?.refreshAudioApps()
         }
         audioApps.startObserving()
         settings.onRealtimeAudioMeterChanged = { [weak self] _ in

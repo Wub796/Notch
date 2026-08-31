@@ -55,6 +55,7 @@ struct AudioDevicesView: View {
     }
 
     @State private var appVolumes: [String: Float] = [:]
+    @State private var pairedBluetoothDevices: [BluetoothAudioDevices.PairedDevice] = []
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -69,6 +70,10 @@ struct AudioDevicesView: View {
                 case .airplay: airplayRows
                 case .spotify: spotifyRows
                 }
+
+                inputSection
+
+                bluetoothSection
             }
             .padding(.bottom, 6)
             // Rows arrive and leave as an app starts or stops making sound,
@@ -80,7 +85,11 @@ struct AudioDevicesView: View {
         }
         .notchScrollFade(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear { state.audio.refresh() }
+        .onAppear {
+            state.audio.refresh()
+            state.audioInput.refresh()
+            refreshPairedBluetooth()
+        }
         // Apps needs no timer at all any more: `AudioAppMonitor` listens to
         // CoreAudio and the list is already current when this appears. A
         // Connect device waking on the other side of the house is the one
@@ -146,7 +155,14 @@ struct AudioDevicesView: View {
 
     @ViewBuilder
     private var nowPlayingBanner: some View {
-        if state.media.isPlaying || activeAudioApp != nil {
+        // On the Apps tab the active app already appears as its own row (with
+        // the same transport buttons and its volume bar), so a banner on top
+        // would render the same app twice. Keep it for every other surface —
+        // the device lists there have no "now playing" row of their own — and
+        // for media with no app row at all (browser audio when per-process
+        // observation is unavailable).
+        let hasAppRow = state.audioTab == .apps && activeAudioApp != nil
+        if (state.media.isPlaying || activeAudioApp != nil) && !hasAppRow {
             HStack(spacing: 12) {
                 // Video thumbnail / Album art / App icon
                 Group {
@@ -204,8 +220,8 @@ struct AudioDevicesView: View {
                     }
 
                     RoundIconButton(
-                        systemImage: state.media.isPlaying && activeAudioApp == nil ? "play.fill" : "pause.fill",
-                        help: state.media.isPlaying && activeAudioApp == nil ? "Play" : "Pause"
+                        systemImage: state.media.isPlaying ? "pause.fill" : "play.fill",
+                        help: state.media.isPlaying ? "Pause" : "Play"
                     ) {
                         // No spring wrapper: the icon crossfades via
                         // contentTransition, press feedback via
@@ -419,8 +435,8 @@ struct SpotifyConnectPrompt: View {
                     onSelect: { app.activate() }
                 ) {
                     RoundIconButton(
-                        systemImage: app.isPlaying ? "play.fill" : "pause.fill",
-                        help: app.isPlaying ? "Play audio/video" : "Pause audio/video"
+                        systemImage: app.isPlaying ? "pause.fill" : "play.fill",
+                        help: app.isPlaying ? "Pause audio/video" : "Play audio/video"
                     ) {
                         state.media.togglePlayPause()
                     }
@@ -431,9 +447,20 @@ struct SpotifyConnectPrompt: View {
                         app.activate()
                     }
                     RoundIconButton(
-                        systemImage: "speaker.slash.fill",
-                        help: "Mute all output",
-                        tint: .red
+                        systemImage: isPinned(app.id) ? "pin.fill" : "pin",
+                        help: isPinned(app.id) ? "Unpin \(app.name)" : "Pin \(app.name)",
+                        tint: isPinned(app.id) ? .blue : nil
+                    ) {
+                        togglePin(app.id)
+                    }
+                    RoundIconButton(
+                        systemImage: state.audio.isMuted
+                            ? "speaker.wave.2.fill"
+                            : "speaker.slash.fill",
+                        help: state.audio.isMuted
+                            ? "Unmute all output"
+                            : "Mute all output",
+                        tint: state.audio.isMuted ? nil : .red
                     ) {
                         state.audio.toggleMute()
                     }
@@ -451,6 +478,132 @@ struct SpotifyConnectPrompt: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 2)
         }
+    }
+
+    // MARK: - Input (microphone) control
+
+    /// The input (mic) surface: every input device with a level slider on the
+    /// current one and a mute toggle — the FineTune-style mic control.
+    @ViewBuilder
+    private var inputSection: some View {
+        if !state.audioInput.devices.isEmpty {
+            VStack(alignment: .leading, spacing: NotchTheme.Space.s) {
+                sectionLabel("Microphone")
+
+                ForEach(state.audioInput.devices) { device in
+                    let isCurrent = device.id == state.audioInput.currentDeviceID
+                    AudioRow(
+                        icon: .symbol(device.symbolName),
+                        title: device.name,
+                        status: isCurrent
+                            ? (state.audioInput.isMuted ? "Muted" : "Input")
+                            : nil,
+                        statusIsLive: isCurrent && !state.audioInput.isMuted,
+                        level: isCurrent ? Double(state.audioInput.volume) : nil,
+                        isHighlighted: isCurrent,
+                        onLevelChange: isCurrent
+                            ? { state.audioInput.setVolume(Float($0)) }
+                            : nil,
+                        onSelect: { state.audioInput.select(device) }
+                    ) {
+                        RoundIconButton(
+                            systemImage: state.audioInput.isMuted
+                                ? "mic.slash.fill"
+                                : "mic.fill",
+                            help: state.audioInput.isMuted
+                                ? "Unmute microphone"
+                                : "Mute microphone",
+                            isEnabled: isCurrent
+                        ) {
+                            state.audioInput.toggleMute()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Paired Bluetooth devices
+
+    /// Paired-but-disconnected Bluetooth audio devices, offered so they can
+    /// be connected from the notch without opening System Settings.
+    @ViewBuilder
+    private var bluetoothSection: some View {
+        if !pairedBluetoothDevices.isEmpty {
+            VStack(alignment: .leading, spacing: NotchTheme.Space.s) {
+                sectionLabel("Paired Bluetooth")
+
+                ForEach(pairedBluetoothDevices) { device in
+                    HStack(spacing: 12) {
+                        Image(systemName: device.symbolName)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(NotchTheme.inkPrimary)
+                            .frame(width: 30, height: 30)
+                            .background(Circle().fill(NotchTheme.surfaceHover))
+                            .clipShape(Circle())
+
+                        Text(device.name)
+                            .font(.notchBody.weight(.bold))
+                            .foregroundStyle(NotchTheme.inkPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+
+                        Spacer(minLength: 8)
+
+                        Button("Connect") {
+                            BluetoothAudioDevices.connect(device)
+                            // Connection is asynchronous; refresh after a
+                            // beat so the device leaves the list once it
+                            // appears in CoreAudio.
+                            Task {
+                                try? await Task.sleep(for: .seconds(3))
+                                refreshPairedBluetooth()
+                            }
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                        .font(.notchCallout.weight(.semibold))
+                        .foregroundStyle(NotchTheme.inkPrimary)
+                    }
+                    .padding(.horizontal, NotchTheme.Space.m)
+                    .padding(.vertical, 10)
+                    .notchCard()
+                }
+            }
+        }
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.notchEyebrow)
+            .tracking(0.8)
+            .foregroundStyle(NotchTheme.inkMuted)
+            .padding(.horizontal, 4)
+    }
+
+    private func refreshPairedBluetooth() {
+        BluetoothAudioDevices.pairedAudioDevices { devices in
+            // @State's wrappedValue setter is nonmutating, so writing through
+            // the value-captured view struct still reaches the shared storage.
+            pairedBluetoothDevices = devices
+        }
+    }
+
+    // MARK: - Pinned apps
+
+    private var audioSettings: NotchSettings { .shared }
+
+    private func isPinned(_ id: String) -> Bool {
+        audioSettings.pinnedAudioApps.contains(id)
+    }
+
+    private func togglePin(_ id: String) {
+        var pinned = audioSettings.pinnedAudioApps
+        if let index = pinned.firstIndex(of: id) {
+            pinned.remove(at: index)
+        } else {
+            pinned.append(id)
+        }
+        audioSettings.pinnedAudioApps = pinned
     }
 
     private func emptyRow(_ text: String) -> some View {

@@ -256,6 +256,24 @@ final class NotchSettings {
     /// Quick action row on the Tools screen.
     var showQuickActions = true { didSet { save(showQuickActions, "showQuickActions") } }
 
+    /// When a new output device connects (a headset pairing, a USB DAC),
+    /// switch the system default to it automatically. Off by default: many
+    /// people prefer their desktop speakers to stay put.
+    var autoSwitchOutputOnConnect = false {
+        didSet { save(autoSwitchOutputOnConnect, "autoSwitchOutputOnConnect") }
+    }
+
+    /// Bundle IDs the user has pinned in the Audio screen; pinned apps stay
+    /// listed even while they are not making sound, so their volume can be
+    /// set up in advance.
+    var pinnedAudioApps: [String] = [] {
+        didSet {
+            UserDefaults.standard.set(pinnedAudioApps, forKey: "pinnedAudioApps")
+            onPinnedAudioAppsChanged?(pinnedAudioApps)
+        }
+    }
+    var onPinnedAudioAppsChanged: (([String]) -> Void)?
+
     // MARK: - Notch dimensions (manual overrides)
 
     /// Trims or extends the detected notch width, in points. Useful when the
@@ -458,6 +476,10 @@ final class NotchSettings {
         if defaults.object(forKey: "showQuickActions") != nil {
             showQuickActions = defaults.bool(forKey: "showQuickActions")
         }
+        if defaults.object(forKey: "autoSwitchOutputOnConnect") != nil {
+            autoSwitchOutputOnConnect = defaults.bool(forKey: "autoSwitchOutputOnConnect")
+        }
+        pinnedAudioApps = defaults.stringArray(forKey: "pinnedAudioApps") ?? []
         lastTab = defaults.string(forKey: "lastTab") ?? ""
         hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
 

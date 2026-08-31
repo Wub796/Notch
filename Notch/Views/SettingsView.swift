@@ -6,7 +6,7 @@ import SwiftUI
 /// each pane cramped, and the sidebar is the modern macOS settings idiom.
 struct SettingsView: View {
     private enum Pane: String, CaseIterable, Identifiable {
-        case general, notch, media, weather, activities, system, privacy, pro, about
+        case general, notch, media, weather, activities, system, privacy, about
 
         var id: String { rawValue }
 
@@ -590,9 +590,9 @@ private struct MediaSettingsPane: View {
             }
 
             SettingsCallout(
+                text: "Free, local: Notch reads and controls the Spotify app on this Mac. Tap Allow once.",
                 systemImage: "checkmark.shield.fill",
-                tint: .green,
-                text: "Free, local, no Premium: Notch reads and controls the Spotify app on this Mac. Tap Allow once."
+                tint: .green
             )
         }
     }
@@ -657,9 +657,9 @@ private struct MediaSettingsPane: View {
             }
 
             SettingsCallout(
+                text: "Free, local: Notch reads and controls the Music app on this Mac. Tap Allow once.",
                 systemImage: "checkmark.shield.fill",
-                tint: .blue,
-                text: "Free, local, no Apple Developer Program: Notch reads and controls the Music app on this Mac. Tap Allow once."
+                tint: .blue
             )
         }
     }
@@ -694,7 +694,10 @@ private struct MediaSettingsPane: View {
         isConnected: Bool,
         status: String,
         showsDivider: Bool,
-        @ViewBuilder action: () -> Action
+        // Escaping: the view built here is stored in SettingsRow's `trailing`
+        // closure property (stored closures are implicitly escaping) and
+        // rendered later, so the builder must outlive this call.
+        @ViewBuilder action: @escaping () -> Action
     ) -> some View {
         SettingsRow(systemImage: icon, tint: iconColor, title: name, subtitle: status, showsDivider: showsDivider) {
             HStack(spacing: 8) {
@@ -1188,6 +1191,32 @@ private struct SystemSettingsPane: View {
                 Label("Metrics Display", systemImage: "chart.line.uptrend.xyaxis")
             } footer: {
                 Text("Customizes which telemetry components appear in the System tab and main dashboard.")
+            }
+
+            Section {
+                Toggle("Switch to newly connected output devices", isOn: $settings.autoSwitchOutputOnConnect)
+
+                Slider(
+                    value: Binding(
+                        get: { Double(AudioOutputManager.shared.alertVolume) },
+                        set: { AudioOutputManager.shared.setAlertVolume(Float($0)) }
+                    ),
+                    in: 0...1
+                ) {
+                    Text("Alert Volume")
+                } minimumValueLabel: {
+                    Image(systemName: "speaker.fill")
+                } maximumValueLabel: {
+                    Image(systemName: "speaker.wave.3.fill")
+                }
+            } header: {
+                Label("Audio", systemImage: "speaker.wave.2.fill")
+            } footer: {
+                Text("Alert volume controls the volume macOS uses for notification sounds, matching System Settings → Sound. Auto-switch routes output to a device the moment it connects.")
+            }
+            .onAppear {
+                // AppleScript read is slow, so only refresh when the pane opens.
+                AudioOutputManager.shared.refreshAlertVolume()
             }
         }
         .formStyle(.grouped)

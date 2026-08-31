@@ -89,7 +89,8 @@ final class AudioAppMonitor {
                 apps = Self.fallbackApps(nowPlayingBundleID: nowPlayingBundleID, isPlaying: isPlaying)
             }
             DispatchQueue.main.async { [weak self] in
-                self?.apps = apps
+                guard let self else { return }
+                self.apps = self.withPinned(apps)
             }
         }
     }
@@ -254,7 +255,7 @@ final class AudioAppMonitor {
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.apps = apps
+            self.apps = self.withPinned(apps)
             if self.isAnyAudioPlaying != playing {
                 self.isAnyAudioPlaying = playing
             }
@@ -541,12 +542,40 @@ final class AudioAppMonitor {
         })
     }
 
-    /// Whatever is making sound sorts to the top, then alphabetically.
-    private static func sorted(_ apps: [App]) -> [App] {
+    /// Whatever is making sound sorts to the top, then pinned apps, then
+    /// alphabetically.
+    private static func sorted(_ apps: [App], pinned: Set<String> = []) -> [App] {
         apps.sorted {
-            $0.isPlaying == $1.isPlaying
-                ? $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                : $0.isPlaying
+            if $0.isPlaying != $1.isPlaying { return $0.isPlaying }
+            let pinnedA = pinned.contains($0.id)
+            let pinnedB = pinned.contains($1.id)
+            if pinnedA != pinnedB { return pinnedA }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
+    }
+
+    /// Merges the user's pinned apps into the live list: a pinned app that is
+    /// running but silent stays listed (at isPlaying = false) so its volume
+    /// can be configured in advance. Runs on main; the lookups are cheap.
+    private func withPinned(_ apps: [App]) -> [App] {
+        let pinned = Set(NotchSettings.shared.pinnedAudioApps)
+        guard !pinned.isEmpty else { return apps }
+
+        var byID = Dictionary(uniqueKeysWithValues: apps.map { ($0.id, $0) })
+        for id in pinned {
+            guard byID[id] == nil,
+                  let running = NSRunningApplication
+                    .runningApplications(withBundleIdentifier: id).first,
+                  let bundleID = running.bundleIdentifier
+            else { continue }
+            byID[id] = App(
+                id: bundleID,
+                name: running.localizedName ?? bundleID,
+                icon: running.icon,
+                isPlaying: false,
+                pid: running.processIdentifier
+            )
+        }
+        return Self.sorted(Array(byID.values), pinned: pinned)
     }
 }

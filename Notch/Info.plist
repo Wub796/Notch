@@ -47,6 +47,8 @@
 	<string>Notch needs full calendar access to display a scrolling timeline of the next 24 hours and detect meeting links.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Notch communicates with Music and Spotify to read the current track when system now-playing data is unavailable.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Notch lists your paired Bluetooth audio devices so you can connect them from the audio screen.</string>
 	<key>NSAppleMusicUsageDescription</key>
 	<string>Notch displays the current track, album artwork, and synchronized lyrics for the media you are playing.</string>
 	<key>NSLocationUsageDescription</key>

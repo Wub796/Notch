@@ -6,6 +6,9 @@ import Observation
 /// notch equivalent of Sapphire's audio device picker. Public API only.
 @Observable
 final class AudioOutputManager {
+    /// Shared instance: the system's audio state is one thing, and the
+    /// Settings pane and the notch both read it.
+    static let shared = AudioOutputManager()
     struct Device: Identifiable, Equatable {
         let id: AudioDeviceID
         let name: String
@@ -39,6 +42,10 @@ final class AudioOutputManager {
     private(set) var volume: Float = 0
     private(set) var isMuted = false
 
+    /// System alert (notification) volume, 0...1. Read and written through
+    /// AppleScript — no CoreAudio property exists for it.
+    private(set) var alertVolume: Float = 1
+
     /// State for the software mute fallback used on devices with no mute
     /// property of their own.
     private var softwareMuted = false
@@ -56,6 +63,13 @@ final class AudioOutputManager {
     /// Debounce: a single device change fires several notifications, and
     /// re-enumerating all devices for each one froze the UI.
     private var pendingRefresh: DispatchWorkItem?
+
+    /// The device set from the last enumeration, so a *new* device appearing
+    /// can be detected for the auto-switch feature.
+    private var lastSeenDeviceIDs: Set<AudioDeviceID> = []
+    /// False until the first enumeration completes, so the initial population
+    /// is never treated as a burst of new devices.
+    private var hasSeenDevices = false
 
     private static var defaultOutputAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultOutputDevice,
@@ -88,6 +102,52 @@ final class AudioOutputManager {
         refreshOnAudioQueue()
     }
 
+    /// Reads the current alert volume through AppleScript. Called on launch
+    /// and when the Settings pane opens; it is slow, so never per-frame.
+    func refreshAlertVolume() {
+        let script = NSAppleScript(source: "get alert volume of (get volume settings)")
+        var error: NSDictionary?
+        guard let result = script?.executeAndReturnError(&error) else { return }
+        let pct = Int(result.int32Value)
+        alertVolume = Float(pct) / 100.0
+    }
+
+    /// Debounce task for alert volume writes: `osascript` is heavy and the
+    /// slider re-fires the binding on every render, so writes are coalesced.
+    private var alertVolumeDebounceTask: Task<Void, Never>?
+
+    /// Sets the system alert volume through `osascript`. A subprocess rather
+    /// than in-process NSAppleScript: `set volume` silently fails under
+    /// Hardened Runtime even with the Apple Events entitlement (the same
+    /// restriction FineTune hit), while a child osascript bypasses it.
+    func setAlertVolume(_ volume: Float) {
+        let clamped = min(max(volume, 0), 1)
+        let pct = Int(round(clamped * 100))
+        let newVolume = Float(pct) / 100.0
+
+        // Deduplicate: the observable update re-renders the slider, which
+        // re-sends the same value; without this guard the debounce below
+        // never fires.
+        guard newVolume != alertVolume else { return }
+        alertVolume = newVolume
+
+        alertVolumeDebounceTask?.cancel()
+        alertVolumeDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled, let self else { return }
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            process.arguments = ["-e", "set volume alert volume \(pct)"]
+            do {
+                try process.run()
+            } catch {
+                // The slider is still optimistic; nothing else to do.
+            }
+            self.alertVolumeDebounceTask = nil
+        }
+    }
+
     private func refreshOnAudioQueue() {
         audioQueue.async { [weak self] in
             guard let self else { return }
@@ -116,12 +176,25 @@ final class AudioOutputManager {
                 isMuted = muted != 0
             }
 
+            let newIDs = Set(devices.map(\.id))
+            let appeared = newIDs.subtracting(self.lastSeenDeviceIDs)
+            self.lastSeenDeviceIDs = newIDs
+            let autoSwitchCandidate = devices.first { appeared.contains($0.id) }
+            let shouldAutoSwitch = self.hasSeenDevices
+                && autoSwitchCandidate != nil
+                && deviceID != autoSwitchCandidate?.id
+                && NotchSettings.shared.autoSwitchOutputOnConnect
+            self.hasSeenDevices = true
+
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.devices = devices
                 self.currentDeviceID = deviceID
                 self.volume = volume
                 self.isMuted = isMuted
+                if shouldAutoSwitch, let candidate = autoSwitchCandidate {
+                    self.select(candidate)
+                }
                 // Re-attach the volume listener for the new device — on the
                 // audio queue, not main.
                 self.audioQueue.async { self.attachVolumeListener() }
@@ -132,7 +205,8 @@ final class AudioOutputManager {
     /// Keeps the picker honest when the output changes anywhere else — a
     /// headset connecting, Sound settings, or another app. Without this the
     /// list only reflected whatever was true the last time the notch opened.
-    private func startListening() {
+    /// It also drives the auto-switch-to-connected-device feature.
+    func startListening() {
         guard !isListening else { return }
         isListening = true
 
