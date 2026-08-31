@@ -22,6 +22,14 @@ final class MediaRemoteAdapter {
         static let duration = "duration"
         static let elapsedTime = "elapsedTime"
         static let timestamp = "timestamp"
+        // Microsecond variants. The plain keys drop sub-second precision — the
+        // framework serializes `timestamp` truncated to whole seconds, which
+        // put the elapsed anchor ~0.5s behind real audio on average, and that
+        // lag showed up directly as delayed lyric highlighting. The stream
+        // runs with `--micros` so the capture time keeps its fraction.
+        static let durationMicros = "durationMicros"
+        static let elapsedTimeMicros = "elapsedTimeMicros"
+        static let timestampEpochMicros = "timestampEpochMicros"
         static let playbackRate = "playbackRate"
         static let artworkData = "artworkData"
         static let mediaType = "mediaType"
@@ -119,7 +127,10 @@ final class MediaRemoteAdapter {
         let newProcess = Process()
         let newPipe = Pipe()
         newProcess.executableURL = Self.perlURL()
-        newProcess.arguments = [script.path, framework.path, "stream"]
+        // `--micros` keeps the timestamp at microsecond precision; without it
+        // the framework truncates the capture time to whole seconds, which
+        // put the elapsed anchor ~0.5s behind the audio — late lyrics.
+        newProcess.arguments = [script.path, framework.path, "stream", "--micros"]
         newProcess.standardOutput = newPipe
         newProcess.standardError = FileHandle.nullDevice
         stopped = false
@@ -290,18 +301,28 @@ final class MediaRemoteAdapter {
         if let value = state[Key.album] as? String {
             info[MediaRemoteBridge.InfoKey.album] = value
         }
-        if let value = state[Key.duration] as? Double {
+        if let micros = Self.microsValue(state[Key.durationMicros]) {
+            info[MediaRemoteBridge.InfoKey.duration] = micros
+        } else if let value = state[Key.duration] as? Double {
             info[MediaRemoteBridge.InfoKey.duration] = value
         } else if let value = state[Key.duration] as? Int {
             info[MediaRemoteBridge.InfoKey.duration] = Double(value)
         }
-        if let value = state[Key.elapsedTime] as? Double {
+        if let micros = Self.microsValue(state[Key.elapsedTimeMicros]) {
+            info[MediaRemoteBridge.InfoKey.elapsedTime] = micros
+        } else if let value = state[Key.elapsedTime] as? Double {
             info[MediaRemoteBridge.InfoKey.elapsedTime] = value
         } else if let value = state[Key.elapsedTime] as? Int {
             info[MediaRemoteBridge.InfoKey.elapsedTime] = Double(value)
         }
-        if let rawTimestamp = state[Key.timestamp] as? String,
-           let date = Self.timestampDate(from: rawTimestamp) {
+        if let micros = state[Key.timestampEpochMicros] as? NSNumber {
+            // Epoch microseconds → the exact capture instant, sub-second
+            // fraction intact, so the extrapolated playhead agrees with the
+            // audio instead of trailing it by up to a second.
+            info[MediaRemoteBridge.InfoKey.timestamp] =
+                Date(timeIntervalSince1970: micros.doubleValue / 1_000_000)
+        } else if let rawTimestamp = state[Key.timestamp] as? String,
+                  let date = Self.timestampDate(from: rawTimestamp) {
             info[MediaRemoteBridge.InfoKey.timestamp] = date
         }
         if let value = state[Key.playbackRate] as? Double {
@@ -326,6 +347,12 @@ final class MediaRemoteAdapter {
             info[Key.mediaType] = type
         }
         return info
+    }
+
+    /// Converts a microsecond-valued payload number to seconds.
+    private static func microsValue(_ raw: Any?) -> TimeInterval? {
+        guard let number = raw as? NSNumber else { return nil }
+        return number.doubleValue / 1_000_000
     }
 
     /// Fresh formatters per call: parsing happens once per track change, and

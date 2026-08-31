@@ -6,15 +6,19 @@ import SwiftUI
 /// measurement (which never reliably landed, leaving a black band under the
 /// dashboard). Keep these in step with the layout below.
 enum HomeDashboardMetrics {
-    /// The artwork column alone: artwork plus the row spacing.
-    static let artworkColumnHeight: CGFloat = 88
-    /// A row of other-audio chips beneath the artwork, spacing included.
+    /// The full music column: the artwork/text row (88pt artwork, which is
+    /// the tallest row) plus the 6pt VStack gap and the transport row under
+    /// it (32pt buttons + 4pt top padding = 36pt). Only the artwork was
+    /// counted before, so the slab fitted 42pt short of its content and
+    /// clipped the transport row at the bottom.
+    static let musicColumnHeight: CGFloat = 130
+    /// A row of other-audio chips beneath the transports, spacing included.
     static let otherAudioChipsHeight: CGFloat = 26
 
     static func naturalHeight(hasOtherAudioChips: Bool) -> CGFloat {
         hasOtherAudioChips
-            ? artworkColumnHeight + otherAudioChipsHeight
-            : artworkColumnHeight
+            ? musicColumnHeight + otherAudioChipsHeight
+            : musicColumnHeight
     }
 }
 
@@ -79,10 +83,6 @@ struct HomeDashboardView: View {
         return "Nothing is playing"
     }
 
-    private var isAudioActive: Bool {
-        state.media.isPlaying || activeAudioApp != nil
-    }
-
     /// Apps currently putting audio out besides the one the hero card is
     /// already showing — the music source when a track is loaded, otherwise
     /// the first playing app. These are the YouTube / Chrome / Safari-style
@@ -123,12 +123,6 @@ struct HomeDashboardView: View {
                             .truncationMode(.tail)
                             .frame(maxWidth: 220, alignment: .leading)
 
-                        if isAudioActive {
-                            Image(systemName: "waveform")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(.green)
-                                .symbolEffect(.variableColor.iterative, options: .repeating)
-                        }
                     }
 
                     // Transport sits centred under the text block rather than

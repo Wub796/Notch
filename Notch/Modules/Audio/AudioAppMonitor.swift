@@ -483,7 +483,11 @@ final class AudioAppMonitor {
             guard !host.id.isEmpty, host.id != "com.apple.audio.CoreAudio" else { continue }
 
             objectsByBundle[host.id, default: []].insert(process.object)
-            let volumeObjects = Array(objectsByBundle[host.id]!)
+            // The key was just inserted (or already existed) above, so it is
+            // guaranteed present — but grab the set from the insertion itself
+            // rather than trusting a subscript that could force-unwrap.
+            let bundleObjects = objectsByBundle[host.id, default: []]
+            let volumeObjects = Array(bundleObjects)
 
             if let existing = byBundle[host.id] {
                 // Merge: keep isPlaying true if any of the bundle's clients is

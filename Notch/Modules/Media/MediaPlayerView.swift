@@ -85,10 +85,6 @@ struct MediaPlayerView: View {
         return "Nothing is playing"
     }
 
-    private var isAudioActive: Bool {
-        media.isPlaying || activeAudioApp != nil
-    }
-
     // MARK: - Header
 
     private var header: some View {
@@ -286,13 +282,6 @@ struct MediaPlayerView: View {
                 .font(.notchCallout.weight(.bold))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .lineLimit(1)
-
-            if isAudioActive && !isBrowserVideo {
-                Image(systemName: "waveform")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.green)
-                    .symbolEffect(.variableColor.iterative, options: .repeating)
-            }
 
             Spacer(minLength: 0)
         }

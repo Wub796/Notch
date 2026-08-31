@@ -150,7 +150,11 @@ enum NotchSizing {
     /// Each screen's natural size at the default width.
     private static func baseSize(for tab: NotchTab) -> CGSize {
         switch tab {
-        case .home: CGSize(width: 860, height: 205)
+        // 232 leaves the module budget room for the dashboard's tallest
+        // content — the music column (130) plus the other-audio chips row
+        // (26) and the header — so the home slab can hug its content without
+        // clipping the transport row or the chips.
+        case .home: CGSize(width: 860, height: 232)
         // The standalone compact media surface is no longer used; media opens
         // from the home card into the full player layout.
         case .media: CGSize(width: 900, height: 255)

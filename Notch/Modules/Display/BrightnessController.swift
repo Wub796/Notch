@@ -152,18 +152,14 @@ final class BrightnessController {
         }
     }
 
-    /// The smallest user-level brightness this Mac's display accepts.
-    ///
-    /// macOS ignores a literal `.0` write — the panel holds whatever level it
-    /// was already at, so lowering all the way to zero made the display stay
-    /// bright while the next read reported that stale brighter level (the
-    /// "it bounces back to 43%" jump). Anything just above zero is accepted
-    /// and dims the panel to near-black, which is what brightness tools write
-    /// for exactly this reason. We floor the write here and store what we
-    /// actually wrote, so the read-back after a write can never surface a
-    /// stale brighter level.
+    /// Fallback floor for brightness writes on systems that reject a literal
+    /// zero (older macOS versions hold the panel at its previous level rather
+    /// than dimming it). On macOS 27+ the DisplayServices user-scale pair
+    /// accepts a true `0` — verified empirically: writing 0 reads back 0 and
+    /// the panel goes truly black — so the floor is only used when a write
+    /// of zero is actually rejected. The linear-scale setters clamp on their
+    /// own (~6% user), so they keep the floor rather than attempting zero.
     private static let absoluteMinUserBrightness: Float = 0.02
-
     /// Writes through the same resolved API the reader uses. A linear-scale
     /// pair gets the user level converted to linear luminance first, so the
     /// reading stays where the slider said.
@@ -171,16 +167,19 @@ final class BrightnessController {
     /// Returns the level the caller asked for (clamped to 0–1) so the HUD can
     /// render the bar at the user's position — including right down to 0 —
     /// without re-reading the display afterwards, which is what surfaced a
-    /// stale brighter panel level as a "bounce back". The display itself gets
-    /// a tiny non-zero floor (`absoluteMinUserBrightness`) because a literal
-    /// zero write is rejected and holds the panel at its previous level; that
-    /// floor only affects what reaches the hardware, never what the slider
-    /// shows.
+    /// stale brighter panel level as a "bounce back". A request for exactly 0
+    /// is written as a literal zero through the DisplayServices user-scale
+    /// pair, which reaches real black on macOS 27+; on systems that reject it
+    /// the value is re-verified and a tiny floor (`absoluteMinUserBrightness`)
+    /// is substituted so a rejected write can't hold the panel at a brighter
+    /// level. The floor only affects what reaches the hardware, never what
+    /// the slider shows.
     @discardableResult
     func setBrightness(_ newValue: Float) -> Float {
         let clamped = min(max(newValue, 0), 1)
-        // Store the user-facing level as-is (so the bar tracks 0), and only
-        // floor the value actually handed to the display.
+        // Store the user-facing level as-is (so the bar tracks 0). Only the
+        // value handed to the display is floored, and the zero path bypasses
+        // the floor entirely to reach real black.
         brightness = clamped
         let writeValue = max(clamped, Self.absoluteMinUserBrightness)
         let id = displayID
@@ -190,7 +189,19 @@ final class BrightnessController {
         }
         switch api {
         case .displayServicesUser:
-            _ = dsSetBrightness?(id, writeValue)
+            if clamped == 0 {
+                // A literal zero write is what produces real black on macOS
+                // 27+. Older macOS rejects it; detect that by reading back
+                // and retry with the tiny floor instead of leaving the panel
+                // stuck at its previous level.
+                _ = dsSetBrightness?(id, 0)
+                var check: Float = 1
+                if dsGetBrightness?(id, &check) == 0, check > Self.absoluteMinUserBrightness {
+                    _ = dsSetBrightness?(id, Self.absoluteMinUserBrightness)
+                }
+            } else {
+                _ = dsSetBrightness?(id, writeValue)
+            }
         case .displayServicesLinear:
             _ = dsSetLinearBrightness?(id, Self.linearBrightness(forUserBrightness: writeValue))
         case .coreDisplayUser:

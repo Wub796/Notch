@@ -195,11 +195,6 @@ struct AudioDevicesView: View {
                             width: 240
                         )
                         .foregroundStyle(NotchTheme.inkPrimary)
-
-                        Image(systemName: "waveform")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.green)
-                            .symbolEffect(.variableColor.iterative, options: .repeating)
                     }
 
                     Text(audioBannerArtist)
@@ -683,20 +678,6 @@ struct AudioRow<Actions: View>: View {
                                 Text(status)
                                     .font(.notchFootnote.weight(.bold))
                                     .foregroundStyle(statusIsLive ? .green : NotchTheme.inkMuted)
-
-                                // A glyph that is actually moving while the
-                                // row is live, so "Playing" is something you
-                                // see rather than something you read.
-                                if statusIsLive {
-                                    Image(systemName: "waveform")
-                                        .font(.system(size: 9, weight: .bold))
-                                        .foregroundStyle(.green)
-                                        .symbolEffect(
-                                            .variableColor.iterative,
-                                            options: .repeating
-                                        )
-                                        .transition(.opacity)
-                                }
                             }
                         }
                     }

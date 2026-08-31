@@ -50,8 +50,9 @@ final class TimerManager {
             pausedRemaining += delta
             remaining = pausedRemaining
         } else if let deadline {
-            self.deadline = deadline.addingTimeInterval(delta)
-            remaining = max(self.deadline!.timeIntervalSinceNow, 0)
+            let newDeadline = deadline.addingTimeInterval(delta)
+            self.deadline = newDeadline
+            remaining = max(newDeadline.timeIntervalSinceNow, 0)
         } else {
             start(duration: delta)
             return

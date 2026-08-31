@@ -159,6 +159,12 @@ final class NotchState {
     /// itself to this and HomeDashboardView renders it, so there is one
     /// source of truth rather than two copies that can drift.
     var otherAudioApps: [AudioAppMonitor.App] {
+        // While a real music app (or a probed browser video) owns the
+        // now-playing session, the hero card already identifies the source —
+        // listing Chrome next to a Spotify cover is noise. The chips row is
+        // for when nothing tracked is showing and the hero falls back to
+        // "whatever is making sound".
+        guard !(media.hasTrack || media.isBrowserVideo) else { return [] }
         let playing = audioApps.apps.filter(\.isPlaying)
         guard !playing.isEmpty else { return [] }
         let heroID = media.sourceAppBundleID ?? playing[0].id

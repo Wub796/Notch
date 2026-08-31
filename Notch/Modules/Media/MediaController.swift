@@ -260,6 +260,7 @@ final class MediaController {
 
         if !rawState.isEmpty {
             let playing = rawState == "playing"
+            guard acceptPlaybackReport(playing) else { return }
             if !playing {
                 let pausedAt = position ?? currentElapsed
                 elapsedAnchor = pausedAt
@@ -472,7 +473,10 @@ final class MediaController {
             }
         }
 
-        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        // 0.1s keeps lyric highlighting within ~50ms of the LRC timestamp.
+        // A half-second tick quantized the highlight to every 0.5s beat,
+        // which read as lyrics arriving late on top of the anchor lag.
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             self?.tickProgress()
         }
         tickProgress()
@@ -514,7 +518,7 @@ final class MediaController {
 
         if wanted {
             guard lyricActivityTimer == nil else { return }
-            lyricActivityTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            lyricActivityTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
                 self?.tickCollapsedLyric()
             }
             tickCollapsedLyric()
@@ -547,7 +551,9 @@ final class MediaController {
         onNormalizedTrackChange?(normalizedTrack)
         // Lyric highlighting must never advance while playback is paused.
         guard isPlaying, !isBrowserVideo else { return }
-        lyrics.updateCurrentLine(for: displayedElapsed)
+        // Use the live extrapolated clock, not the stored display copy, so
+        // the highlight lands on the timestamp instead of one tick behind.
+        lyrics.updateCurrentLine(for: currentElapsed)
         reconcilePlaybackIfStale()
     }
 
@@ -584,6 +590,7 @@ final class MediaController {
                     self.anchorDate = Date()
                 }
                 if snapshot.isPlaying != self.isPlaying {
+                    guard self.acceptPlaybackReport(snapshot.isPlaying) else { return }
                     self.isPlaying = snapshot.isPlaying
                     self.updateLyricActivityTimer()
                 }
@@ -611,6 +618,8 @@ final class MediaController {
         // this, a delayed MediaRemote update leaves lyrics advancing while the
         // actual player is paused.
         updateLyricActivityTimer()
+        // Filter conflicting playback reports until one confirms this toggle.
+        armOptimisticWindow(newState)
 
         // 1. If music player is running/active, ALWAYS prioritize controlling the music player!
         let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
@@ -993,6 +1002,43 @@ final class MediaController {
         }
     }
 
+    // MARK: - Optimistic toggle window
+
+    /// After a user-initiated play/pause toggle, playback reports that
+    /// conflict with the optimistic state are ignored until one confirms it.
+    /// Players push stale now-playing diffs for a beat after a command — the
+    /// pre-toggle snapshot from the MediaRemote stream, a browser DOM read
+    /// that has not flipped yet — and those used to snap the transport icon
+    /// back and forth (pause → play → pause). The window ends the moment a
+    /// report agrees with the optimistic state or after it lapses.
+    private var optimisticPlaying: Bool?
+    private var optimisticWindowUntil: Date?
+
+    private func armOptimisticWindow(_ state: Bool) {
+        optimisticPlaying = state
+        optimisticWindowUntil = Date().addingTimeInterval(0.7)
+    }
+
+    /// Gateway for every playback-state report coming from the media sources
+    /// (MediaRemote stream, browser probe, distributed notifications).
+    /// Returns false — and the caller drops the write — when a report
+    /// contradicts an in-flight user toggle and is therefore stale.
+    private func acceptPlaybackReport(_ reported: Bool) -> Bool {
+        guard let optimistic = optimisticPlaying,
+              let until = optimisticWindowUntil
+        else {
+            optimisticPlaying = nil
+            optimisticWindowUntil = nil
+            return true
+        }
+        if Date() >= until || reported == optimistic {
+            optimisticPlaying = nil
+            optimisticWindowUntil = nil
+            return true
+        }
+        return false
+    }
+
     /// Sets `isPlaying` from an authoritative source (e.g. the toggle script's
     /// return value) and keeps the elapsed anchor consistent with the new
     /// state — freezing the position on pause, resetting the clock on resume.
@@ -1005,6 +1051,10 @@ final class MediaController {
             anchorDate = Date()
         }
         displayedElapsed = currentElapsed
+        // The toggle script's answer is the authoritative post-toggle state:
+        // rebase the window on it so later conflicting pushes are still
+        // filtered, but now against what the player really did.
+        armOptimisticWindow(playing)
         isPlaying = playing
         updateLyricActivityTimer()
     }
@@ -1496,6 +1546,7 @@ final class MediaController {
                 // even when the reported value matches our optimistic state.
                 // Always re-anchor and refresh the lyric timer so a paused
                 // player cannot leave lyric activity running.
+                guard self.acceptPlaybackReport(playing) else { return }
                 if !playing {
                     self.elapsedAnchor = self.currentElapsed
                     self.anchorDate = Date()
@@ -1623,18 +1674,23 @@ final class MediaController {
         }
         if let playbackRate {
             let playing = playbackRate > 0
-            if !playing {
-                // Capture the position before changing `isPlaying`, since
-                // `currentElapsed` otherwise uses the old running state.
-                let pausedAt = currentElapsed
-                elapsedAnchor = pausedAt
-                anchorDate = Date()
-                displayedElapsed = pausedAt
-            } else if !isPlaying {
-                anchorDate = Date()
+            // A stale diff riding in right after a user toggle must not flip
+            // the transport state; the metadata below still applies, so only
+            // the playback write is skipped, not the whole update.
+            if acceptPlaybackReport(playing) {
+                if !playing {
+                    // Capture the position before changing `isPlaying`, since
+                    // `currentElapsed` otherwise uses the old running state.
+                    let pausedAt = currentElapsed
+                    elapsedAnchor = pausedAt
+                    anchorDate = Date()
+                    displayedElapsed = pausedAt
+                } else if !isPlaying {
+                    anchorDate = Date()
+                }
+                isPlaying = playing
+                updateLyricActivityTimer()
             }
-            isPlaying = playing
-            updateLyricActivityTimer()
         }
 
         if let data = info[MediaRemoteBridge.InfoKey.artworkData] as? Data {
@@ -2452,7 +2508,9 @@ final class MediaController {
             elapsedAnchor = snapshot.elapsed
             anchorDate = Date()
         }
-        isPlaying = snapshot.isPlaying
+        if acceptPlaybackReport(snapshot.isPlaying) {
+            isPlaying = snapshot.isPlaying
+        }
         onNormalizedTrackChange?(normalizedTrack)
 
         let isNewTrack = snapshot.track != track
