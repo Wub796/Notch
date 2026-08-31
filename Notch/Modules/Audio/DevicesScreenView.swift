@@ -363,18 +363,20 @@ struct DevicesScreenView: View {
 
     private var transportRow: some View {
         HStack(spacing: 24) {
-            transportIcon(
-                state.mediaShowsFullLyrics
-                    ? "list.bullet.rectangle.fill"
-                    : "list.bullet.rectangle",
-                size: 15,
-                label: state.mediaShowsFullLyrics ? "Hide lyrics" : "Show lyrics",
-                tint: state.mediaShowsFullLyrics ? nil : NotchTheme.inkMuted
-            ) {
-                // Toggle the synced lyric line on the Now page without
-                // opening a separate text-only lyrics screen.
-                withAnimation(NotchAnimations.content) {
-                    state.mediaShowsFullLyrics.toggle()
+            if !media.isBrowserVideo && media.hasTrack {
+                transportIcon(
+                    state.mediaShowsFullLyrics
+                        ? "list.bullet.rectangle.fill"
+                        : "list.bullet.rectangle",
+                    size: 15,
+                    label: state.mediaShowsFullLyrics ? "Hide lyrics" : "Show lyrics",
+                    tint: state.mediaShowsFullLyrics ? nil : NotchTheme.inkMuted
+                ) {
+                    // Toggle the synced lyric line on the Now page without
+                    // opening a separate text-only lyrics screen.
+                    withAnimation(NotchAnimations.content) {
+                        state.mediaShowsFullLyrics.toggle()
+                    }
                 }
             }
 
@@ -419,33 +421,36 @@ struct DevicesScreenView: View {
         .frame(maxWidth: .infinity)
     }
 
+    @ViewBuilder
     private var bottomActions: some View {
-        HStack(spacing: 24) {
-            transportIcon(
-                media.isFavorite ? "heart.fill" : "heart",
-                size: 14,
-                label: media.isFavorite ? "Remove from favourites" : "Add to favourites",
-                tint: media.isFavorite ? .red : nil,
-                isEnabled: media.canFavorite
-            ) {
-                withAnimation(NotchAnimations.content) {
-                    media.toggleFavorite()
+        if !media.isBrowserVideo && media.hasTrack {
+            HStack(spacing: 24) {
+                transportIcon(
+                    media.isFavorite ? "heart.fill" : "heart",
+                    size: 14,
+                    label: media.isFavorite ? "Remove from favourites" : "Add to favourites",
+                    tint: media.isFavorite ? .red : nil,
+                    isEnabled: media.canFavorite
+                ) {
+                    withAnimation(NotchAnimations.content) {
+                        media.toggleFavorite()
+                    }
                 }
-            }
 
-            transportIcon(
-                media.isShuffling ? "shuffle.circle.fill" : "shuffle",
-                size: 14,
-                label: media.isShuffling ? "Turn off shuffle" : "Shuffle",
-                tint: media.isShuffling ? .blue : nil,
-                isEnabled: media.canControlTransport
-            ) {
-                withAnimation(NotchAnimations.content) {
-                    media.toggleShuffle()
+                transportIcon(
+                    media.isShuffling ? "shuffle.circle.fill" : "shuffle",
+                    size: 14,
+                    label: media.isShuffling ? "Turn off shuffle" : "Shuffle",
+                    tint: media.isShuffling ? .blue : nil,
+                    isEnabled: media.canControlTransport
+                ) {
+                    withAnimation(NotchAnimations.content) {
+                        media.toggleShuffle()
+                    }
                 }
             }
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity)
     }
 
     private func transportIcon(

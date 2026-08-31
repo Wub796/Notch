@@ -338,16 +338,18 @@ struct MediaPlayerView: View {
 
     private var transportRow: some View {
         HStack(spacing: 24) {
-            transportIcon(
-                state.mediaShowsFullLyrics
-                    ? "list.bullet.rectangle.fill"
-                    : "list.bullet.rectangle",
-                size: 15,
-                label: state.mediaShowsFullLyrics ? "Hide full lyrics" : "Show full lyrics",
-                tint: state.mediaShowsFullLyrics ? nil : NotchTheme.inkMuted
-            ) {
-                withAnimation(NotchAnimations.content) {
-                    state.mediaShowsFullLyrics.toggle()
+            if !media.isBrowserVideo && media.hasTrack {
+                transportIcon(
+                    state.mediaShowsFullLyrics
+                        ? "list.bullet.rectangle.fill"
+                        : "list.bullet.rectangle",
+                    size: 15,
+                    label: state.mediaShowsFullLyrics ? "Hide full lyrics" : "Show full lyrics",
+                    tint: state.mediaShowsFullLyrics ? nil : NotchTheme.inkMuted
+                ) {
+                    withAnimation(NotchAnimations.content) {
+                        state.mediaShowsFullLyrics.toggle()
+                    }
                 }
             }
 
@@ -396,41 +398,44 @@ struct MediaPlayerView: View {
     /// Spotify's Liked Songs when an account is connected — it is disabled
     /// rather than decorative when neither is available, because a control
     /// that only changes its own colour is worse than one that is greyed out.
+    @ViewBuilder
     private var bottomActions: some View {
-        HStack(spacing: 24) {
-            transportIcon(
-                media.isFavorite ? "heart.fill" : "heart",
-                size: 14,
-                label: media.isFavorite ? "Remove from favourites" : "Add to favourites",
-                tint: media.isFavorite ? .red : nil,
-                isEnabled: media.canFavorite
-            ) {
-                withAnimation(NotchAnimations.content) {
-                    media.toggleFavorite()
+        if !media.isBrowserVideo && media.hasTrack {
+            HStack(spacing: 24) {
+                transportIcon(
+                    media.isFavorite ? "heart.fill" : "heart",
+                    size: 14,
+                    label: media.isFavorite ? "Remove from favourites" : "Add to favourites",
+                    tint: media.isFavorite ? .red : nil,
+                    isEnabled: media.canFavorite
+                ) {
+                    withAnimation(NotchAnimations.content) {
+                        media.toggleFavorite()
+                    }
+                    state.showToast(
+                        media.isFavorite ? "Removed from favourites" : "Added to favourites",
+                        symbol: media.isFavorite ? "heart.slash" : "heart.fill"
+                    )
                 }
-                state.showToast(
-                    media.isFavorite ? "Removed from favourites" : "Added to favourites",
-                    symbol: media.isFavorite ? "heart.slash" : "heart.fill"
-                )
-            }
 
-            transportIcon(
-                media.isShuffling ? "shuffle.circle.fill" : "shuffle",
-                size: 14,
-                label: media.isShuffling ? "Turn off shuffle" : "Shuffle",
-                tint: media.isShuffling ? .blue : nil,
-                isEnabled: media.canControlTransport
-            ) {
-                withAnimation(NotchAnimations.content) {
-                    media.toggleShuffle()
+                transportIcon(
+                    media.isShuffling ? "shuffle.circle.fill" : "shuffle",
+                    size: 14,
+                    label: media.isShuffling ? "Turn off shuffle" : "Shuffle",
+                    tint: media.isShuffling ? .blue : nil,
+                    isEnabled: media.canControlTransport
+                ) {
+                    withAnimation(NotchAnimations.content) {
+                        media.toggleShuffle()
+                    }
+                    state.showToast(
+                        media.isShuffling ? "Shuffle off" : "Shuffle on",
+                        symbol: "shuffle"
+                    )
                 }
-                state.showToast(
-                    media.isShuffling ? "Shuffle off" : "Shuffle on",
-                    symbol: "shuffle"
-                )
             }
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity)
     }
 
     private func transportIcon(
