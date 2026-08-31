@@ -1429,6 +1429,7 @@ final class MediaController {
     /// provider is what the notch controls — so a playing Spotify/Music track
     /// demotes the source on the spot instead of losing to a YouTube tab.
     private func probeBrowserForPlayingMedia(avoidPrompt: Bool) {
+        if isPlaying && !isBrowserVideo { return }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             // With avoidPrompt, consent is pre-checked before any script
@@ -1447,6 +1448,9 @@ final class MediaController {
 
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.useMediaRemote else { return }
+                if self.isPlaying && !self.isBrowserVideo && !isPlayer {
+                    return
+                }
                 if isPlayer {
                     // The selected player is playing but MediaRemote couldn't
                     // see it — demote so the Apple Events path owns it from
@@ -1475,19 +1479,18 @@ final class MediaController {
     /// when the tab closes. MediaRemote never answers for browsers, so
     /// without this a closed tab would leave a ghost track on screen.
     private func tickBrowserProbe() {
-        // The timer only exists while the notch is open and MediaRemote is the
-        // source. It probes the browser every couple of seconds regardless of
-        // what is currently showing: gated MediaRemote never answers for
-        // browsers, so an open notch with a YouTube video running would
-        // otherwise sit on "Nothing Playing" forever — nothing would ever
-        // establish the browser track. avoidPrompt tracks isActive so the
-        // first open can raise the Automation consent prompt for the browser;
-        // a real player's track outranks a YouTube tab.
         guard useMediaRemote else { return }
+        // If a dedicated music player is actively playing, don't let browser probe hijack the session
+        if isPlaying && !isBrowserVideo {
+            return
+        }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let snapshot = self?.browserYouTubeSnapshot(avoidPrompt: false)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                if self.isPlaying && !self.isBrowserVideo {
+                    return
+                }
                 guard let snapshot else {
                     // Browser went away (tab closed) — clear only a track that
                     // actually came from the browser probe.
@@ -1496,10 +1499,6 @@ final class MediaController {
                     }
                     return
                 }
-                // YouTube is the preferred visible source in the media tabs.
-                // A browser result replaces stale Music/Spotify metadata while
-                // the video is playing, rather than waiting for the old track
-                // to disappear first.
                 self.isShowingBrowserSnapshot = true
                 self.isBrowserVideo = true
                 self.pendingClearWork?.cancel()

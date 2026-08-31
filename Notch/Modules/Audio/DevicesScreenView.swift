@@ -78,29 +78,21 @@ struct DevicesScreenView: View {
     }
 
     private var displayTitle: String {
-        // YouTube metadata is authoritative for browser video; otherwise
-        // active CoreAudio apps describe the Audio page's current source.
-        if media.isBrowserVideo, let title = media.track?.title, !title.isEmpty {
+        if let title = media.track?.title, !title.isEmpty {
             return title
         }
         if let active = activeAudioApp {
             return active.name
         }
-        if let title = media.track?.title, !title.isEmpty {
-            return title
-        }
         return "Nothing Playing"
     }
 
     private var displayArtist: String {
-        if media.isBrowserVideo, let artist = media.track?.artist, !artist.isEmpty {
+        if let artist = media.track?.artist, !artist.isEmpty {
             return artist
         }
         if activeAudioApp != nil {
             return "Active Audio"
-        }
-        if let artist = media.track?.artist, !artist.isEmpty {
-            return artist
         }
         return "Nothing is playing"
     }
@@ -241,16 +233,7 @@ struct DevicesScreenView: View {
 
     private var artwork: some View {
         Group {
-            if media.isBrowserVideo, let image = media.artwork {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else if let active = activeAudioApp, let icon = active.icon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .padding(14)
-            } else if let image = media.artwork {
+            if let image = media.artwork {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -260,6 +243,11 @@ struct DevicesScreenView: View {
                     .aspectRatio(contentMode: .fit)
                     .padding(14)
                     .background(Color.white.opacity(0.08))
+            } else if let active = activeAudioApp, let icon = active.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .padding(14)
             } else {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(Color.white.opacity(0.06))
