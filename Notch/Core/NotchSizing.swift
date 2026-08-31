@@ -21,6 +21,39 @@ enum NotchSizing {
     /// shadow is never clipped by the window bounds.
     static let shadowPadding: CGFloat = 20
 
+    // MARK: - Top-bar rail geometry
+
+    /// The open header's module rail controls are uniform. `NotchTopBarView`
+    /// sizes its icons and spacing to these, and `NotchState` floors the slab
+    /// width against them (see `topBarRailControlCount`), so the numbers live
+    /// in one place and a module switch can never crop the rail against the
+    /// hardware notch.
+    static let topBarRailIconSize: CGFloat = 28
+    static let topBarRailSpacing: CGFloat = 13
+
+    /// How many controls the home rail carries: the Home button, Settings, and
+    /// the four module icons in `NotchTopBarView.modules`. Keep in step with
+    /// that list. The slab-width floor needs it, so adding a rail control must
+    /// bump this number or narrow modules will start clipping the rail again.
+    static let topBarRailControlCount: Int = 6
+
+    /// Intrinsic width of the top-bar rail for `count` controls (icons plus
+    /// the gaps between them).
+    static func topBarRailWidth(controlCount: Int) -> CGFloat {
+        CGFloat(controlCount) * topBarRailIconSize
+            + CGFloat(max(controlCount - 1, 0)) * topBarRailSpacing
+    }
+
+    /// Whether a tab draws the full module rail (Home, Shelf, Clipboard,
+    /// Notes, Tools, Stats) rather than a detail header. Only these tabs need
+    /// the slab wide enough to hold the whole rail beside the hardware notch.
+    static func usesFullTopRail(for tab: NotchTab) -> Bool {
+        switch tab {
+        case .home, .shelf, .clipboard, .notes, .tools, .telemetry: true
+        default: false
+        }
+    }
+
     /// Album art in the two states, as in `MusicPlayerImageSizes`.
     enum ArtworkSizes {
         static let cornerRadius: (opened: CGFloat, closed: CGFloat) = (opened: 13, closed: 4)

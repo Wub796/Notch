@@ -30,6 +30,15 @@ enum NotchTheme {
     static let surfaceHover = Color.white.opacity(0.08)
     static let hairline = Color.clear
 
+    /// Whether the user has asked macOS to reduce on-screen transparency
+    /// (Accessibility → Display → Reduce Transparency). The notch's own
+    /// surface is solid black, but transient materials — the charging popup's
+    /// `.ultraThinMaterial`, any future frosted sheet — must frost over or go
+    /// solid under this preference rather than stay blurry.
+    static var prefersReducedTransparency: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+    }
+
     /// Accent derived from album artwork: the average color pushed into a
     /// saturation/brightness band that stays legible on black glass.
     /// Near-grayscale artwork falls back to a neutral white accent.

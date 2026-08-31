@@ -187,6 +187,10 @@ struct ScreenEmptyState: View {
     var caption: String?
     var tint: Color = NotchTheme.inkMuted
 
+    /// Drives the quiet fade-settle entrance. Empty states are occasional-to-
+    /// rare, so a brief entrance belongs; it must never bounce or pop.
+    @State private var isPresented = false
+
     var body: some View {
         VStack(spacing: NotchTheme.Space.s) {
             Image(systemName: symbol)
@@ -205,8 +209,17 @@ struct ScreenEmptyState: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .scaleEffect(isPresented ? 1 : 0.97)
+        .opacity(isPresented ? 1 : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
+        .onAppear {
+            // House content spring; collapses to a 150ms fade under Reduce
+            // Motion. Never scale(0) — nothing appears from nothing.
+            withAnimation(NotchAnimations.content) {
+                isPresented = true
+            }
+        }
     }
 }
 

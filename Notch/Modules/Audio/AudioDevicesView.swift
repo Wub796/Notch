@@ -207,9 +207,11 @@ struct AudioDevicesView: View {
                         systemImage: state.media.isPlaying && activeAudioApp == nil ? "play.fill" : "pause.fill",
                         help: state.media.isPlaying && activeAudioApp == nil ? "Play" : "Pause"
                     ) {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
-                            state.media.togglePlayPause()
-                        }
+                        // No spring wrapper: the icon crossfades via
+                        // contentTransition, press feedback via
+                        // PressableButtonStyle. Bounce on a frequent
+                        // transport control reads as jitter.
+                        state.media.togglePlayPause()
                     }
                 }
             }

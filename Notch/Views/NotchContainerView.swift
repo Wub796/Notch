@@ -34,6 +34,59 @@ struct NotchContainerView: View {
         .preferredColorScheme(.dark)
     }
 
+    /// The volume/brightness bar rendered while the notch is expanded, or nil
+    /// when no HUD activity is current. It floats just below the header strip
+    /// (which is `topBarHeight` tall) so it never covers the rail or a detail
+    /// screen's controls. Dragging the bar raises the matching activity again
+    /// so it tracks the finger, exactly like the closed HUD.
+    @ViewBuilder
+    private var expandedHUD: some View {
+        switch state.activities.transient {
+        case let .volume(level, muted):
+            DroppedHUDBar(
+                kind: .volume(muted: muted),
+                value: Binding(
+                    get: { CGFloat(muted ? 0 : level) },
+                    set: { newValue in
+                        let level = Float(newValue)
+                        state.audio.setVolume(level)
+                        state.activities.showVolume(level: level, muted: level == 0)
+                    }
+                ),
+                showsPercentage: state.settings.showHUDPercentage
+            )
+            .frame(height: 34)
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.black.opacity(0.55))
+            }
+            .padding(.top, state.topBarHeight + 6)
+            .padding(.horizontal, 16)
+        case let .brightness(level):
+            DroppedHUDBar(
+                kind: .brightness,
+                value: Binding(
+                    get: { CGFloat(level) },
+                    set: { newValue in
+                        let level = Float(newValue)
+                        state.brightness.setBrightness(level)
+                        state.activities.showBrightness(level: level)
+                    }
+                ),
+                showsPercentage: state.settings.showHUDPercentage
+            )
+            .frame(height: 34)
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.black.opacity(0.55))
+            }
+            .padding(.top, state.topBarHeight + 6)
+            .padding(.horizontal, 16)
+        default:
+            EmptyView()
+        }
+    }
+
     private var notchBody: some View {
         ZStack(alignment: .top) {
             slab
@@ -60,6 +113,17 @@ struct NotchContainerView: View {
                 ? NotchSizing.cornerRadiusInsets.opened.top + NotchSizing.openContentInset
                 : 0)
             .padding(.bottom, state.mode == .expanded ? NotchSizing.openContentInset : 0)
+            .overlay(alignment: .top) {
+                // When the notch is open, the volume/brightness HUD would
+                // otherwise be invisible — `collapsedActivity` only drives the
+                // closed/peek slab. Reuse the same dropped bar so a media-key
+                // tap shows its level while the panel is expanded too.
+                if state.mode == .expanded,
+                   let hud = expandedHUD {
+                    hud
+                        .transition(NotchAnimations.activitySwap)
+                }
+            }
             .frame(
                 height: state.mode == .expanded ? state.expandedSize.height : state.collapsedSize.height,
                 alignment: .top

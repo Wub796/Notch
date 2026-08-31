@@ -171,9 +171,8 @@ final class ShelfController {
         if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
             if isDirectory.boolValue {
                 detail = "Folder"
-            } else if let size = try? FileManager.default
-                .attributesOfItem(atPath: url.path)[.size] as? Int64 {
-                detail = sizeFormatter.string(fromByteCount: size)
+            } else if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                detail = sizeFormatter.string(fromByteCount: Int64(size))
             }
         }
         return Item(

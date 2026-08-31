@@ -43,14 +43,25 @@ struct ChargingPopupView: View {
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(
+                    NotchTheme.prefersReducedTransparency
+                        // Reduce Transparency asks for solid, not frosted: the
+                        // popup reads as a clean flat surface against whatever
+                        // is behind it instead of a half-blur the user has
+                        // explicitly reduced.
+                        ? AnyShapeStyle(Color.black.opacity(0.9))
+                        : AnyShapeStyle(.ultraThinMaterial)
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
         )
         .onAppear {
-            withAnimation(.easeOut(duration: 0.9)) {
+            // House content curve: fast, profile-aware, and it collapses to a
+            // 150ms fade under Reduce Motion. A 900ms ease-out reads sluggish
+            // against the springy pop-in of a transient status popup.
+            withAnimation(NotchAnimations.content) {
                 isFilled = true
             }
         }

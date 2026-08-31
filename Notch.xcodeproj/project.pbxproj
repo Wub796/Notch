@@ -148,7 +148,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -eu\nsource=\"$SRCROOT/Notch/MediaRemoteAdapter/MediaRemoteAdapter.framework\"\ndestination=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/MediaRemoteAdapter.framework\"\nmkdir -p \"$(dirname \"$destination\")\"\nrm -rf \"$destination\"\nditto \"$source\" \"$destination\"\n";
+			shellScript = "set -eu\nsource=\"$SRCROOT/Notch/MediaRemoteAdapter/MediaRemoteAdapter.framework\"\ndestination=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/MediaRemoteAdapter.framework\"\nmkdir -p \"$(dirname \"$destination\")\"\nrm -rf \"$destination\"\nditto \"$source\" \"$destination\"\n# The framework ships ad-hoc signed from the repo. Notarization rejects nested\n# executable content that is not signed with the app's own identity (ITMS-90683),\n# and Hardened Runtime secures the bundle against it too. Whenever this build is\n# being code-signed (Debug — including the ad-hoc ‘-’ Xcode applies — and any\n# Release/archive), re-sign the embedded copy with the app's signer so an archive\n# can pass. Guarded on CODE_SIGNING_ALLOWED so it is inert for unsigned drags.\nif [ \"${CODE_SIGNING_ALLOWED:-NO}\" != \"NO\" ] && [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-(none)}\" ]; then\n  /usr/bin/codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --timestamp=none \"$destination\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

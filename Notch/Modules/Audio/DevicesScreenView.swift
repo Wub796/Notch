@@ -6,14 +6,13 @@ import SwiftUI
 /// Outside the view for the same reason `AudioScreenTab` is: `NotchState`
 /// holds the selection, and it must not depend on a view type compiling.
 enum DevicesSection: String, CaseIterable, Identifiable {
-    case now, library, audio
+    case now, audio
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .now: "Now"
-        case .library: "Library"
         case .audio: "Audio"
         }
     }
@@ -21,7 +20,6 @@ enum DevicesSection: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .now: "music.note.list"
-        case .library: "books.vertical.fill"
         case .audio: "hifispeaker.fill"
         }
     }
@@ -32,10 +30,10 @@ enum DevicesSection: String, CaseIterable, Identifiable {
 /// HomeDashboardMetrics uses for the dashboard. Keep these in step with the
 /// layout below.
 ///
-/// Only Now swaps in its own budget: it is a short fixed column, while Library
-/// and Audio are content-filled surfaces that legitimately want the full Audio
-/// slab height. Sizing the whole tab to Now would starve those two, so the fit
-/// is scoped to this one section.
+/// Only Now swaps in its own budget: it is a short fixed column, while Audio is
+/// a content-filled surface that legitimately wants the full Audio slab height.
+/// Sizing the whole tab to Now would starve it, so the fit is scoped to this
+/// one section.
 enum DevicesScreenMetrics {
     /// The hero row (artwork, track info, account chip + section switch).
     static let heroRowHeight: CGFloat = 82
@@ -59,13 +57,12 @@ enum DevicesScreenMetrics {
 }
 
 /// The Devices screen: a title row, the account chip, the section switch, and
-/// whichever of the four screens is selected.
+/// whichever section is selected.
 ///
-/// Every screen here is live account data. Library and Discover come from the
-/// Spotify Web API and are empty until Spotify is connected — there is no demo
-/// content behind them. Audio's own four tabs mix the two worlds deliberately:
-/// Spotify Connect devices are the account's, while AirPlay, Apps and System
-/// are this Mac's, read from CoreAudio.
+/// Every screen here is live: Now tracks whatever is playing, and Audio's four
+/// tabs deliberately mix two worlds — Spotify Connect devices are remote/account
+/// driven, while AirPlay, Apps and System are this Mac's own, read from
+/// CoreAudio.
 struct DevicesScreenView: View {
     let state: NotchState
     let namespace: Namespace.ID
@@ -118,16 +115,12 @@ struct DevicesScreenView: View {
             if state.devicesSection == .now && state.mediaShowsFullLyrics && !media.isBrowserVideo {
                 centeredLyrics
                     .transition(.opacity)
-            } else if state.devicesSection == .library {
-                thinBottomBuffer
             }
 
             Group {
                 switch state.devicesSection {
                 case .now:
                     nowPlaybackSection
-                case .library:
-                    SpotifyLibraryScreen(state: state)
                 case .audio:
                     AudioDevicesView(state: state)
                 }
@@ -146,7 +139,6 @@ struct DevicesScreenView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
             spotify.refresh()
-            state.appleMusic.refresh()
         }
         .onChange(of: spotify.isConnected) { _, connected in
             if connected { spotify.refresh(force: true) }
@@ -206,15 +198,6 @@ struct DevicesScreenView: View {
         .transition(.opacity)
     }
 
-    private var thinBottomBuffer: some View {
-        Capsule()
-            .fill(Color.white.opacity(0.09))
-            .frame(width: 58, height: 3)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 2)
-            .accessibilityHidden(true)
-    }
-
     // MARK: - Now Playback Controls (Lifted Higher)
 
     private var nowPlaybackSection: some View {
@@ -233,35 +216,46 @@ struct DevicesScreenView: View {
 
     private var artwork: some View {
         Group {
-            if let image = media.artwork {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else if let icon = media.sourceAppIcon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .padding(14)
-                    .background(Color.white.opacity(0.08))
-            } else if let active = activeAudioApp, let icon = active.icon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .padding(14)
-            } else {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .overlay {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 30, weight: .medium))
-                            .foregroundStyle(NotchTheme.inkMuted)
-                    }
-            }
+            // Keyed on `artworkVersion` so a track change crossfades the
+            // cover instead of hard-cutting it; the stable outer container
+            // keeps the open/close `matchedGeometryEffect` morph intact.
+            artworkContent
+                .id(media.artworkVersion)
+                .transition(.opacity)
         }
         .frame(width: 76, height: 76)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: media.accent.opacity(0.38), radius: 14, y: 5)
+        .animation(NotchAnimations.content, value: media.artworkVersion)
+    }
+
+    @ViewBuilder
+    private var artworkContent: some View {
+        if let image = media.artwork {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else if let icon = media.sourceAppIcon {
+            Image(nsImage: icon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .padding(14)
+                .background(Color.white.opacity(0.08))
+        } else if let active = activeAudioApp, let icon = active.icon {
+            Image(nsImage: icon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .padding(14)
+        } else {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .overlay {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 30, weight: .medium))
+                        .foregroundStyle(NotchTheme.inkMuted)
+                }
+        }
     }
 
     private var artistRow: some View {
@@ -373,9 +367,10 @@ struct DevicesScreenView: View {
             }
 
             Button {
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
-                    media.togglePlayPause()
-                }
+                // The icon crossfades via contentTransition below; the press
+                // feedback comes from PressableButtonStyle. No spring wrapper:
+                // bounce on a frequent transport control reads as jitter.
+                media.togglePlayPause()
             } label: {
                 Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 20, weight: .bold))
@@ -560,392 +555,5 @@ struct DevicesScreenView: View {
         }
         .buttonStyle(PressableButtonStyle())
         .accessibilityAddTraits(isActive ? [.isSelected] : [])
-    }
-}
-
-// MARK: - Library
-
-/// The account's playlists as cards, in the sort the user picked. The one
-/// that is playing is tinted and offers to stop rather than start.
-struct SpotifyLibraryScreen: View {
-    let state: NotchState
-
-    private var spotify: SpotifyLibrary { state.spotify }
-    private var appleMusic: AppleMusicLibrary { state.appleMusic }
-    @State private var filterProvider: MusicProvider? = nil
-
-    private static let columns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
-    ]
-
-    private var hasAnyPlaylists: Bool {
-        !spotify.playlists.isEmpty || !spotify.savedTracks.isEmpty || !appleMusic.playlists.isEmpty
-    }
-
-    private var isLoading: Bool {
-        spotify.isLoadingLibrary || appleMusic.isLoading
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
-
-            Group {
-                if !hasAnyPlaylists {
-                    if isLoading {
-                        VStack(spacing: 8) {
-                            ProgressView().controlSize(.regular)
-                            Text("Loading your playlists & library…")
-                                .font(.notchBody)
-                                .foregroundStyle(NotchTheme.inkMuted)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        VStack(spacing: 12) {
-                            Image(systemName: "music.note.list")
-                                .font(.system(size: 32))
-                                .foregroundStyle(NotchTheme.inkMuted)
-                            Text("No playlists loaded yet.")
-                                .font(.notchHeadline)
-                                .foregroundStyle(NotchTheme.inkPrimary)
-                            Text("Open Apple Music or connect Spotify to load and access your playlists.")
-                                .font(.notchBody)
-                                .foregroundStyle(NotchTheme.inkSecondary)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: 340)
-
-                            VStack(spacing: 8) {
-                                HStack(spacing: 10) {
-                                    if !appleMusic.isMusicRunning {
-                                        Button("Open Apple Music") {
-                                            appleMusic.openMusicApp()
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                        .controlSize(.small)
-                                    } else if !appleMusic.isAuthorized {
-                                        Button("Grant Music Permission") {
-                                            IntegrationPermissions.shared.grantMusicAccess(for: .appleMusic)
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                        .controlSize(.small)
-                                    }
-
-                                    if !spotify.isConnected {
-                                        Button("Connect Spotify") {
-                                            SettingsWindowController.shared.show()
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .controlSize(.small)
-                                    }
-
-                                    Button("Refresh Library") {
-                                        spotify.refresh(force: true)
-                                        appleMusic.refresh(force: true)
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                                }
-                            }
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                } else {
-                    ScrollView(.vertical, showsIndicators: false) {
-                        LazyVGrid(columns: Self.columns, spacing: NotchTheme.Space.m) {
-                            // 1. Apple Music Playlists
-                            if filterProvider == nil || filterProvider == .appleMusic {
-                                ForEach(sortedAppleMusicPlaylists) { playlist in
-                                    AppleMusicPlaylistCard(
-                                        playlist: playlist,
-                                        isPlaying: state.media.isPlaying && (state.media.sourceAppBundleID == MusicProvider.appleMusic.bundleID || NotchSettings.shared.musicProvider == .appleMusic),
-                                        action: {
-                                            appleMusic.play(playlistName: playlist.name)
-                                        }
-                                    )
-                                }
-                            }
-
-                            // 2. Spotify Playlists & Saved Tracks
-                            if filterProvider == nil || filterProvider == .spotify {
-                                ForEach(spotify.savedTracks) { track in
-                                    SavedTrackCard(
-                                        track: track,
-                                        artwork: spotify.image(for: track.artworkURL),
-                                        action: { spotify.play(uri: track.uri) }
-                                    )
-                                }
-                                ForEach(spotify.sortedPlaylists) { playlist in
-                                    PlaylistCard(
-                                        playlist: playlist,
-                                        artwork: spotify.image(for: playlist.artworkURL),
-                                        isPlaying: isPlaying(playlist),
-                                        action: { spotify.play(uri: playlist.uri) }
-                                    )
-                                }
-                            }
-                        }
-                        .padding(.bottom, 10)
-                        .animation(.notchSpring, value: spotify.sortedPlaylists)
-                    }
-                    .notchScrollFade(12)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear {
-            spotify.refresh()
-            appleMusic.refresh()
-        }
-    }
-
-    private var sortedAppleMusicPlaylists: [AppleMusicPlaylist] {
-        switch spotify.sort {
-        case .name:
-            return appleMusic.playlists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        case .owner, .recents:
-            return appleMusic.playlists
-        }
-    }
-
-    /// The playing playlist, by the context the account reports — falling back
-    /// to what this app itself last started.
-    private func isPlaying(_ playlist: SpotifyClient.Playlist) -> Bool {
-        guard spotify.isPlayingRemotely || state.media.isPlaying else { return false }
-        return spotify.activeContextURI == playlist.uri
-    }
-
-    private var header: some View {
-        ScreenHeader("Library", subtitle: "Playlists sorted by \(spotify.sort.title)") {
-            HStack(spacing: 8) {
-                if !appleMusic.playlists.isEmpty && (!spotify.playlists.isEmpty || !spotify.savedTracks.isEmpty) {
-                    Picker("", selection: $filterProvider) {
-                        Text("All").tag(MusicProvider?.none)
-                        Text("Apple Music").tag(MusicProvider?.some(.appleMusic))
-                        Text("Spotify").tag(MusicProvider?.some(.spotify))
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 190)
-                }
-
-                Menu {
-                    ForEach(SpotifyLibrary.LibrarySort.allCases) { option in
-                        Button {
-                            withAnimation(NotchAnimations.content) { spotify.sort = option }
-                        } label: {
-                            if spotify.sort == option {
-                                Label(option.title, systemImage: "checkmark")
-                            } else {
-                                Text(option.title)
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: "arrow.up.arrow.down")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(spotify.sort.title)
-                            .font(.notchBody.weight(.bold))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .bold))
-                    }
-                    .foregroundStyle(NotchTheme.inkPrimary)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .accessibilityLabel("Sort playlists")
-            }
-        }
-    }
-}
-
-/// One playlist: cover, name, owner, and the button that starts it.
-struct PlaylistCard: View {
-    let playlist: SpotifyClient.Playlist
-    let artwork: NSImage?
-    let isPlaying: Bool
-    let action: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        HStack(spacing: 12) {
-            cover
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(playlist.name)
-                    .font(.notchHeadline)
-                    .foregroundStyle(isPlaying ? Color.green : NotchTheme.inkPrimary)
-                    .lineLimit(1)
-                Text(playlist.owner.isEmpty ? "\(playlist.trackCount) tracks" : playlist.owner)
-                    .font(.notchCallout)
-                    .foregroundStyle(NotchTheme.inkSecondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 6)
-
-            Button(action: action) {
-                ZStack {
-                    Circle()
-                        .fill(isPlaying ? Color.green.opacity(0.16) : Color.accentColor)
-                    if isPlaying {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Color.green)
-                            .symbolEffect(.pulse, options: .repeating)
-                    } else {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
-                }
-                .frame(width: 38, height: 38)
-                .contentShape(Circle())
-            }
-            .buttonStyle(PressableButtonStyle())
-            .accessibilityLabel(isPlaying ? "Now playing" : "Play \(playlist.name)")
-        }
-        .padding(10)
-        .notchCard(isHighlighted: isPlaying, tint: .green)
-        .background {
-            if isHovering, !isPlaying {
-                RoundedRectangle(cornerRadius: NotchTheme.Radius.card, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-            }
-        }
-        .onHover { isHovering = $0 }
-        .animation(NotchAnimations.content, value: isHovering)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var cover: some View {
-        Group {
-            if let artwork {
-                Image(nsImage: artwork).resizable().aspectRatio(contentMode: .fill)
-            } else {
-                RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .overlay {
-                        Image(systemName: "music.note.list")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(NotchTheme.inkMuted)
-                    }
-            }
-        }
-        .frame(width: 54, height: 54)
-        .clipShape(RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous))
-    }
-}
-
-struct SavedTrackCard: View {
-    let track: SpotifyClient.SavedTrack
-    let artwork: NSImage?
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Group {
-                    if let artwork {
-                        Image(nsImage: artwork).resizable().aspectRatio(contentMode: .fill)
-                    } else {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.white.opacity(0.08))
-                            .overlay { Image(systemName: "music.note") }
-                    }
-                }
-                .frame(width: 48, height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(track.title).font(.notchCallout.weight(.bold)).lineLimit(1)
-                    Text(track.artist).font(.notchCaption).foregroundStyle(NotchTheme.inkSecondary).lineLimit(1)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "play.fill").foregroundStyle(.green)
-            }
-            .padding(10)
-            .notchCard()
-        }
-        .buttonStyle(PressableButtonStyle())
-        .accessibilityLabel("Play \(track.title) by \(track.artist)")
-    }
-}
-
-/// Apple Music playlist card with gradient art, track count, and 1-click play button.
-struct AppleMusicPlaylistCard: View {
-    let playlist: AppleMusicPlaylist
-    let isPlaying: Bool
-    let action: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
-                    .fill(LinearGradient(
-                        colors: [
-                            Color(red: 250/255, green: 45/255, blue: 72/255),
-                            Color(red: 254/255, green: 74/255, blue: 104/255),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-                Image(systemName: playlist.isSmart ? "sparkles" : "music.note.list")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 54, height: 54)
-            .clipShape(RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(playlist.name)
-                    .font(.notchHeadline)
-                    .foregroundStyle(isPlaying ? Color.pink : NotchTheme.inkPrimary)
-                    .lineLimit(1)
-                Text("\(playlist.trackCount) tracks • Apple Music")
-                    .font(.notchCallout)
-                    .foregroundStyle(NotchTheme.inkSecondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 6)
-
-            Button(action: action) {
-                ZStack {
-                    Circle()
-                        .fill(isPlaying ? Color.pink.opacity(0.18) : Color.pink)
-                    if isPlaying {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Color.pink)
-                            .symbolEffect(.pulse, options: .repeating)
-                    } else {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
-                }
-                .frame(width: 38, height: 38)
-                .contentShape(Circle())
-            }
-            .buttonStyle(PressableButtonStyle())
-            .accessibilityLabel(isPlaying ? "Now playing" : "Play \(playlist.name)")
-        }
-        .padding(10)
-        .notchCard(isHighlighted: isPlaying, tint: .pink)
-        .background {
-            if isHovering, !isPlaying {
-                RoundedRectangle(cornerRadius: NotchTheme.Radius.card, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-            }
-        }
-        .onHover { isHovering = $0 }
-        .animation(NotchAnimations.content, value: isHovering)
-        .accessibilityElement(children: .combine)
     }
 }

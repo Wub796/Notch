@@ -40,7 +40,7 @@ struct MediaPlayerView: View {
             progressRow
 
             if state.mediaShowsFullLyrics && !media.isBrowserVideo {
-                LyricsView(lyrics: media.lyrics, accent: media.accent) { time in
+                LyricsView(lyrics: media.lyrics, accent: media.accent, isPlaying: media.isPlaying) { time in
                     media.seek(to: time + 0.05)
                 }
                 .frame(height: 90)
@@ -233,30 +233,44 @@ struct MediaPlayerView: View {
 
     private var artwork: some View {
         Group {
-            if let image = media.artwork {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else if let icon = media.sourceAppIcon ?? activeAudioApp?.icon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .padding(14)
-                    .background(Color.white.opacity(0.08))
-            } else {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .overlay {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 30, weight: .medium))
-                            .foregroundStyle(NotchTheme.inkMuted)
-                    }
-            }
+            // The crossfade lives inside the stable container: the outer
+            // frame/clip carries `matchedGeometryEffect` for the open/close
+            // morph, so a track change mid-transition must not tear it apart.
+            // Keying the inner content on `artworkVersion` makes the swap a
+            // brief opacity crossfade instead of a hard cut. NotchAnimations
+            // collapses to a short fade under Reduce Motion, per its contract.
+            artworkContent
+                .id(media.artworkVersion)
+                .transition(.opacity)
         }
         .frame(width: 78, height: 78)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: media.accent.opacity(0.38), radius: 14, y: 5)
+        .animation(NotchAnimations.content, value: media.artworkVersion)
+    }
+
+    @ViewBuilder
+    private var artworkContent: some View {
+        if let image = media.artwork {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else if let icon = media.sourceAppIcon ?? activeAudioApp?.icon {
+            Image(nsImage: icon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .padding(14)
+                .background(Color.white.opacity(0.08))
+        } else {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .overlay {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 30, weight: .medium))
+                        .foregroundStyle(NotchTheme.inkMuted)
+                }
+        }
     }
 
     private var artistRow: some View {
@@ -321,8 +335,10 @@ struct MediaPlayerView: View {
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .lineLimit(1)
             } else {
-                Text(media.hasTrack ? "♪" : " ")
-                    .font(.system(size: 14, weight: .bold))
+                // A track with no lyrics: a quiet music-note glyph rather
+                // than an empty lyric line.
+                Image(systemName: "music.note")
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(NotchTheme.inkMuted.opacity(0.5))
             }
         }
@@ -348,9 +364,10 @@ struct MediaPlayerView: View {
             }
 
             Button {
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
-                    media.togglePlayPause()
-                }
+                // The icon crossfades via contentTransition below; the press
+                // feedback comes from PressableButtonStyle. No spring wrapper:
+                // bounce on a frequent transport control reads as jitter.
+                media.togglePlayPause()
             } label: {
                 Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 20, weight: .bold))

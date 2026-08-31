@@ -116,6 +116,21 @@ final class NotchState {
             let clamped = min(max(natural, NotchSizing.minimumFittedModuleHeight), budget)
             size.height = clamped + header
         }
+
+        // Tabs that draw the full module rail must never be narrower than the
+        // rail + hardware notch + insets, or a switch to a narrow module (e.g.
+        // Notes) would slide the rightmost rail icons under the notch. Floor
+        // the slab's width so every rail control stays visible and clickable.
+        if NotchSizing.usesFullTopRail(for: tab) {
+            let insets = (NotchSizing.cornerRadiusInsets.opened.top
+                + NotchSizing.openContentInset) * 2
+            let minWidth = safeNotchSize.width
+                + NotchSizing.topBarRailWidth(
+                    controlCount: NotchSizing.topBarRailControlCount
+                ) * 2
+                + insets
+            size.width = max(size.width, minWidth)
+        }
         return size
     }
 
@@ -228,7 +243,6 @@ final class NotchState {
     let audioApps = AudioAppMonitor()
     let audioMeter = SystemAudioMeter()
     let spotify = SpotifyLibrary()
-    let appleMusic = AppleMusicLibrary()
 
     /// Which screen of the Devices surface is showing.
     var devicesSection: DevicesSection = .now {

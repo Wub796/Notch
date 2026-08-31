@@ -32,7 +32,7 @@ struct OnboardingView: View {
                     icon: "tray.and.arrow.down.fill",
                     tint: .blue,
                     title: "Shelf & AirDrop",
-                    caption: "Drop files onto the notch — hold, drag out, or send."
+                    caption: "Drop files onto the notch. Hold, drag out, or send."
                 )
                 featureRow(
                     icon: "calendar",
@@ -44,7 +44,7 @@ struct OnboardingView: View {
                     icon: "bolt.badge.clock",
                     tint: Color(red: 5 / 255, green: 150 / 255, blue: 105 / 255),
                     title: "Live activities",
-                    caption: "Volume, battery, meetings, and now playing — at a glance."
+                    caption: "Volume, battery, meetings, and now playing, at a glance."
                 )
             }
             .padding(.horizontal, 44)
@@ -105,7 +105,9 @@ struct OnboardingView: View {
                 .font(.system(size: 30, weight: .light))
                 .foregroundStyle(.white)
         }
-        .shadow(color: .black.opacity(0.5), radius: 14, y: 6)
+        // Diffuse ambient elevation rather than a hard drop: the mark should
+        // feel like it sits on the glass, not that it throws a shadow onto it.
+        .shadow(color: .black.opacity(0.28), radius: 22, y: 10)
     }
 
     private func featureRow(icon: String, tint: Color, title: String, caption: String) -> some View {
@@ -190,7 +192,7 @@ struct OnboardingView: View {
                     }
                 }
             }
-            Text("Optional — grant with one click or manage in System Settings → Privacy & Security.")
+            Text("Optional. Grant with one click or manage in System Settings → Privacy and Security.")
                 .font(.system(size: 9.5))
                 .foregroundStyle(.white.opacity(0.4))
         }

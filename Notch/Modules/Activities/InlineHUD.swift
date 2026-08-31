@@ -50,13 +50,19 @@ struct DraggableProgressBar: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { gesture in
-                        withAnimation(NotchAnimations.hudBar) {
-                            isDragging = true
-                            update(to: gesture.location.x, in: geometry)
-                        }
+                        // 1:1 tracking: the fill follows the pointer instantly.
+                        // No animation on the value while the finger is down —
+                        // a fixed-duration tween would chase the cursor instead
+                        // of sticking to it.
+                        isDragging = true
+                        update(to: gesture.location.x, in: geometry)
                     }
                     .onEnded { _ in
-                        withAnimation(NotchAnimations.hudBar) {
+                        // Settle the thickness change with the house spring
+                        // (profile-aware; collapses to a short fade under
+                        // Reduce Motion). The value itself is already where the
+                        // finger left it.
+                        withAnimation(NotchAnimations.content) {
                             isDragging = false
                         }
                     }

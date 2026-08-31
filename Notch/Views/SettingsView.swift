@@ -19,7 +19,6 @@ struct SettingsView: View {
             case .activities: "Activities"
             case .system: "System"
             case .privacy: "Privacy"
-            case .pro: "Pro"
             case .about: "About"
             }
         }
@@ -33,7 +32,6 @@ struct SettingsView: View {
             case .activities: "bolt.badge.clock"
             case .system: "gauge.with.dots.needle.50percent"
             case .privacy: "hand.raised"
-            case .pro: "sparkles"
             case .about: "info.circle"
             }
         }
@@ -47,7 +45,6 @@ struct SettingsView: View {
             case .activities: .orange
             case .system: .green
             case .privacy: .blue
-            case .pro: .purple
             case .about: .secondary
             }
         }
@@ -77,16 +74,20 @@ struct SettingsView: View {
                 .frame(width: 1)
 
             VStack(alignment: .leading, spacing: 0) {
-                // Header bar
-                HStack {
+                // Header bar with a hairline so the content begins on the
+                // same baseline as the sidebar, whichever pane is selected.
+                VStack(alignment: .leading, spacing: 10) {
                     Text(selection.title)
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(NotchTheme.inkPrimary)
-                    Spacer()
+
+                    Rectangle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(height: 1)
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 20)
-                .padding(.bottom, 12)
+                .padding(.bottom, 8)
 
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -121,7 +122,7 @@ struct SettingsView: View {
                     ForEach(visiblePanes) { pane in
                         let isSelected = selection == pane
                         Button {
-                            withAnimation(.easeInOut(duration: 0.12)) {
+                            withAnimation(NotchAnimations.content) {
                                 selection = pane
                             }
                         } label: {
@@ -159,17 +160,24 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var detail: some View {
-        switch selection {
-        case .general: GeneralSettingsPane()
-        case .notch: NotchSettingsPane()
-        case .media: MediaSettingsPane()
-        case .weather: WeatherSettingsPane()
-        case .activities: ActivitiesSettingsPane()
-        case .system: SystemSettingsPane()
-        case .privacy: PrivacySettingsPane()
-        case .pro: ProSettingsPane()
-        case .about: AboutSettingsPane()
+        // Crossfade on pane selection: panes swap in place, so a fade (never a
+        // slide/scale, which would imply spatial movement) bridges the swap.
+        // Driven by the sidebar's withAnimation(NotchAnimations.content);
+        // transitions retarget, so rapid clicking never stutters.
+        Group {
+            switch selection {
+            case .general: GeneralSettingsPane()
+            case .notch: NotchSettingsPane()
+            case .media: MediaSettingsPane()
+            case .weather: WeatherSettingsPane()
+            case .activities: ActivitiesSettingsPane()
+            case .system: SystemSettingsPane()
+            case .privacy: PrivacySettingsPane()
+            case .about: AboutSettingsPane()
+            }
         }
+        .id(selection)
+        .transition(.opacity)
     }
 }
 
@@ -235,7 +243,7 @@ private struct WeatherSettingsPane: View {
             } header: {
                 Text("Location")
             } footer: {
-                Text("Weather works without location access — the notch falls back to an approximate position from your network connection. Granting access makes it accurate to your city.")
+                Text("Weather works without location access. The notch falls back to an approximate position from your network connection. Granting access makes it accurate to your city.")
             }
         }
         .formStyle(.grouped)
@@ -477,8 +485,7 @@ private struct DimensionSliders: View {
             )
         } header: {
             Label("Closed Notch", systemImage: "ruler")
-        } footer: {
-            Text("Width and height trim the notch the app measured from your display — useful if the drawn pill doesn't quite cover the hardware.")
+        } footer: {                Text("Width and height trim the notch the app measured from your display. Use them if the drawn pill doesn't quite cover the hardware.")
         }
 
         Section {
@@ -535,13 +542,10 @@ private struct DimensionSliders: View {
 
 private struct MediaSettingsPane: View {
     @Bindable var settings = NotchSettings.shared
-    private var auth = SpotifyAuth.shared
     private var permissions = IntegrationPermissions.shared
-    @State private var showAdvancedSpotify = false
-    @State private var hasCopiedURI = false
 
     private var isSpotifyConnected: Bool {
-        permissions.musicStatus(for: .spotify) == .granted || auth.state == .signedIn
+        permissions.musicStatus(for: .spotify) == .granted
     }
 
     private var isAppleMusicConnected: Bool {
@@ -550,84 +554,12 @@ private struct MediaSettingsPane: View {
 
     var body: some View {
         SettingsPane {
-            musicProvidersSection
-
-            SettingsCard(title: "Preferred Player") {
-                SettingsRow(
-                    systemImage: "music.note.house.fill",
-                    tint: .pink,
-                    title: "Active Music Source",
-                    subtitle: "The notch follows and controls this music player.",
-                    showsDivider: false
-                ) {
-                    Picker("", selection: $settings.musicProvider) {
-                        ForEach(MusicProvider.allCases) { provider in
-                            Text(provider.title).tag(provider)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 160)
-                    .onChange(of: settings.musicProvider) { _, newValue in
-                        guard newValue != .automatic else { return }
-                        IntegrationPermissions.shared.request(.music)
-                    }
-                }
-            }
-
-            SettingsCard(title: "Closed Notch") {
-                toggleRow("rectangle.on.rectangle", .blue,
-                          "Cover and Visualiser While Playing", $settings.showMediaWings)
-                if settings.showMediaWings {
-                    SettingsRow(
-                        systemImage: "waveform",
-                        tint: .green,
-                        title: "For Any App Making Sound",
-                        subtitle: "Browsers, YouTube, games and calls too — not only the "
-                            + "player holding the now-playing session."
-                    ) {
-                        Toggle("", isOn: $settings.showWingsForAnyAudio)
-                            .labelsHidden().toggleStyle(.switch)
-                    }
-                }
-                toggleRow("quote.bubble.fill", .purple,
-                          "Live Lyric Line", $settings.lyricActivityEnabled)
-                SettingsRow(
-                    systemImage: "sparkles",
-                    tint: .orange,
-                    title: "Announce New Tracks",
-                    showsDivider: settings.sneakPeekEnabled
-                ) {
-                    Toggle("", isOn: $settings.sneakPeekEnabled)
-                        .labelsHidden().toggleStyle(.switch)
-                }
-
-                if settings.sneakPeekEnabled {
-                    SettingsSliderRow(
-                        title: "Announcement Duration",
-                        value: $settings.sneakPeekDuration,
-                        range: 2 ... 8,
-                        step: 0.5,
-                        format: { String(format: "%.1fs", $0) },
-                        showsDivider: false
-                    )
-                }
-            }
-
+            spotifyCard
+            appleMusicCard
+            preferredPlayerCard
+            closedNotchCard
             visualizerCard
-
-            SettingsCard(title: "Lyrics") {
-                toggleRow("text.quote", .teal,
-                          "Fetch Synchronised Lyrics from LRCLIB", $settings.fetchLyrics)
-                SettingsRow(
-                    systemImage: "arrow.down.circle",
-                    tint: .teal,
-                    title: "Auto-Scroll During Playback",
-                    showsDivider: false
-                ) {
-                    Toggle("", isOn: $settings.autoScrollLyrics)
-                        .labelsHidden().toggleStyle(.switch)
-                }
-            }
+            lyricsCard
         }
         .onAppear {
             permissions.refresh()
@@ -642,252 +574,225 @@ private struct MediaSettingsPane: View {
         }
     }
 
-    /// Redesigned Music Providers section with direct authorization buttons and live connection status.
-    private var musicProvidersSection: some View {
-        SettingsCard(title: "Music Providers") {
-            spotifyProviderRow
-            Divider().padding(.leading, 58)
-            appleMusicProviderRow
+    /// Spotify connects entirely through macOS Automation — system media keys,
+    /// MediaRemote and AppleScript. No Premium, no developer account, no OAuth.
+    private var spotifyCard: some View {
+        SettingsCard(title: "Spotify") {
+            providerHeader(
+                icon: "music.note.list",
+                iconColor: Color(red: 29/255, green: 185/255, blue: 84/255),
+                name: "Spotify",
+                isConnected: isSpotifyConnected,
+                status: spotifyStatusLine,
+                showsDivider: false
+            ) {
+                spotifyPrimaryButton
+            }
+
+            SettingsCallout(
+                systemImage: "checkmark.shield.fill",
+                tint: .green,
+                text: "Free, local, no Premium: Notch reads and controls the Spotify app on this Mac. Tap Allow once."
+            )
         }
     }
 
-    /// Spotify Provider Row: Instant 1-click connection for standard users, optional Web API for power users.
-    private var spotifyProviderRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color(red: 29/255, green: 185/255, blue: 84/255))
-                        .frame(width: 34, height: 34)
-                    Image(systemName: "music.note.list")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text("Spotify")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(NotchTheme.inkPrimary)
-
-                        if isSpotifyConnected {
-                            Text("Connected")
-                                .font(.system(size: 10, weight: .bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.green.opacity(0.18)))
-                                .foregroundStyle(.green)
-                        }
-                    }
-
-                    if isSpotifyConnected {
-                        if let name = auth.userProfile?.displayName {
-                            Text("Ready • Signed in as \(name) & syncs playback, artwork, scrubbing & lyrics.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        } else {
-                            Text("Ready • Automatically syncs playback, artwork, scrubbing & lyrics.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    } else if !IntegrationPermissions.isInstalled(.spotify) {
-                        Text("Spotify is not installed on this Mac.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    } else {
-                        Text("Click Allow to connect Spotify with Notch in one click.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-
-                Spacer(minLength: 8)
-
-                if isSpotifyConnected {
-                    Button("Open Spotify") {
-                        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: MusicProvider.spotify.bundleID) {
-                            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                } else if !IntegrationPermissions.isInstalled(.spotify) {
-                    Button("Get Spotify") {
-                        if let url = IntegrationPermissions.downloadURL(for: .spotify) {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                } else if permissions.pending.contains(.music) {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button("Allow / Connect") {
-                        permissions.grantMusicAccess(for: .spotify)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color(red: 29/255, green: 185/255, blue: 84/255))
-                    .controlSize(.small)
-                    .help("Opens Spotify and grants 1-click permission to Notch")
-                }
-            }
-
-            // Optional Web API for power users
-            DisclosureGroup(isExpanded: $showAdvancedSpotify) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Optional: Connect Spotify Web API to control remote Spotify Connect speakers when the Mac app is closed.")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
-
-                    if auth.state == .signedIn {
-                        HStack {
-                            Text("Signed in to Web API")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.green)
-                            Spacer()
-                            Button("Disconnect Web API") {
-                                withAnimation { auth.signOut() }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    } else {
-                        HStack(spacing: 8) {
-                            Button {
-                                NSWorkspace.shared.open(URL(string: "https://developer.spotify.com/dashboard")!)
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "arrow.up.right.square")
-                                        .font(.system(size: 10))
-                                    Text("1. Dashboard")
-                                        .font(.system(size: 10.5))
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-
-                            Button {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(SpotifyAuth.redirectURI, forType: .string)
-                                hasCopiedURI = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    hasCopiedURI = false
-                                }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: hasCopiedURI ? "checkmark" : "doc.on.doc")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(hasCopiedURI ? .green : .primary)
-                                    Text(hasCopiedURI ? "Copied URI!" : "2. Copy URI")
-                                        .font(.system(size: 10.5))
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-
-                            TextField("3. Client ID", text: Binding(
-                                get: { settings.spotifyClientID },
-                                set: { auth.clientID = $0 }
-                            ))
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 10.5).monospaced())
-
-                            Button("Connect") {
-                                auth.signIn()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Color(red: 29/255, green: 185/255, blue: 84/255))
-                            .controlSize(.small)
-                            .disabled(auth.clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
-                }
-                .padding(.top, 4)
-            } label: {
-                Text("Spotify Connect & Remote Speakers (Optional)")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.top, 2)
+    private var spotifyStatusLine: String {
+        if isSpotifyConnected {
+            return "Ready. Controlling Spotify on this Mac."
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        if !IntegrationPermissions.isInstalled(.spotify) {
+            return "Spotify isn't installed on this Mac."
+        }
+        return "Not connected yet. Allow Notch to control Spotify."
     }
 
-    /// Apple Music Provider Row: Direct 1-click authorization and status.
-    private var appleMusicProviderRow: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(LinearGradient(
-                        colors: [
-                            Color(red: 250/255, green: 45/255, blue: 72/255),
-                            Color(red: 254/255, green: 74/255, blue: 104/255),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-                    .frame(width: 34, height: 34)
-                Image(systemName: "apple.logo")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text("Apple Music")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(NotchTheme.inkPrimary)
-
-                    if isAppleMusicConnected {
-                        Text("Connected")
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.green.opacity(0.18)))
-                            .foregroundStyle(.green)
-                    }
-                }
-
-                if isAppleMusicConnected {
-                    Text("Ready • Controls playback, library tracks & artwork automatically.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                } else {
-                    Text("Click Allow to connect Apple Music with Notch in one click.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+    @ViewBuilder
+    private var spotifyPrimaryButton: some View {
+        if isSpotifyConnected {
+            Button("Open Spotify") {
+                if let url = NSWorkspace.shared
+                    .urlForApplication(withBundleIdentifier: MusicProvider.spotify.bundleID) {
+                    NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
                 }
             }
-
-            Spacer(minLength: 8)
-
-            if isAppleMusicConnected {
-                Button("Open Music") {
-                    NSWorkspace.shared.open(URL(string: "music://")!)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        } else if !IntegrationPermissions.isInstalled(.spotify) {
+            Button("Get Spotify") {
+                if let url = IntegrationPermissions.downloadURL(for: .spotify) {
+                    NSWorkspace.shared.open(url)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            } else if permissions.pending.contains(.music) {
-                ProgressView().controlSize(.small)
-            } else {
-                Button("Allow / Connect") {
-                    permissions.grantMusicAccess(for: .appleMusic)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        } else if permissions.pending.contains(.music) {
+            ProgressView().controlSize(.small)
+        } else {
+            Button("Allow") {
+                permissions.grantMusicAccess(for: .spotify)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color(red: 29/255, green: 185/255, blue: 84/255))
+            .controlSize(.small)
+            .help("Opens Spotify and lets Notch control it")
+        }
+    }
+
+    /// Apple Music needs no account or token — just Automation consent to read
+    /// and control the Music app on this Mac.
+    private var appleMusicCard: some View {
+        SettingsCard(title: "Apple Music") {
+            providerHeader(
+                icon: "apple.logo",
+                iconColor: Color(red: 250/255, green: 45/255, blue: 72/255),
+                name: "Apple Music",
+                isConnected: isAppleMusicConnected,
+                status: isAppleMusicConnected
+                    ? "Ready. Controls playback, library tracks and artwork automatically."
+                    : "Not connected yet. Allow Notch to read and control Apple Music.",
+                showsDivider: false
+            ) {
+                appleMusicPrimaryButton
+            }
+
+            SettingsCallout(
+                systemImage: "checkmark.shield.fill",
+                tint: .blue,
+                text: "Free, local, no Apple Developer Program: Notch reads and controls the Music app on this Mac. Tap Allow once."
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var appleMusicPrimaryButton: some View {
+        if isAppleMusicConnected {
+            Button("Open Music") {
+                NSWorkspace.shared.open(URL(string: "music://")!)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        } else if permissions.pending.contains(.music) {
+            ProgressView().controlSize(.small)
+        } else {
+            Button("Allow") {
+                permissions.grantMusicAccess(for: .appleMusic)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color(red: 250/255, green: 45/255, blue: 72/255))
+            .controlSize(.small)
+            .help("Opens Apple Music and lets Notch read and control it")
+        }
+    }
+
+    /// Shared header for a provider card: icon tile, name, a status line, and
+    /// the primary action on the trailing edge with a live status badge.
+    private func providerHeader<Action: View>(
+        icon: String,
+        iconColor: Color,
+        name: String,
+        isConnected: Bool,
+        status: String,
+        showsDivider: Bool,
+        @ViewBuilder action: () -> Action
+    ) -> some View {
+        SettingsRow(systemImage: icon, tint: iconColor, title: name, subtitle: status, showsDivider: showsDivider) {
+            HStack(spacing: 8) {
+                if isConnected {
+                    Text("Connected")
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.green.opacity(0.18)))
+                        .foregroundStyle(.green)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(red: 250/255, green: 45/255, blue: 72/255))
-                .controlSize(.small)
-                .help("Opens Apple Music and requests 1-click system permission")
+                action()
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+    }
+
+    private var preferredPlayerCard: some View {
+        SettingsCard(title: "Preferred Player") {
+            SettingsRow(
+                systemImage: "music.note.house.fill",
+                tint: .pink,
+                title: "Active Music Source",
+                subtitle: "The notch follows and controls this music player.",
+                showsDivider: false
+            ) {
+                Picker("", selection: $settings.musicProvider) {
+                    ForEach(MusicProvider.allCases) { provider in
+                        Text(provider.title).tag(provider)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 160)
+                .onChange(of: settings.musicProvider) { _, newValue in
+                    guard newValue != .automatic else { return }
+                    IntegrationPermissions.shared.request(.music)
+                }
+            }
+        }
+    }
+
+    private var closedNotchCard: some View {
+        SettingsCard(title: "Closed Notch") {
+            toggleRow("rectangle.on.rectangle", .blue,
+                      "Cover and Visualiser While Playing", $settings.showMediaWings)
+            if settings.showMediaWings {
+                SettingsRow(
+                    systemImage: "waveform",
+                    tint: .green,
+                    title: "For Any App Making Sound",
+                    subtitle: "Browsers, YouTube, games and calls too, not only the "
+                        + "player holding the now-playing session."
+                ) {
+                    Toggle("", isOn: $settings.showWingsForAnyAudio)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+            }
+            toggleRow("quote.bubble.fill", .purple,
+                      "Live Lyric Line", $settings.lyricActivityEnabled)
+            SettingsRow(
+                systemImage: "sparkles",
+                tint: .orange,
+                title: "Announce New Tracks",
+                showsDivider: settings.sneakPeekEnabled
+            ) {
+                Toggle("", isOn: $settings.sneakPeekEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+
+            if settings.sneakPeekEnabled {
+                SettingsSliderRow(
+                    title: "Announcement Duration",
+                    value: $settings.sneakPeekDuration,
+                    range: 2 ... 8,
+                    step: 0.5,
+                    format: { String(format: "%.1fs", $0) },
+                    showsDivider: false
+                )
+            }
+        }
+    }
+
+    private var lyricsCard: some View {
+        SettingsCard(title: "Lyrics") {
+            toggleRow("text.quote", .teal,
+                      "Fetch Synchronised Lyrics from LRCLIB", $settings.fetchLyrics)
+            SettingsRow(
+                systemImage: "arrow.down.circle",
+                tint: .teal,
+                title: "Auto-Scroll During Playback",
+                showsDivider: false
+            ) {
+                Toggle("", isOn: $settings.autoScrollLyrics)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+        }
     }
 
     /// The visualiser's source. The measured option is a real capture of the
@@ -905,7 +810,8 @@ private struct MediaSettingsPane: View {
                 showsDivider: settings.realtimeAudioMeter
             ) {
                 Toggle("", isOn: $settings.realtimeAudioMeter)
-                    .labelsHidden().toggleStyle(.switch)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
                     .onChange(of: settings.realtimeAudioMeter) { _, enabled in
                         guard enabled, !SystemAudioMeter.hasPermission else { return }
                         _ = SystemAudioMeter.requestPermission()
@@ -948,7 +854,9 @@ private struct MediaSettingsPane: View {
         _ symbol: String, _ tint: Color, _ title: String, _ binding: Binding<Bool>
     ) -> some View {
         SettingsRow(systemImage: symbol, tint: tint, title: title) {
-            Toggle("", isOn: binding).labelsHidden().toggleStyle(.switch)
+            Toggle("", isOn: binding)
+                .labelsHidden()
+                .toggleStyle(.switch)
         }
     }
 }
@@ -968,7 +876,8 @@ private struct ActivitiesSettingsPane: View {
                     subtitle: "Show volume and brightness in the notch instead."
                 ) {
                     Toggle("", isOn: $settings.hudReplacement)
-                        .labelsHidden().toggleStyle(.switch)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
                 }
                 SettingsRow(
                     systemImage: "percent",
@@ -977,7 +886,8 @@ private struct ActivitiesSettingsPane: View {
                     showsDivider: !needsAccessibility
                 ) {
                     Toggle("", isOn: $settings.showHUDPercentage)
-                        .labelsHidden().toggleStyle(.switch)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
                 }
 
                 if needsAccessibility {
@@ -1067,7 +977,8 @@ private struct ActivitiesSettingsPane: View {
                     showsDivider: false
                 ) {
                     Toggle("", isOn: $settings.autoClearShelf)
-                        .labelsHidden().toggleStyle(.switch)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
                 }
             }
         }
@@ -1084,7 +995,9 @@ private struct ActivitiesSettingsPane: View {
         _ binding: Binding<Bool>
     ) -> some View {
         SettingsRow(systemImage: symbol, tint: tint, title: title) {
-            Toggle("", isOn: binding).labelsHidden().toggleStyle(.switch)
+            Toggle("", isOn: binding)
+                .labelsHidden()
+                .toggleStyle(.switch)
         }
     }
 }
@@ -1263,7 +1176,7 @@ private struct SystemSettingsPane: View {
             } header: {
                 Label("Sampling Rate", systemImage: "gauge.with.dots.needle.50percent")
             } footer: {
-                Text("Telemetry hardware sensors only sample while the notch is expanded — zero CPU is consumed when collapsed.")
+                Text("Telemetry hardware sensors only sample while the notch is expanded. Zero CPU is consumed when collapsed.")
             }
 
             Section {
@@ -1278,205 +1191,6 @@ private struct SystemSettingsPane: View {
             }
         }
         .formStyle(.grouped)
-    }
-}
-
-// MARK: - Pro
-
-private struct ProSettingsPane: View {
-    private var license = LicenseManager.shared
-
-    @State private var keyInput = ""
-    @State private var showInvalidKey = false
-
-    private static let ctaGradient = LinearGradient(
-        colors: [
-            Color(red: 0.36, green: 0.53, blue: 1.0),
-            Color(red: 0.83, green: 0.45, blue: 0.94),
-        ],
-        startPoint: .leading,
-        endPoint: .trailing
-    )
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                if license.isPro {
-                    activeCard
-                } else {
-                    tierCards
-                    activationField
-                }
-
-                Text("License keys are validated locally in this build — connect a licensing backend before selling.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 30)
-            }
-            .padding(20)
-        }
-    }
-
-    private var tierCards: some View {
-        HStack(alignment: .top, spacing: 12) {
-            tierCard(
-                chip: "FREE TIER", chipTint: .green,
-                name: "Free", price: "$0", cadence: "forever",
-                features: [
-                    "Media hub & synced lyrics",
-                    "Shelf & AirDrop",
-                    "24-hour schedule",
-                    "Live activities & HUD",
-                    "System telemetry",
-                ],
-                highlighted: false
-            )
-
-            VStack(spacing: 0) {
-                Text("RECOMMENDED")
-                    .font(.system(size: 8.5, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(.blue))
-                    .offset(y: 9)
-                    .zIndex(1)
-
-                tierCard(
-                    chip: "PRO", chipTint: .blue,
-                    name: "Pro", price: "$14.99", cadence: "one-time",
-                    features: [
-                        "Everything in Free",
-                        "Priority feature requests",
-                        "Early access to new modules",
-                        "Supports development",
-                    ],
-                    highlighted: true
-                )
-            }
-        }
-    }
-
-    private func tierCard(
-        chip: String, chipTint: Color,
-        name: String, price: String, cadence: String,
-        features: [String],
-        highlighted: Bool
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(chip)
-                .font(.system(size: 9, weight: .heavy))
-                .foregroundStyle(chipTint)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(chipTint.opacity(0.15)))
-
-            Text(name)
-                .font(.system(size: 20, weight: .bold))
-
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(price)
-                    .font(.system(size: 24, weight: .heavy).monospacedDigit())
-                Text("/ \(cadence)")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(features, id: \.self) { feature in
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(highlighted ? .blue : .green)
-                        Text(feature)
-                            .font(.system(size: 10.5))
-                    }
-                }
-            }
-            .padding(.top, 2)
-
-            Spacer(minLength: 4)
-
-            if highlighted {
-                Button {
-                    NSWorkspace.shared.open(LicenseManager.purchaseURL)
-                } label: {
-                    Text("GET NOTCH PRO")
-                        .font(.system(size: 11, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 32)
-                        .background(Capsule().fill(Self.ctaGradient))
-                }
-                .buttonStyle(PressableButtonStyle())
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 230, alignment: .topLeading)
-        .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(highlighted ? .blue.opacity(0.6) : Color.primary.opacity(0.08), lineWidth: 1)
-        }
-    }
-
-    private var activationField: some View {
-        HStack(spacing: 8) {
-            TextField("NOTCH-XXXX-XXXX-XXXX", text: $keyInput)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 11).monospaced())
-            Button("Activate") {
-                switch LicenseManager.shared.activate(keyInput) {
-                case .activated:
-                    showInvalidKey = false
-                    keyInput = ""
-                case .invalidFormat:
-                    showInvalidKey = true
-                }
-            }
-            .disabled(keyInput.isEmpty)
-        }
-        .overlay(alignment: .bottomLeading) {
-            if showInvalidKey {
-                Text("That doesn't look like a valid key.")
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.red)
-                    .offset(y: 16)
-            }
-        }
-        .padding(.top, 2)
-    }
-
-    private var activeCard: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 34))
-                .foregroundStyle(.blue)
-                .padding(.top, 20)
-            Text("Notch Pro is active")
-                .font(.system(size: 17, weight: .bold))
-            if let key = license.maskedKey {
-                Text(key)
-                    .font(.system(size: 11).monospaced())
-                    .foregroundStyle(.secondary)
-            }
-            Text("Thank you for supporting development.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-            Button("Deactivate License") {
-                LicenseManager.shared.deactivate()
-            }
-            .padding(.top, 6)
-        }
-        .frame(maxWidth: .infinity, minHeight: 230)
-        .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
-        }
     }
 }
 

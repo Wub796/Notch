@@ -40,7 +40,7 @@ struct CollapsedNotchView: View {
                     droppedRow(
                         symbol: "music.note",
                         tint: state.media.accent,
-                        label: artist.isEmpty ? title : "\(title) — \(artist)",
+                        label: artist.isEmpty ? title : "\(title) - \(artist)",
                         value: nil
                     )
                 }
@@ -373,26 +373,36 @@ struct CollapsedNotchView: View {
     /// making it.
     private var miniArtwork: some View {
         Group {
-            if let artwork = state.media.artwork {
-                Image(nsImage: artwork)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else if let icon = state.audioApps.apps.first(where: \.isPlaying)?.icon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(NotchTheme.surfaceHover)
-                    .overlay {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 10))
-                            .foregroundStyle(NotchTheme.inkSecondary)
-                    }
-            }
+            // A 22pt wing tile: a full crossfade would strobe at this size,
+            // so the swap is a short opacity blend keyed on `artworkVersion`.
+            miniArtworkContent
+                .id(state.media.artworkVersion)
+                .transition(.opacity)
         }
         .frame(width: 22, height: 22)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .animation(NotchAnimations.activity, value: state.media.artworkVersion)
         .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var miniArtworkContent: some View {
+        if let artwork = state.media.artwork {
+            Image(nsImage: artwork)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else if let icon = state.audioApps.apps.first(where: \.isPlaying)?.icon {
+            Image(nsImage: icon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        } else {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(NotchTheme.surfaceHover)
+                .overlay {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 10))
+                        .foregroundStyle(NotchTheme.inkSecondary)
+                }
+        }
     }
 }

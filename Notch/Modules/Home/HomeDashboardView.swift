@@ -142,9 +142,11 @@ struct HomeDashboardView: View {
                             size: 18,
                             label: state.media.isPlaying ? "Pause" : "Play"
                         ) {
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) {
-                                state.media.togglePlayPause()
-                            }
+                            // No spring wrapper: the icon crossfades via
+                            // contentTransition, press feedback via
+                            // PressableButtonStyle. Bounce on a frequent
+                            // transport control reads as jitter.
+                            state.media.togglePlayPause()
                         }
                         transportButton("forward.fill", size: 15, label: "Next track") {
                             state.media.nextTrack()
@@ -208,45 +210,57 @@ struct HomeDashboardView: View {
 
     private var artwork: some View {
         Group {
-            if state.media.isBrowserVideo, let image = state.media.artwork {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else if let image = state.media.artwork {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else if let icon = state.media.sourceAppIcon ?? activeAudioApp?.icon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .padding(14)
-                    .background(Color.white.opacity(0.08))
-            } else {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .overlay {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 26, weight: .medium))
-                            .foregroundStyle(NotchTheme.inkMuted)
-                    }
-            }
+            // Keyed on `artworkVersion` so the cover crossfades on track
+            // change; the stable container below keeps the open/close morph
+            // and the source-app badge fixed while the image swaps.
+            artworkContent
+                .id(state.media.artworkVersion)
+                .transition(.opacity)
         }
         .frame(width: 88, height: 88)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: state.media.accent.opacity(0.38), radius: 12, y: 4)
+        .animation(NotchAnimations.content, value: state.media.artworkVersion)
         .overlay(alignment: .bottomTrailing) {
             if let icon = state.media.sourceAppIcon ?? (state.media.artwork != nil ? activeAudioApp?.icon : nil) {
                 Image(nsImage: icon)
                     .resizable()
                     .frame(width: 20, height: 20)
                     .clipShape(Circle())
+
                     .overlay { Circle().stroke(.black, lineWidth: 1.5) }
                     .offset(x: 4, y: 4)
                     .help(state.media.sourceAppName ?? "")
                     .accessibilityLabel("Playing in \(state.media.sourceAppName ?? "another app")")
             }
+        }
+    }
+
+    @ViewBuilder
+    private var artworkContent: some View {
+        if state.media.isBrowserVideo, let image = state.media.artwork {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else if let image = state.media.artwork {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else if let icon = state.media.sourceAppIcon ?? activeAudioApp?.icon {
+            Image(nsImage: icon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .padding(14)
+                .background(Color.white.opacity(0.08))
+        } else {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .overlay {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 26, weight: .medium))
+                        .foregroundStyle(NotchTheme.inkMuted)
+                }
         }
     }
 

@@ -151,6 +151,6 @@ private struct ShelfItemCard: View {
                 state.showToast("Removed from shelf", symbol: "trash")
             }
         }
-        .help("\(item.name) — double-click to open")
+        .help("\(item.name). Double-click to open")
     }
 }

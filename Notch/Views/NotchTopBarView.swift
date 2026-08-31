@@ -54,6 +54,18 @@ struct NotchTopBarView: View {
         // Keep the rail icons at their standard size; selected modules widen
         // the slab rather than shrinking the controls.
         HStack(spacing: railSpacing) {
+            // A dedicated Home rail icon: while it's a single click that is
+            // always there, the module icons also return home on a second tap.
+            NotchIconButton(
+                systemImage: state.tab == .home ? "house.fill" : "house",
+                isActive: state.tab == .home,
+                help: state.tab == .home ? "Home" : "Back to Home",
+                activeTint: .blue,
+                size: railIconSize
+            ) {
+                state.select(.home)
+            }
+
             NotchIconButton(
                 systemImage: "gearshape",
                 isActive: false,
@@ -82,8 +94,10 @@ struct NotchTopBarView: View {
         }
     }
 
-    private let railIconSize: CGFloat = 28
-    private let railSpacing: CGFloat = 13
+    /// Shared with `NotchState`'s slab-width floor (NotchSizing), so a rail
+    /// control can never be cropped against the hardware notch.
+    private let railIconSize: CGFloat = NotchSizing.topBarRailIconSize
+    private let railSpacing: CGFloat = NotchSizing.topBarRailSpacing
 
     /// Three status controls, as in the reference: the battery pill, the
     /// active Focus, and keep-awake.

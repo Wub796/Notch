@@ -39,6 +39,13 @@ source, falling back to the Apple Events path only if the adapter fails its
    (`MediaRemoteAdapter/MediaRemoteAdapter.framework`) and the `ditto` source
    path.
 
+   **After the copy the same script re-signs the framework with the app's own
+   identity** (`codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}"`),
+   guarded on `CODE_SIGNING_ALLOWED`. The checked-in framework is ad-hoc
+   signed, and nested executable content must carry the Developer ID of the
+   archive itself or notarization rejects the build (ITMS-90683). Keep this
+   re-sign step if you change the embed script.
+
 2. **The framework binary has its minos patched to 14.0.** The original build
    declares `LC_BUILD_VERSION` minos 26.0. The patch was originally needed to
    link against this app's macOS 14.0 deployment target; now that the

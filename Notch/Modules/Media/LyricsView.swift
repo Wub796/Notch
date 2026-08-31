@@ -6,6 +6,7 @@ import SwiftUI
 struct LyricsView: View {
     let lyrics: LyricsEngine
     let accent: Color
+    let isPlaying: Bool
     let onSelect: (TimeInterval) -> Void
 
     var body: some View {
@@ -78,7 +79,7 @@ struct LyricsView: View {
                 )
             }
             .onChange(of: lyrics.currentIndex) { _, index in
-                guard let index else { return }
+                guard isPlaying, let index else { return }
                 withAnimation(.notchSpring) {
                     proxy.scrollTo(index, anchor: .center)
                 }

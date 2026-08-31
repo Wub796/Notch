@@ -100,7 +100,6 @@ Notch/
 │   ├── NotchTheme.swift          Design tokens, artwork accent extraction, haptics
 │   ├── IntegrationPermissions.swift  Cached, live authorization status per integration
 │   ├── HotKeyManager.swift       Carbon RegisterEventHotKey (no Accessibility needed)
-│   ├── LicenseManager.swift      Offline key validation for the paid tier
 │   └── KeepAwakeController.swift IOKit power assertion toggle
 ├── Views/
 │   ├── NotchShape.swift          Animatable notch silhouette (flared top, curved bottom)
@@ -316,16 +315,6 @@ public APIs:
 
 The unported items all need a privileged helper, a private framework, or a
 third-party service — deliberate omissions, not oversights.
-
-## Monetization scaffold
-
-Settings → Pro contains a pricing pane (Free vs. Pro cards with a gradient
-CTA, styled after the reference) backed by `LicenseManager`: license keys in
-the `NOTCH-XXXX-XXXX-XXXX` format are validated **locally only** and persist
-in defaults. Before selling, point `LicenseManager.purchaseURL` at your store
-and replace `validate(_:)` with a real backend check (Paddle, Lemon Squeezy,
-or your own). No current features are gated — `isPro` is the hook for future
-pro-only modules.
 
 ## Shipping checklist
 

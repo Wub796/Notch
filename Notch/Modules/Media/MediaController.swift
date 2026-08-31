@@ -60,6 +60,14 @@ final class MediaController {
     private(set) var accent: Color = .white
     private var accentSourceHash: Int?
 
+    /// Bumped whenever a genuinely *different* artwork image replaces the
+    /// current one. Views key their artwork crossfade on this value, so the
+    /// 2s browser probe re-downloading the same thumbnail (and MediaRemote
+    /// re-pushing the same data) does not re-trigger the crossfade. Only a
+    /// real change in the image does.
+    private(set) var artworkVersion = 0
+    private var lastArtworkData: Data?
+
     /// Elapsed seconds at `anchorDate`; the live position is extrapolated so
     /// no timer is needed to keep it accurate.
     private var elapsedAnchor: TimeInterval = 0
@@ -252,23 +260,20 @@ final class MediaController {
 
         if !rawState.isEmpty {
             let playing = rawState == "playing"
-            if isPlaying != playing {
-                if !playing {
-                    elapsedAnchor = position ?? currentElapsed
-                    anchorDate = Date()
-                } else {
-                    if let position {
-                        elapsedAnchor = position
-                    }
-                    anchorDate = Date()
+            if !playing {
+                let pausedAt = position ?? currentElapsed
+                elapsedAnchor = pausedAt
+                anchorDate = Date()
+                displayedElapsed = pausedAt
+            } else {
+                if let position {
+                    elapsedAnchor = position
                 }
-                isPlaying = playing
+                anchorDate = Date()
                 displayedElapsed = currentElapsed
-                updateLyricActivityTimer()
-            } else if let position, !playing {
-                elapsedAnchor = position
-                displayedElapsed = position
             }
+            isPlaying = playing
+            updateLyricActivityTimer()
         }
     }
 
@@ -534,6 +539,7 @@ final class MediaController {
         if line != collapsedLyricLine {
             collapsedLyricLine = line
         }
+        reconcilePlaybackIfStale()
     }
 
     private func tickProgress() {
@@ -542,7 +548,51 @@ final class MediaController {
         // Lyric highlighting must never advance while playback is paused.
         guard isPlaying, !isBrowserVideo else { return }
         lyrics.updateCurrentLine(for: displayedElapsed)
+        reconcilePlaybackIfStale()
     }
+
+    /// Safety net against a playback-state desync. The hardware Play/Pause
+    /// key pauses the player itself, and Notch only learns of it if a push
+    /// notification or MediaRemote callback arrives — which can be missed
+    /// (older MediaRemote paths are gated on new macOS). If that happens,
+    /// `isPlaying` stays true, the elapsed time keeps extrapolating, and the
+    /// lyrics keep advancing through pauses. While lyrics are actually
+    /// advancing, periodically re-read the real player (throttled, off-main,
+    /// never raising a consent prompt) so a pause freezes the lyrics a moment
+    /// later instead of running to the end of the song.
+    ///
+    /// Deliberately only corrects the playback flag (and, on a pause, the
+    /// frozen position) — it never goes through the full snapshot pipeline,
+    /// so an unreadable player can never blank a track that is still shown.
+    private func reconcilePlaybackIfStale() {
+        guard isPlaying, automationIsAllowed(),
+              !isReadingAppleScript,
+              Date().timeIntervalSince(lastPlaybackReconcile) >= 2
+        else { return }
+        lastPlaybackReconcile = Date()
+        isReadingAppleScript = true
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let snapshot = self?.appleScriptSnapshot()
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.isReadingAppleScript = false
+                guard let snapshot else { return }
+                if !snapshot.isPlaying {
+                    self.elapsedAnchor = snapshot.elapsed
+                    self.displayedElapsed = snapshot.elapsed
+                    self.anchorDate = Date()
+                }
+                if snapshot.isPlaying != self.isPlaying {
+                    self.isPlaying = snapshot.isPlaying
+                    self.updateLyricActivityTimer()
+                }
+            }
+        }
+    }
+
+    /// When the last time we re-read the real player to catch a missed pause.
+    private var lastPlaybackReconcile = Date.distantPast
 
     // MARK: - Transport controls
 
@@ -993,11 +1043,45 @@ final class MediaController {
                 let result = script.executeAndReturnError(&error)
                 if error == nil, let res = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
                    res == "playing" || res == "paused" {
+                    // The video is now toggled, but the app's cached
+                    // `isPlaying` is stale until the next periodic probe.
+                    // Reprobe immediately so the play/pause button reflects
+                    // the new state right away instead of flickering back
+                    // and forth with the timer.
+                    refreshBrowserStateAfterToggle()
                     return
                 }
             }
         }
         SystemMediaKeySender.togglePlayPause()
+    }
+
+    /// Immediately re-reads the browser after a play/pause toggle so the
+    /// on-screen button's state matches the video without waiting for the
+    /// periodic probe timer. Also leaves a short window (no more than a
+    /// second) to catch the browser's true final state in case the toggle
+    /// script and the DOM probe disagree transiently.
+    private func refreshBrowserStateAfterToggle() {
+        guard useMediaRemote else { return }
+        crawlBrowserAfterToggle(attempts: 2)
+    }
+
+    private func crawlBrowserAfterToggle(attempts: Int) {
+        guard attempts > 0, !isMusicConnectedOrActive else { return }
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self else { return }
+            guard !self.isMusicConnectedOrActive else { return }
+            guard let snapshot = self.browserYouTubeSnapshot(avoidPrompt: false) else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if self.isMusicConnectedOrActive { return }
+                self.isShowingBrowserSnapshot = true
+                self.isBrowserVideo = true
+                self.pendingClearWork?.cancel()
+                self.pendingClearWork = nil
+                self.applyBrowserSnapshot(snapshot)
+            }
+        }
     }
 
     private func nextBrowserTrack() {
@@ -1415,13 +1499,18 @@ final class MediaController {
                     if self.isPlaying { self.isPlaying = false }
                     return
                 }
-                if self.isPlaying != playing {
-                    // Re-anchor so extrapolation pauses/resumes correctly.
+                // The hardware pause key can arrive as a state notification
+                // even when the reported value matches our optimistic state.
+                // Always re-anchor and refresh the lyric timer so a paused
+                // player cannot leave lyric activity running.
+                if !playing {
                     self.elapsedAnchor = self.currentElapsed
                     self.anchorDate = Date()
-                    self.isPlaying = playing
-                    self.updateLyricActivityTimer()
+                } else if !self.isPlaying {
+                    self.anchorDate = Date()
                 }
+                self.isPlaying = playing
+                self.updateLyricActivityTimer()
             }
         }
     }
@@ -1541,20 +1630,22 @@ final class MediaController {
         }
         if let playbackRate {
             let playing = playbackRate > 0
-            if playing != isPlaying {
-                if !playing {
-                    elapsedAnchor = currentElapsed
-                    anchorDate = Date()
-                } else {
-                    anchorDate = Date()
-                }
-                isPlaying = playing
-                updateLyricActivityTimer()
+            if !playing {
+                // Capture the position before changing `isPlaying`, since
+                // `currentElapsed` otherwise uses the old running state.
+                let pausedAt = currentElapsed
+                elapsedAnchor = pausedAt
+                anchorDate = Date()
+                displayedElapsed = pausedAt
+            } else if !isPlaying {
+                anchorDate = Date()
             }
+            isPlaying = playing
+            updateLyricActivityTimer()
         }
 
         if let data = info[MediaRemoteBridge.InfoKey.artworkData] as? Data {
-            artwork = NSImage(data: data)
+            setArtwork(NSImage(data: data), data: data)
             updateAccentIfNeeded(for: data)
         }
 
@@ -1696,11 +1787,30 @@ final class MediaController {
             guard let data, let image = NSImage(data: data) else { return }
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.isShowingBrowserSnapshot else { return }
-                self.artwork = image
+                self.setArtwork(image, data: data)
                 self.updateAccentIfNeeded(for: data)
                 self.onNormalizedTrackChange?(self.normalizedTrack)
             }
         }.resume()
+    }
+
+    /// Replaces the artwork, bumping `artworkVersion` only when the image
+    /// data genuinely changes. Same-data re-sets (the 2s browser probe
+    /// re-downloading the same thumbnail, MediaRemote re-pushing the same
+    /// payload) keep the version so the views' crossfade fires only on a real
+    /// artwork change. When no data is available (the AppleScript fallback)
+    /// the image instance itself is the change signal.
+    private func setArtwork(_ image: NSImage?, data: Data?) {
+        let changed: Bool
+        if let data {
+            changed = data != lastArtworkData
+        } else {
+            changed = image !== artwork
+        }
+        guard changed else { return }
+        lastArtworkData = data
+        artwork = image
+        artworkVersion += 1
     }
 
     /// One AppleScript probe when the notch opens, covering the gated-
@@ -1880,7 +1990,7 @@ final class MediaController {
             refreshShuffleAndFavorite()
         } else {
             lyrics.clear()
-            artwork = nil
+            setArtwork(nil, data: nil)
             accent = .white
             accentSourceHash = nil
             queue = []
@@ -2387,7 +2497,7 @@ final class MediaController {
                           self.track?.title == snapshot.track.title,
                           self.track?.artist == snapshot.track.artist
                     else { return }
-                    self.artwork = image
+                    self.setArtwork(image, data: data)
                     self.updateAccentIfNeeded(for: data)
                     self.onNormalizedTrackChange?(self.normalizedTrack)
                 }
@@ -2470,7 +2580,7 @@ final class MediaController {
         isShowingBrowserSnapshot = false
         isBrowserVideo = false
         track = nil
-        artwork = nil
+        setArtwork(nil, data: nil)
         isPlaying = false
         sourceAppBundleID = nil
         sourceMediaType = nil
@@ -2534,7 +2644,7 @@ final class MediaController {
 
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.track == expected else { return }
-                self.artwork = image
+                self.setArtwork(image, data: data)
                 if let data {
                     self.updateAccentIfNeeded(for: data)
                 } else {
