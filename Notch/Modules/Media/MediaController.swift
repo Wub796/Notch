@@ -209,6 +209,8 @@ final class MediaController {
             armDirectBridge()
         }
 
+        setupDistributedPlaybackObservers()
+
         // Read whatever is playing straight away, off the main thread so a
         // slow-to-answer player cannot hold up launch. Without this the notch
         // showed nothing until it was first opened: MediaRemote is push-based
@@ -216,6 +218,57 @@ final class MediaController {
         // Apple Events path only ran while the notch was expanded.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.probePlayersAtLaunch(attemptsLeft: 4)
+        }
+    }
+
+    private func setupDistributedPlaybackObservers() {
+        let center = DistributedNotificationCenter.default()
+        let handler: (Notification) -> Void = { [weak self] notification in
+            self?.handleDistributedPlaybackNotification(notification)
+        }
+        mediaNotificationObservers.append(
+            center.addObserver(
+                forName: Notification.Name("com.apple.iTunes.playerInfo"),
+                object: nil,
+                queue: .main,
+                using: handler
+            )
+        )
+        mediaNotificationObservers.append(
+            center.addObserver(
+                forName: Notification.Name("com.spotify.client.PlaybackStateChanged"),
+                object: nil,
+                queue: .main,
+                using: handler
+            )
+        )
+    }
+
+    private func handleDistributedPlaybackNotification(_ notification: Notification) {
+        guard let userInfo = notification.userInfo else { return }
+
+        let rawState = (userInfo["Player State"] as? String)?.lowercased() ?? ""
+        let position = (userInfo["Position"] as? Double) ?? (userInfo["Player Position"] as? Double)
+
+        if !rawState.isEmpty {
+            let playing = rawState == "playing"
+            if isPlaying != playing {
+                if !playing {
+                    elapsedAnchor = position ?? currentElapsed
+                    anchorDate = Date()
+                } else {
+                    if let position {
+                        elapsedAnchor = position
+                    }
+                    anchorDate = Date()
+                }
+                isPlaying = playing
+                displayedElapsed = currentElapsed
+                updateLyricActivityTimer()
+            } else if let position, !playing {
+                elapsedAnchor = position
+                displayedElapsed = position
+            }
         }
     }
 
@@ -227,32 +280,20 @@ final class MediaController {
         useMediaRemote = true
         bridge.registerForNotifications()
         let center = NotificationCenter.default
-        mediaNotificationObservers = [
+        mediaNotificationObservers.append(
             center.addObserver(
                 forName: MediaRemoteBridge.infoDidChange, object: nil, queue: .main
             ) { [weak self] _ in
                 self?.refreshFromMediaRemote()
-            },
+            }
+        )
+        mediaNotificationObservers.append(
             center.addObserver(
                 forName: MediaRemoteBridge.isPlayingDidChange, object: nil, queue: .main
             ) { [weak self] _ in
                 self?.refreshFromMediaRemote()
-            },
-            DistributedNotificationCenter.default().addObserver(
-                forName: Notification.Name("com.apple.iTunes.playerInfo"),
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.refreshFromMediaRemote()
-            },
-            DistributedNotificationCenter.default().addObserver(
-                forName: Notification.Name("com.spotify.client.PlaybackStateChanged"),
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.refreshFromMediaRemote()
             }
-        ]
+        )
         refreshFromMediaRemote()
     }
 
