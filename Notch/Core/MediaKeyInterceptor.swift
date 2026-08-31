@@ -49,7 +49,11 @@ final class MediaKeyInterceptor {
     var isMuted: (() -> Bool)?
     var toggleMute: (() -> Void)?
     var brightnessSource: (() -> Float)?
-    var setBrightness: ((Float) -> Void)?
+    /// Writes brightness and returns the level actually stored (the clamped
+    /// value the reader should display), so a key press can show where the
+    /// bar is without re-reading the panel — which used to surface a stale
+    /// brighter display value as a "bounce back" to ~43%.
+    var setBrightness: ((Float) -> Float)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -185,10 +189,12 @@ final class MediaKeyInterceptor {
                 current = 0.5
             }
             let target = min(max(current + (key == .brightnessUp ? delta : -delta), 0), 1)
-            setBrightness?(target)
-            // The setter can clamp or reject a request on some displays. Show
-            // the live value returned by the same API pair used for writing.
-            let shown = brightnessSource?() ?? target
+            // `setBrightness` returns the clamped level it stored, so we can
+            // show the position we actually set without re-reading the panel.
+            // Re-reading right after a write was what surfaced a stale brighter
+            // display value as a "bounce back" (e.g. it snapped to ~43% the
+            // moment a key hit 0).
+            let shown = setBrightness?(target) ?? target
             onBrightness?(shown)
         }
     }

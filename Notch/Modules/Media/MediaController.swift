@@ -993,6 +993,22 @@ final class MediaController {
         }
     }
 
+    /// Sets `isPlaying` from an authoritative source (e.g. the toggle script's
+    /// return value) and keeps the elapsed anchor consistent with the new
+    /// state — freezing the position on pause, resetting the clock on resume.
+    private func setPlaying(_ playing: Bool) {
+        guard playing != isPlaying else { return }
+        if playing {
+            anchorDate = Date()
+        } else {
+            elapsedAnchor = currentElapsed
+            anchorDate = Date()
+        }
+        displayedElapsed = currentElapsed
+        isPlaying = playing
+        updateLyricActivityTimer()
+    }
+
     private func toggleBrowserPlayback() {
         for browser in Self.browserTargets {
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else { continue }
@@ -1043,45 +1059,22 @@ final class MediaController {
                 let result = script.executeAndReturnError(&error)
                 if error == nil, let res = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
                    res == "playing" || res == "paused" {
-                    // The video is now toggled, but the app's cached
-                    // `isPlaying` is stale until the next periodic probe.
-                    // Reprobe immediately so the play/pause button reflects
-                    // the new state right away instead of flickering back
-                    // and forth with the timer.
-                    refreshBrowserStateAfterToggle()
+                    // The toggle script returned the authoritative post-toggle
+                    // state, so set `isPlaying` from it directly. Re-reading
+                    // the DOM right after (the old immediate re-crawl) raced
+                    // the player's internal state transition — YouTube's
+                    // getPlayerState() takes a beat to flip after
+                    // pauseVideo(), so that read reported the stale "still
+                    // playing" and snapped the button back, then the periodic
+                    // probe corrected it again. Trusting the return value
+                    // keeps the button on what the video just did; the 1s
+                    // periodic probe still catches any genuine drift.
+                    setPlaying(res == "playing")
                     return
                 }
             }
         }
         SystemMediaKeySender.togglePlayPause()
-    }
-
-    /// Immediately re-reads the browser after a play/pause toggle so the
-    /// on-screen button's state matches the video without waiting for the
-    /// periodic probe timer. Also leaves a short window (no more than a
-    /// second) to catch the browser's true final state in case the toggle
-    /// script and the DOM probe disagree transiently.
-    private func refreshBrowserStateAfterToggle() {
-        guard useMediaRemote else { return }
-        crawlBrowserAfterToggle(attempts: 2)
-    }
-
-    private func crawlBrowserAfterToggle(attempts: Int) {
-        guard attempts > 0, !isMusicConnectedOrActive else { return }
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            guard let self else { return }
-            guard !self.isMusicConnectedOrActive else { return }
-            guard let snapshot = self.browserYouTubeSnapshot(avoidPrompt: false) else { return }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                if self.isMusicConnectedOrActive { return }
-                self.isShowingBrowserSnapshot = true
-                self.isBrowserVideo = true
-                self.pendingClearWork?.cancel()
-                self.pendingClearWork = nil
-                self.applyBrowserSnapshot(snapshot)
-            }
-        }
     }
 
     private func nextBrowserTrack() {

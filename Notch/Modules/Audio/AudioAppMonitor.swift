@@ -29,6 +29,14 @@ final class AudioAppMonitor {
         /// True when CoreAudio reports the process is actively running output.
         let isPlaying: Bool
         let pid: pid_t
+        /// The CoreAudio audio-client objects that belong to this bundle —
+        /// every helper a browser or app uses, not just the host process.
+        /// Empty on the pre-14.4 fallback path and for silent pinned apps,
+        /// where there is no per-process volume to control. Volume reads and
+        /// writes hit all of them, so muting a multi-process bundle (Chrome,
+        /// Teams…) silences every one of its audio sources rather than a
+        /// helper whose pid is never the host pid stored above.
+        let volumeObjects: [AudioObjectID]
 
         static func == (lhs: App, rhs: App) -> Bool {
             lhs.id == rhs.id && lhs.isPlaying == rhs.isPlaying
@@ -39,11 +47,11 @@ final class AudioAppMonitor {
         }
 
         func volume() -> Float? {
-            AudioAppMonitor.readProcessVolume(for: pid)
+            AudioAppMonitor.readProcessVolume(from: volumeObjects)
         }
 
         func setVolume(_ level: Float) {
-            AudioAppMonitor.writeProcessVolume(level, for: pid)
+            AudioAppMonitor.writeProcessVolume(level, to: volumeObjects)
         }
     }
 
@@ -349,10 +357,10 @@ final class AudioAppMonitor {
     }
 
     @available(macOS 14.4, *)
-    private static func audioProcesses() -> [(pid: pid_t, isRunningOutput: Bool)] {
+    private static func audioProcesses() -> [(object: AudioObjectID, pid: pid_t, isRunningOutput: Bool)] {
         audioProcessObjects().compactMap { object in
             guard let pid = processID(of: object) else { return nil }
-            return (pid, isRunningOutput(object))
+            return (object, pid, isRunningOutput(object))
         }
     }
 
@@ -370,29 +378,27 @@ final class AudioAppMonitor {
         return pid
     }
 
-    @available(macOS 14.4, *)
-    private static func processObject(for pid: pid_t) -> AudioObjectID? {
-        audioProcessObjects().first { processID(of: $0) == pid }
-    }
-
-    private static func readProcessVolume(for pid: pid_t) -> Float? {
-        guard #available(macOS 14.4, *) else { return nil }
-        guard let object = processObject(for: pid) else { return nil }
+    private static func readProcessVolume(from objects: [AudioObjectID]) -> Float? {
+        guard #available(macOS 14.4, *), !objects.isEmpty else { return nil }
         var address = address(processVolumeSelector)
-        var volume: Float = 1
         var size = UInt32(MemoryLayout<Float>.size)
-        guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &volume) == noErr else {
-            return nil
+        for object in objects {
+            var volume: Float = 1
+            if AudioObjectGetPropertyData(object, &address, 0, nil, &size, &volume) == noErr {
+                return min(max(volume, 0), 1)
+            }
         }
-        return min(max(volume, 0), 1)
+        return nil
     }
 
-    private static func writeProcessVolume(_ level: Float, for pid: pid_t) {
-        guard #available(macOS 14.4, *), let object = processObject(for: pid) else { return }
+    private static func writeProcessVolume(_ level: Float, to objects: [AudioObjectID]) {
+        guard #available(macOS 14.4, *) else { return }
         var address = address(processVolumeSelector)
         var volume = min(max(level, 0), 1)
         let size = UInt32(MemoryLayout<Float>.size)
-        _ = AudioObjectSetPropertyData(object, &address, 0, nil, size, &volume)
+        for object in objects {
+            _ = AudioObjectSetPropertyData(object, &address, 0, nil, size, &volume)
+        }
     }
 
     @available(macOS 14.4, *)
@@ -460,11 +466,15 @@ final class AudioAppMonitor {
     /// Turns pids into apps, resolving browser and helper processes to their
     /// main parent applications (Chrome, Safari, Firefox, Discord, etc.).
     private static func resolve(
-        _ processes: [(pid: pid_t, isRunningOutput: Bool)],
+        _ processes: [(object: AudioObjectID, pid: pid_t, isRunningOutput: Bool)],
         keeping nowPlayingBundleID: String?,
         isPlaying: Bool
     ) -> [App] {
         var byBundle: [String: App] = [:]
+        // Every audio-client object that resolves to each bundle. A browser's
+        // audio runs in helper processes, so the host pid is never a `voul`
+        // object — volume control needs these, and several can be live.
+        var objectsByBundle: [String: Set<AudioObjectID>] = [:]
 
         for process in processes {
             guard let running = NSRunningApplication(processIdentifier: process.pid) else { continue }
@@ -472,21 +482,31 @@ final class AudioAppMonitor {
             let host = resolveHostApp(for: running)
             guard !host.id.isEmpty, host.id != "com.apple.audio.CoreAudio" else { continue }
 
-            let app = App(
-                id: host.id,
-                name: host.name,
-                icon: host.icon,
-                isPlaying: process.isRunningOutput,
-                pid: host.mainApp?.processIdentifier ?? process.pid
-            )
+            objectsByBundle[host.id, default: []].insert(process.object)
+            let volumeObjects = Array(objectsByBundle[host.id]!)
 
-            // If already present, ensure isPlaying is true if any child process is playing
             if let existing = byBundle[host.id] {
-                if !existing.isPlaying && app.isPlaying {
-                    byBundle[host.id] = app
-                }
+                // Merge: keep isPlaying true if any of the bundle's clients is
+                // outputting, and refresh the full set of volume objects.
+                byBundle[host.id] = App(
+                    id: existing.id,
+                    name: existing.name,
+                    icon: existing.icon,
+                    // Keep the bundle's original foreground pid so activate()
+                    // targets the app, not one of its audio helpers.
+                    isPlaying: existing.isPlaying || process.isRunningOutput,
+                    pid: existing.pid,
+                    volumeObjects: volumeObjects
+                )
             } else {
-                byBundle[host.id] = app
+                byBundle[host.id] = App(
+                    id: host.id,
+                    name: host.name,
+                    icon: host.icon,
+                    isPlaying: process.isRunningOutput,
+                    pid: host.mainApp?.processIdentifier ?? process.pid,
+                    volumeObjects: volumeObjects
+                )
             }
         }
 
@@ -504,7 +524,8 @@ final class AudioAppMonitor {
                     name: running.localizedName ?? id,
                     icon: running.icon,
                     isPlaying: id == nowPlayingBundleID && isPlaying,
-                    pid: running.processIdentifier
+                    pid: running.processIdentifier,
+                    volumeObjects: []
                 )
             }
         }
@@ -537,7 +558,8 @@ final class AudioAppMonitor {
                 name: app.localizedName ?? id,
                 icon: app.icon,
                 isPlaying: id == nowPlayingBundleID && isPlaying,
-                pid: app.processIdentifier
+                pid: app.processIdentifier,
+                volumeObjects: []
             )
         })
     }
@@ -573,7 +595,8 @@ final class AudioAppMonitor {
                 name: running.localizedName ?? bundleID,
                 icon: running.icon,
                 isPlaying: false,
-                pid: running.processIdentifier
+                pid: running.processIdentifier,
+                volumeObjects: []
             )
         }
         return Self.sorted(Array(byID.values), pinned: pinned)

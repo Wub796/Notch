@@ -55,6 +55,8 @@ struct AudioDevicesView: View {
     }
 
     @State private var appVolumes: [String: Float] = [:]
+    @State private var mutedApps: Set<String> = []
+    @State private var priorVolumeBeforeMute: [String: Float] = [:]
     @State private var pairedBluetoothDevices: [BluetoothAudioDevices.PairedDevice] = []
 
     var body: some View {
@@ -454,15 +456,15 @@ struct SpotifyConnectPrompt: View {
                         togglePin(app.id)
                     }
                     RoundIconButton(
-                        systemImage: state.audio.isMuted
+                        systemImage: isAppMuted(app.id)
                             ? "speaker.wave.2.fill"
                             : "speaker.slash.fill",
-                        help: state.audio.isMuted
-                            ? "Unmute all output"
-                            : "Mute all output",
-                        tint: state.audio.isMuted ? nil : .red
+                        help: isAppMuted(app.id)
+                            ? "Unmute \(app.name)"
+                            : "Mute \(app.name)",
+                        tint: isAppMuted(app.id) ? nil : .red
                     ) {
-                        state.audio.toggleMute()
+                        toggleAppMute(app)
                     }
                 }
             }
@@ -604,6 +606,33 @@ struct SpotifyConnectPrompt: View {
             pinned.append(id)
         }
         audioSettings.pinnedAudioApps = pinned
+    }
+
+    // MARK: - Per-app mute
+
+    /// Muting is per-app, on the app's own process volume: remember the level
+    /// it was at, drop it to zero, and put it back on unmute. This is what
+    /// makes one row's mute button silent *that* app (and only that app)
+    /// instead of every output on the Mac.
+    private func isAppMuted(_ id: String) -> Bool {
+        mutedApps.contains(id)
+    }
+
+    private func toggleAppMute(_ app: AudioAppMonitor.App) {
+        let current = appVolumes[app.id] ?? app.volume() ?? 1
+        if mutedApps.contains(app.id) {
+            // Unmute: restore the level it was silenced from.
+            mutedApps.remove(app.id)
+            let restore = priorVolumeBeforeMute[app.id] ?? 1
+            appVolumes[app.id] = restore
+            app.setVolume(restore)
+        } else {
+            // Mute: remember where it is, then zero this app's own volume.
+            priorVolumeBeforeMute[app.id] = current
+            appVolumes[app.id] = 0
+            app.setVolume(0)
+            mutedApps.insert(app.id)
+        }
     }
 
     private func emptyRow(_ text: String) -> some View {

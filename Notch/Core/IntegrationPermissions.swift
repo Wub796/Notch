@@ -315,12 +315,17 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
             let trusted = AXIsProcessTrustedWithOptions(options)
             if !trusted {
                 if let url = integration.settingsURL {
+                    // Bring Notch forward first: the accessibility consent
+                    // dialog is tied to the requesting app, and macOS only
+                    // shows it while that app is frontmost.
+                    NSApp.activate(ignoringOtherApps: true)
                     NSWorkspace.shared.open(url)
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: finish)
 
         case .screenCapture:
+            NSApp.activate(ignoringOtherApps: true)
             let hasAccess = CGRequestScreenCaptureAccess()
             if !hasAccess {
                 if let url = integration.settingsURL {
@@ -420,6 +425,12 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         }
 
         let ask = {
+            // The Automation consent dialog is tied to Notch, and macOS only
+            // presents it reliably while Notch is the active app. The player
+            // was just opened with `activates`, which made *it* frontmost —
+            // bring Notch back forward before raising the prompt, or the
+            // dialog can appear behind Spotify or fail to surface at all.
+            NSApp.activate(ignoringOtherApps: true)
             DispatchQueue.global(qos: .userInitiated).async {
                 _ = Self.automationPermission(for: target.bundleID, askUser: true)
                 DispatchQueue.main.async(execute: finish)

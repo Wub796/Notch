@@ -442,7 +442,9 @@ final class NotchState {
             self?.brightness.refresh()
             return self?.brightness.brightness ?? 0
         }
-        interceptor.setBrightness = { [weak self] level in self?.brightness.setBrightness(level) }
+        interceptor.setBrightness = { [weak self] level in
+            self?.brightness.setBrightness(level) ?? level
+        }
         interceptor.onVolume = { [weak self] level, muted in
             guard self?.settings.volumeHUDEnabled == true else { return }
             self?.activities.showVolume(level: level, muted: muted)

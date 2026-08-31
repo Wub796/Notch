@@ -152,27 +152,53 @@ final class BrightnessController {
         }
     }
 
+    /// The smallest user-level brightness this Mac's display accepts.
+    ///
+    /// macOS ignores a literal `.0` write — the panel holds whatever level it
+    /// was already at, so lowering all the way to zero made the display stay
+    /// bright while the next read reported that stale brighter level (the
+    /// "it bounces back to 43%" jump). Anything just above zero is accepted
+    /// and dims the panel to near-black, which is what brightness tools write
+    /// for exactly this reason. We floor the write here and store what we
+    /// actually wrote, so the read-back after a write can never surface a
+    /// stale brighter level.
+    private static let absoluteMinUserBrightness: Float = 0.02
+
     /// Writes through the same resolved API the reader uses. A linear-scale
     /// pair gets the user level converted to linear luminance first, so the
     /// reading stays where the slider said.
-    func setBrightness(_ newValue: Float) {
+    ///
+    /// Returns the level the caller asked for (clamped to 0–1) so the HUD can
+    /// render the bar at the user's position — including right down to 0 —
+    /// without re-reading the display afterwards, which is what surfaced a
+    /// stale brighter panel level as a "bounce back". The display itself gets
+    /// a tiny non-zero floor (`absoluteMinUserBrightness`) because a literal
+    /// zero write is rejected and holds the panel at its previous level; that
+    /// floor only affects what reaches the hardware, never what the slider
+    /// shows.
+    @discardableResult
+    func setBrightness(_ newValue: Float) -> Float {
         let clamped = min(max(newValue, 0), 1)
+        // Store the user-facing level as-is (so the bar tracks 0), and only
+        // floor the value actually handed to the display.
         brightness = clamped
+        let writeValue = max(clamped, Self.absoluteMinUserBrightness)
         let id = displayID
         guard let api = resolveAPI() else {
-            Self.setLegacyBrightness(clamped)
-            return
+            Self.setLegacyBrightness(writeValue)
+            return clamped
         }
         switch api {
         case .displayServicesUser:
-            _ = dsSetBrightness?(id, clamped)
+            _ = dsSetBrightness?(id, writeValue)
         case .displayServicesLinear:
-            _ = dsSetLinearBrightness?(id, Self.linearBrightness(forUserBrightness: clamped))
+            _ = dsSetLinearBrightness?(id, Self.linearBrightness(forUserBrightness: writeValue))
         case .coreDisplayUser:
-            cdSetUserBrightness?(id, Double(clamped))
+            cdSetUserBrightness?(id, Double(writeValue))
         case .coreDisplayLinear:
-            cdSetLinearBrightness?(id, Double(Self.linearBrightness(forUserBrightness: clamped)))
+            cdSetLinearBrightness?(id, Double(Self.linearBrightness(forUserBrightness: writeValue)))
         }
+        return clamped
     }
 
     /// Converts a linear luminance level back to the perceptual/user scale
