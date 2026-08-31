@@ -362,24 +362,7 @@ struct DevicesScreenView: View {
     }
 
     private var transportRow: some View {
-        HStack(spacing: 24) {
-            if !media.isBrowserVideo && media.hasTrack {
-                transportIcon(
-                    state.mediaShowsFullLyrics
-                        ? "list.bullet.rectangle.fill"
-                        : "list.bullet.rectangle",
-                    size: 15,
-                    label: state.mediaShowsFullLyrics ? "Hide lyrics" : "Show lyrics",
-                    tint: state.mediaShowsFullLyrics ? nil : NotchTheme.inkMuted
-                ) {
-                    // Toggle the synced lyric line on the Now page without
-                    // opening a separate text-only lyrics screen.
-                    withAnimation(NotchAnimations.content) {
-                        state.mediaShowsFullLyrics.toggle()
-                    }
-                }
-            }
-
+        HStack(spacing: 28) {
             transportIcon(
                 "backward.fill",
                 size: 16,
@@ -416,18 +399,29 @@ struct DevicesScreenView: View {
             ) {
                 media.nextTrack()
             }
-
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     @ViewBuilder
     private var bottomActions: some View {
         if !media.isBrowserVideo && media.hasTrack {
-            HStack(spacing: 24) {
+            HStack(spacing: 28) {
+                transportIcon(
+                    media.isShuffling ? "shuffle.circle.fill" : "shuffle",
+                    size: 15,
+                    label: media.isShuffling ? "Turn off shuffle" : "Shuffle",
+                    tint: media.isShuffling ? .blue : nil,
+                    isEnabled: media.canControlTransport
+                ) {
+                    withAnimation(NotchAnimations.content) {
+                        media.toggleShuffle()
+                    }
+                }
+
                 transportIcon(
                     media.isFavorite ? "heart.fill" : "heart",
-                    size: 14,
+                    size: 15,
                     label: media.isFavorite ? "Remove from favourites" : "Add to favourites",
                     tint: media.isFavorite ? .red : nil,
                     isEnabled: media.canFavorite
@@ -438,18 +432,19 @@ struct DevicesScreenView: View {
                 }
 
                 transportIcon(
-                    media.isShuffling ? "shuffle.circle.fill" : "shuffle",
-                    size: 14,
-                    label: media.isShuffling ? "Turn off shuffle" : "Shuffle",
-                    tint: media.isShuffling ? .blue : nil,
-                    isEnabled: media.canControlTransport
+                    state.mediaShowsFullLyrics
+                        ? "list.bullet.rectangle.fill"
+                        : "list.bullet.rectangle",
+                    size: 15,
+                    label: state.mediaShowsFullLyrics ? "Hide lyrics" : "Show lyrics",
+                    tint: state.mediaShowsFullLyrics ? nil : NotchTheme.inkMuted
                 ) {
                     withAnimation(NotchAnimations.content) {
-                        media.toggleShuffle()
+                        state.mediaShowsFullLyrics.toggle()
                     }
                 }
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
