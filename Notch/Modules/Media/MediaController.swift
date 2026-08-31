@@ -1367,8 +1367,10 @@ final class MediaController {
             if newTrack.artist.isEmpty { newTrack.artist = "YouTube" }
         }
 
-        elapsedAnchor = info[MediaRemoteBridge.InfoKey.elapsedTime] as? TimeInterval ?? 0
-        anchorDate = info[MediaRemoteBridge.InfoKey.timestamp] as? Date ?? Date()
+        if let elapsed = info[MediaRemoteBridge.InfoKey.elapsedTime] as? TimeInterval {
+            elapsedAnchor = elapsed
+            anchorDate = info[MediaRemoteBridge.InfoKey.timestamp] as? Date ?? Date()
+        }
 
         let playbackRate: Double?
         if let rate = info[MediaRemoteBridge.InfoKey.playbackRate] as? Double {
@@ -1381,6 +1383,12 @@ final class MediaController {
         if let playbackRate {
             let playing = playbackRate > 0
             if playing != isPlaying {
+                if !playing {
+                    elapsedAnchor = currentElapsed
+                    anchorDate = Date()
+                } else {
+                    anchorDate = Date()
+                }
                 isPlaying = playing
                 updateLyricActivityTimer()
             }
@@ -1949,7 +1957,7 @@ final class MediaController {
                     track: track,
                     elapsed: progress * duration,
                     duration: duration,
-                    isPlaying: Self.boolValue(json["playing"]) ?? true,
+                    isPlaying: Self.boolValue(json["playing"]) ?? false,
                     bundleID: browser.bundleID,
                     appName: browser.name,
                     artworkURL: thumbnail.isEmpty ? nil : URL(string: thumbnail),
@@ -1999,7 +2007,7 @@ final class MediaController {
                 track: track,
                 elapsed: 0,
                 duration: 0,
-                isPlaying: true,
+                isPlaying: false,
                 bundleID: browser.bundleID,
                 appName: browser.name,
                 artworkURL: artworkURL,
@@ -2140,7 +2148,10 @@ final class MediaController {
     private func apply(_ snapshot: Snapshot) {
         isShowingBrowserSnapshot = snapshot.isBrowser
         isBrowserVideo = snapshot.isBrowser
-        if snapshot.duration > 0 {
+        if !snapshot.isPlaying && isPlaying {
+            elapsedAnchor = currentElapsed
+            anchorDate = Date()
+        } else if snapshot.duration > 0 {
             // The DOM-based browser snapshot reports real currentTime/duration,
             // so anchor on it and let extrapolation glide between 2s polls.
             elapsedAnchor = snapshot.elapsed
