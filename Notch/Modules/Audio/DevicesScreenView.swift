@@ -123,7 +123,7 @@ struct DevicesScreenView: View {
             }
             .animation(NotchAnimations.content, value: state.devicesSection)
 
-            if state.devicesSection == .now && state.mediaShowsFullLyrics {
+            if state.devicesSection == .now && state.mediaShowsFullLyrics && !media.isBrowserVideo {
                 centeredLyrics
                     .transition(.opacity)
             } else if state.devicesSection == .library {

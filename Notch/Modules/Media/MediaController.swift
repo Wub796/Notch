@@ -463,6 +463,7 @@ final class MediaController {
         let wanted = NotchSettings.shared.lyricActivityEnabled
             && isPlaying
             && hasTrack
+            && !isBrowserVideo
             && !isActive
 
         if wanted {
@@ -481,7 +482,7 @@ final class MediaController {
     }
 
     private func tickCollapsedLyric() {
-        guard isPlaying, lyrics.isSynced, !lyrics.lines.isEmpty else {
+        guard isPlaying, !isBrowserVideo, lyrics.isSynced, !lyrics.lines.isEmpty else {
             if collapsedLyricLine != nil {
                 collapsedLyricLine = nil
             }
@@ -497,7 +498,7 @@ final class MediaController {
     private func tickProgress() {
         displayedElapsed = currentElapsed
         onNormalizedTrackChange?(normalizedTrack)
-        guard isPlaying else { return }
+        guard isPlaying, !isBrowserVideo else { return }
         lyrics.updateCurrentLine(for: displayedElapsed)
     }
 
@@ -1306,6 +1307,8 @@ final class MediaController {
         if isBrowser {
             isShowingBrowserSnapshot = true
             isBrowserVideo = true
+            lyrics.clear()
+            collapsedLyricLine = nil
         } else {
             isShowingBrowserSnapshot = false
             isBrowserVideo = false
@@ -1708,7 +1711,7 @@ final class MediaController {
             onTrackChange?(current)
         }
         if let track {
-            if NotchSettings.shared.fetchLyrics {
+            if NotchSettings.shared.fetchLyrics && !isBrowserVideo {
                 lyrics.load(
                     title: track.title,
                     artist: track.artist,
@@ -2148,6 +2151,10 @@ final class MediaController {
     private func apply(_ snapshot: Snapshot) {
         isShowingBrowserSnapshot = snapshot.isBrowser
         isBrowserVideo = snapshot.isBrowser
+        if snapshot.isBrowser {
+            lyrics.clear()
+            collapsedLyricLine = nil
+        }
         if !snapshot.isPlaying && isPlaying {
             elapsedAnchor = currentElapsed
             anchorDate = Date()

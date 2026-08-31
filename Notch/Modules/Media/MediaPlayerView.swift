@@ -24,20 +24,22 @@ struct MediaPlayerView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
 
-            ThreeDLyricsView(
-                lyrics: media.lyrics,
-                accent: media.accent,
-                onSelect: { time in
-                    media.seek(to: time + 0.05)
-                },
-                emptyMessage: media.hasTrack
-                    ? "No lyrics found for this track"
-                    : "Lyrics appear here while music plays"
-            )
+            if !media.isBrowserVideo {
+                ThreeDLyricsView(
+                    lyrics: media.lyrics,
+                    accent: media.accent,
+                    onSelect: { time in
+                        media.seek(to: time + 0.05)
+                    },
+                    emptyMessage: media.hasTrack
+                        ? "No lyrics found for this track"
+                        : "Lyrics appear here while music plays"
+                )
+            }
 
             progressRow
 
-            if state.mediaShowsFullLyrics {
+            if state.mediaShowsFullLyrics && !media.isBrowserVideo {
                 LyricsView(lyrics: media.lyrics, accent: media.accent) { time in
                     media.seek(to: time + 0.05)
                 }
