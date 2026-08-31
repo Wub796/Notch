@@ -1161,10 +1161,32 @@ final class MediaController {
 
         let source = "tell application \"\(appName)\" to \(command)"
 
+        // Send MediaRemote command concurrently as well to guarantee system media sync
+        if command == "playpause" {
+            if useAdapter { adapter.sendCommand(.togglePlayPause) }
+            else if useMediaRemote { bridge.send(.togglePlayPause) }
+        } else if command == "next track" {
+            if useAdapter { adapter.sendCommand(.nextTrack) }
+            else if useMediaRemote { bridge.send(.nextTrack) }
+        } else if command == "previous track" {
+            if useAdapter { adapter.sendCommand(.previousTrack) }
+            else if useMediaRemote { bridge.send(.previousTrack) }
+        }
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var error: NSDictionary?
             NSAppleScript(source: source)?.executeAndReturnError(&error)
-            // Players need a beat to settle before they report the new state.
+
+            if error != nil {
+                DispatchQueue.main.async {
+                    if command == "playpause" { SystemMediaKeySender.togglePlayPause() }
+                    else if command == "next track" { SystemMediaKeySender.nextTrack() }
+                    else if command == "previous track" { SystemMediaKeySender.previousTrack() }
+                }
+            }
+
+            // Players need a short beat (200ms) to settle into the new state before we read it back.
+            usleep(200_000)
             let snapshot = self?.appleScriptSnapshot()
 
             DispatchQueue.main.async { [weak self] in
@@ -1743,10 +1765,14 @@ final class MediaController {
     private func stateScript(for appName: String) -> String {
         """
         tell application "\(appName)"
-            if player state is stopped then return "stopped"
-            set t to current track
-            return (name of t) & "||" & (artist of t) & "||" & (album of t) & "||" & \
+            try
+                if player state is stopped then return "stopped"
+                set t to current track
+                return (name of t) & "||" & (artist of t) & "||" & (album of t) & "||" & \
         (duration of t as text) & "||" & (player position as text) & "||" & (player state as text)
+            on error
+                return "stopped"
+            end try
         end tell
         """
     }
@@ -2051,29 +2077,48 @@ final class MediaController {
     }
 
     private func appleScriptSnapshot() -> Snapshot? {
-        // 1. Never launch a player just to ask what is playing.
-        if fallbackAppIsRunning,
-           let script = NSAppleScript(source: stateScript(for: fallbackAppName)) {
-            var error: NSDictionary?
-            let result = script.executeAndReturnError(&error)
-            if error == nil, let raw = result.stringValue, raw != "stopped" {
-                let parts = raw.components(separatedBy: "||")
-                if parts.count >= 6 {
-                    var newTrack = Track()
-                    newTrack.title = parts[0]
-                    newTrack.artist = parts[1]
-                    newTrack.album = parts[2]
-                    newTrack.duration = Self.seconds(fromAppleScript: parts[3])
+        var targets: [(appName: String, bundleID: String)] = []
+        if let bundle = sourceAppBundleID {
+            if bundle == MusicProvider.spotify.bundleID {
+                targets = [("Spotify", MusicProvider.spotify.bundleID), ("Music", "com.apple.Music")]
+            } else if bundle == "com.apple.Music" {
+                targets = [("Music", "com.apple.Music"), ("Spotify", MusicProvider.spotify.bundleID)]
+            }
+        }
+        if targets.isEmpty {
+            if selectedProvider == .spotify {
+                targets = [("Spotify", MusicProvider.spotify.bundleID)]
+            } else if selectedProvider == .appleMusic {
+                targets = [("Music", "com.apple.Music")]
+            } else {
+                targets = [("Spotify", MusicProvider.spotify.bundleID), ("Music", "com.apple.Music")]
+            }
+        }
 
-                    return Snapshot(
-                        track: newTrack,
-                        elapsed: TimeInterval(parts[4].replacingOccurrences(of: ",", with: ".")) ?? 0,
-                        duration: newTrack.duration,
-                        isPlaying: parts[5] == "playing",
-                        bundleID: fallbackBundleID,
-                        appName: fallbackAppName,
-                        artworkURL: nil
-                    )
+        for target in targets {
+            guard !NSRunningApplication.runningApplications(withBundleIdentifier: target.bundleID).isEmpty else { continue }
+            if let script = NSAppleScript(source: stateScript(for: target.appName)) {
+                var error: NSDictionary?
+                let result = script.executeAndReturnError(&error)
+                if error == nil, let raw = result.stringValue, raw != "stopped" {
+                    let parts = raw.components(separatedBy: "||")
+                    if parts.count >= 6, !parts[0].isEmpty {
+                        var newTrack = Track()
+                        newTrack.title = parts[0]
+                        newTrack.artist = parts[1]
+                        newTrack.album = parts[2]
+                        newTrack.duration = Self.seconds(fromAppleScript: parts[3])
+
+                        return Snapshot(
+                            track: newTrack,
+                            elapsed: TimeInterval(parts[4].replacingOccurrences(of: ",", with: ".")) ?? 0,
+                            duration: newTrack.duration,
+                            isPlaying: parts[5] == "playing",
+                            bundleID: target.bundleID,
+                            appName: target.appName,
+                            artworkURL: nil
+                        )
+                    }
                 }
             }
         }
