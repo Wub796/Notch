@@ -537,7 +537,16 @@ private struct MediaSettingsPane: View {
     @Bindable var settings = NotchSettings.shared
     private var auth = SpotifyAuth.shared
     private var permissions = IntegrationPermissions.shared
+    @State private var showAdvancedSpotify = false
     @State private var hasCopiedURI = false
+
+    private var isSpotifyConnected: Bool {
+        permissions.musicStatus(for: .spotify) == .granted || auth.state == .signedIn
+    }
+
+    private var isAppleMusicConnected: Bool {
+        permissions.musicStatus(for: .appleMusic) == .granted
+    }
 
     var body: some View {
         SettingsPane {
@@ -642,9 +651,9 @@ private struct MediaSettingsPane: View {
         }
     }
 
-    /// Spotify Provider Row: Shows live Web API connection and native integration.
+    /// Spotify Provider Row: Instant 1-click connection for standard users, optional Web API for power users.
     private var spotifyProviderRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -661,7 +670,7 @@ private struct MediaSettingsPane: View {
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(NotchTheme.inkPrimary)
 
-                        if auth.state == .signedIn {
+                        if isSpotifyConnected {
                             Text("Connected")
                                 .font(.system(size: 10, weight: .bold))
                                 .padding(.horizontal, 6)
@@ -671,57 +680,82 @@ private struct MediaSettingsPane: View {
                         }
                     }
 
-                    if auth.state == .signedIn {
+                    if isSpotifyConnected {
                         if let name = auth.userProfile?.displayName {
-                            Text("Signed in as \(name) • Connected across all devices")
+                            Text("Ready • Signed in as \(name) & syncs playback, artwork, scrubbing & lyrics.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         } else {
-                            Text("Connected to Spotify Web API • Works even when app is closed")
+                            Text("Ready • Automatically syncs playback, artwork, scrubbing & lyrics.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
-                    } else {
-                        Text("Native macOS playback works with zero login. Connect Web API for Spotify Connect & remote control.")
+                    } else if !IntegrationPermissions.isInstalled(.spotify) {
+                        Text("Spotify is not installed on this Mac.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                            .lineLimit(1)
+                    } else {
+                        Text("Click Allow to connect Spotify with Notch in one click.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
 
                 Spacer(minLength: 8)
 
-                if auth.state == .signedIn {
-                    Button("Disconnect") {
-                        withAnimation { auth.signOut() }
+                if isSpotifyConnected {
+                    Button("Open Spotify") {
+                        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: MusicProvider.spotify.bundleID) {
+                            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+                        }
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                } else if auth.state == .authorizing {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("Authorizing…")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                } else if !IntegrationPermissions.isInstalled(.spotify) {
+                    Button("Get Spotify") {
+                        if let url = IntegrationPermissions.downloadURL(for: .spotify) {
+                            NSWorkspace.shared.open(url)
+                        }
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                } else if permissions.pending.contains(.music) {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button("Allow / Connect") {
+                        permissions.grantMusicAccess(for: .spotify)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color(red: 29/255, green: 185/255, blue: 84/255))
+                    .controlSize(.small)
+                    .help("Opens Spotify and grants 1-click permission to Notch")
                 }
             }
 
-            if auth.state != .signedIn {
+            // Optional Web API for power users
+            DisclosureGroup(isExpanded: $showAdvancedSpotify) {
                 VStack(alignment: .leading, spacing: 8) {
-                    if case let .failed(msg) = auth.state {
-                        Text(msg)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.red)
-                    }
+                    Text("Optional: Connect Spotify Web API to control remote Spotify Connect speakers when the Mac app is closed.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Connect Spotify Web API (3 Quick Steps):")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(NotchTheme.inkPrimary)
-
+                    if auth.state == .signedIn {
+                        HStack {
+                            Text("Signed in to Web API")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.green)
+                            Spacer()
+                            Button("Disconnect Web API") {
+                                withAnimation { auth.signOut() }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    } else {
                         HStack(spacing: 8) {
                             Button {
                                 NSWorkspace.shared.open(URL(string: "https://developer.spotify.com/dashboard")!)
@@ -729,8 +763,8 @@ private struct MediaSettingsPane: View {
                                 HStack(spacing: 4) {
                                     Image(systemName: "arrow.up.right.square")
                                         .font(.system(size: 10))
-                                    Text("1. Open Developer Dashboard")
-                                        .font(.system(size: 11))
+                                    Text("1. Dashboard")
+                                        .font(.system(size: 10.5))
                                 }
                             }
                             .buttonStyle(.bordered)
@@ -748,23 +782,21 @@ private struct MediaSettingsPane: View {
                                     Image(systemName: hasCopiedURI ? "checkmark" : "doc.on.doc")
                                         .font(.system(size: 10))
                                         .foregroundStyle(hasCopiedURI ? .green : .primary)
-                                    Text(hasCopiedURI ? "Copied URI!" : "2. Copy Redirect URI")
-                                        .font(.system(size: 11))
+                                    Text(hasCopiedURI ? "Copied URI!" : "2. Copy URI")
+                                        .font(.system(size: 10.5))
                                 }
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
-                        }
 
-                        HStack(spacing: 8) {
-                            TextField("3. Paste App Client ID here", text: Binding(
+                            TextField("3. Client ID", text: Binding(
                                 get: { settings.spotifyClientID },
                                 set: { auth.clientID = $0 }
                             ))
                             .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11).monospaced())
+                            .font(.system(size: 10.5).monospaced())
 
-                            Button("Connect Spotify") {
+                            Button("Connect") {
                                 auth.signIn()
                             }
                             .buttonStyle(.borderedProminent)
@@ -773,19 +805,20 @@ private struct MediaSettingsPane: View {
                             .disabled(auth.clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                     }
-                    .padding(10)
-                    .background {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(.quaternary.opacity(0.35))
-                    }
                 }
+                .padding(.top, 4)
+            } label: {
+                Text("Spotify Connect & Remote Speakers (Optional)")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
+            .padding(.top, 2)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
     }
 
-    /// Apple Music Provider Row: Direct authorization and status.
+    /// Apple Music Provider Row: Direct 1-click authorization and status.
     private var appleMusicProviderRow: some View {
         HStack(spacing: 12) {
             ZStack {
@@ -810,8 +843,8 @@ private struct MediaSettingsPane: View {
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(NotchTheme.inkPrimary)
 
-                    if permissions.musicStatus(for: .appleMusic) == .granted {
-                        Text("Authorized")
+                    if isAppleMusicConnected {
+                        Text("Connected")
                             .font(.system(size: 10, weight: .bold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -820,13 +853,13 @@ private struct MediaSettingsPane: View {
                     }
                 }
 
-                if permissions.musicStatus(for: .appleMusic) == .granted {
+                if isAppleMusicConnected {
                     Text("Ready • Controls playback, library tracks & artwork automatically.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 } else {
-                    Text("Authorize to let Notch display and control Apple Music playback.")
+                    Text("Click Allow to connect Apple Music with Notch in one click.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -835,7 +868,7 @@ private struct MediaSettingsPane: View {
 
             Spacer(minLength: 8)
 
-            if permissions.musicStatus(for: .appleMusic) == .granted {
+            if isAppleMusicConnected {
                 Button("Open Music") {
                     NSWorkspace.shared.open(URL(string: "music://")!)
                 }
@@ -850,7 +883,7 @@ private struct MediaSettingsPane: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Color(red: 250/255, green: 45/255, blue: 72/255))
                 .controlSize(.small)
-                .help("Opens Apple Music and requests system permission")
+                .help("Opens Apple Music and requests 1-click system permission")
             }
         }
         .padding(.horizontal, 14)
