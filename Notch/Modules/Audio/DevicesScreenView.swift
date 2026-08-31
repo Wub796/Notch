@@ -636,7 +636,7 @@ struct SpotifyLibraryScreen: View {
                                         Button("Connect Spotify") {
                                             SettingsWindowController.shared.show()
                                         }
-                                        .buttonStyle(appleMusic.isMusicRunning ? .borderedProminent : .bordered)
+                                        .buttonStyle(.bordered)
                                         .controlSize(.small)
                                     }
 
