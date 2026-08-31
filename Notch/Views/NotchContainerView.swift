@@ -34,71 +34,58 @@ struct NotchContainerView: View {
         .preferredColorScheme(.dark)
     }
 
-    /// The volume/brightness bar rendered while the notch is expanded, or nil
-    /// when no HUD activity is current. It floats just below the header strip
-    /// (which is `topBarHeight` tall) so it never covers the rail or a detail
-    /// screen's controls. Dragging the bar raises the matching activity again
-    /// so it tracks the finger, exactly like the closed HUD.
+    /// The volume/brightness bar rendered while the notch is expanded. It drops
+    /// in the band the slab grows by — *below* the module, never over it — and
+    /// the panel pokes down to make room, so it reads like the system's own
+    /// level overlay. Dragging the bar raises the matching activity again so it
+    /// tracks the finger, exactly like the closed HUD.
     @ViewBuilder
     private var expandedHUD: some View {
-        switch state.activities.transient {
-        case let .volume(level, muted):
-            DroppedHUDBar(
-                kind: .volume(muted: muted),
-                value: Binding(
-                    get: { CGFloat(muted ? 0 : level) },
-                    set: { newValue in
-                        let level = Float(newValue)
-                        state.audio.setVolume(level)
-                        state.activities.showVolume(level: level, muted: level == 0)
-                    }
-                ),
-                showsPercentage: state.settings.showHUDPercentage
-            )
-            .frame(height: 34)
-            .background {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(.black.opacity(0.55))
+        Group {
+            switch state.activities.transient {
+            case let .volume(level, muted):
+                DroppedHUDBar(
+                    kind: .volume(muted: muted),
+                    value: Binding(
+                        get: { CGFloat(muted ? 0 : level) },
+                        set: { newValue in
+                            let level = Float(newValue)
+                            state.audio.setVolume(level)
+                            state.activities.showVolume(level: level, muted: level == 0)
+                        }
+                    ),
+                    showsPercentage: state.settings.showHUDPercentage
+                )
+            case let .brightness(level):
+                DroppedHUDBar(
+                    kind: .brightness,
+                    value: Binding(
+                        get: { CGFloat(level) },
+                        set: { newValue in
+                            let level = Float(newValue)
+                            state.brightness.setBrightness(level)
+                            state.activities.showBrightness(level: level)
+                        }
+                    ),
+                    showsPercentage: state.settings.showHUDPercentage
+                )
+            default:
+                EmptyView()
             }
-            .padding(.top, state.topBarHeight + 6)
-            .padding(.horizontal, 16)
-        case let .brightness(level):
-            DroppedHUDBar(
-                kind: .brightness,
-                value: Binding(
-                    get: { CGFloat(level) },
-                    set: { newValue in
-                        let level = Float(newValue)
-                        state.brightness.setBrightness(level)
-                        state.activities.showBrightness(level: level)
-                    }
-                ),
-                showsPercentage: state.settings.showHUDPercentage
-            )
-            .frame(height: 34)
-            .background {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(.black.opacity(0.55))
-            }
-            .padding(.top, state.topBarHeight + 6)
-            .padding(.horizontal, 16)
-        default:
-            EmptyView()
         }
-    }
-
-    /// True when the current transient activity renders a HUD bar in the
-    /// expanded slab. Only `.volume` and `.brightness` do — everything else
-    /// falls through `expandedHUD`'s switch to `EmptyView`, so this is the
-    /// same condition the overlay needs (and the reason the old
-    /// `if let hud = expandedHUD` couldn't work: the property always returns
-    /// a view, never nil).
-    private var hasExpandedHUD: Bool {
-        guard let transient = state.activities.transient else { return false }
-        switch transient {
-        case .volume, .brightness: return true
-        default: return false
+        .frame(width: NotchSizing.expandedHUDWidth)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.black.opacity(0.5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(.white.opacity(0.08), lineWidth: 1)
+                )
         }
+        // The capsule is vertically centered in the drop band the slab grew by
+        // (and horizontally, by the VStack), so it floats in the panel rather
+        // than hugging the content above it.
+        .frame(height: NotchSizing.expandedHUDDropHeight)
     }
 
     private var notchBody: some View {
@@ -122,27 +109,30 @@ struct NotchContainerView: View {
     }
 
     private var slab: some View {
-        NotchLayoutView(state: state, namespace: notchNamespace, isHovering: state.isHovering)
-            .padding(.horizontal, state.mode == .expanded
-                ? NotchSizing.cornerRadiusInsets.opened.top + NotchSizing.openContentInset
-                : 0)
-            .padding(.bottom, state.mode == .expanded ? NotchSizing.openContentInset : 0)
-            .overlay(alignment: .top) {
-                // When the notch is open, the volume/brightness HUD would
-                // otherwise be invisible — `collapsedActivity` only drives the
-                // closed/peek slab. Reuse the same dropped bar so a media-key
-                // tap shows its level while the panel is expanded too.
-                if state.mode == .expanded,
-                   hasExpandedHUD {
-                    expandedHUD
-                        .transition(NotchAnimations.activitySwap)
-                }
+        VStack(spacing: 0) {
+            NotchLayoutView(state: state, namespace: notchNamespace, isHovering: state.isHovering)
+                .padding(.horizontal, state.mode == .expanded
+                    ? NotchSizing.cornerRadiusInsets.opened.top + NotchSizing.openContentInset
+                    : 0)
+                .padding(.bottom, state.mode == .expanded ? NotchSizing.openContentInset : 0)
+
+            // When the notch is open, the volume/brightness HUD drops below the
+            // module in the band the slab grows by (see `expandedHUD`), rather
+            // than floating over the content. It lives here — not in
+            // `collapsedActivity`, which only drives the closed/peek slab — so
+            // a media-key tap still shows its level while the panel is
+            // expanded. Appearing here rather than as an overlay lets the slab
+            // extend down to hold it instead of covering the screen beneath.
+            if state.mode == .expanded, state.isShowingExpandedHUD {
+                expandedHUD
+                    .transition(NotchAnimations.activitySwap)
             }
-            .frame(
-                height: state.mode == .expanded ? state.expandedSize.height : state.collapsedSize.height,
-                alignment: .top
-            )
-            .background(.black)
+        }
+        .frame(
+            height: state.mode == .expanded ? state.expandedTotalHeight : state.collapsedSize.height,
+            alignment: .top
+        )
+        .background(.black)
             // Keep the top edge bonded to the screen while the shape still
             // rounds into it. The clip is applied after the background, so
             // the rounded intersections remain visible instead of becoming
@@ -166,6 +156,11 @@ struct NotchContainerView: View {
                 value: state.isHovering
             )
             .animation(notchAnimation, value: state.collapsedActivity)
+            // The HUD's drop band appears and disappears at a media-key's
+            // transient pace, which is faster than the open/close spring — so
+            // the slab's grow-and-shrink (and the bar popping in) settle with
+            // the content spring. Innermost, so it wins for this transaction.
+            .animation(NotchAnimations.content, value: state.isShowingExpandedHUD)
             // Closed, the slab is otherwise inert: the probe above owns hover
             // and clicks, so the wings beside the notch are not a target. The
             // exception is a draggable HUD, which needs its bar to receive the

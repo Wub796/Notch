@@ -68,6 +68,20 @@ enum NotchSizing {
     /// on the sides and bottom.
     static let openContentInset: CGFloat = 12
 
+    /// Height the open slab grows by while a volume/brightness HUD drops below
+    /// the module, replacing the on-top-of-the-content overlay. The bar is
+    /// centered in this band, and the panel pokes down to hold it — extending
+    /// the notch vertically instead of covering the screen beneath.
+    /// Deliberately shorter than the closed 34pt drop: against a tall open
+    /// panel a full-size HUD reads heavy.
+    static let expandedHUDDropHeight: CGFloat = 28
+
+    /// The dropped HUD's width on the open panel. The slab is far wider than
+    /// the collapsed notch, and a full-panel strip would read as a new screen
+    /// rather than a level readout — capping it keeps the bar a centered
+    /// capsule.
+    static let expandedHUDWidth: CGFloat = 280
+
     /// Bounds for the two size preferences. These are `Double`, not `CGFloat`:
     /// they are slider bounds before they are geometry, and `NotchSettings`
     /// stores every preference as a `Double`. Mixing the two only forces a

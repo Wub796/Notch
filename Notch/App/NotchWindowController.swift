@@ -149,7 +149,10 @@ final class NotchWindowController: NSWindowController {
     private func interactiveScreenRect(on screen: NSScreen) -> NSRect {
         if state.mode == .expanded {
             let width = state.expandedSize.width + NotchSizing.shadowPadding * 2
-            let height = state.expandedSize.height + NotchSizing.shadowPadding
+            // The expanded total (which includes the band the volume/brightness
+            // HUD drops into) rather than the bare fitted size, so the dropped
+            // bar and its drag handle stay inside the interactive region.
+            let height = state.expandedTotalHeight + NotchSizing.shadowPadding
             return NSRect(
                 x: screen.frame.midX - width / 2,
                 y: screen.frame.maxY - height,
@@ -223,7 +226,7 @@ final class NotchHostingView: NSHostingView<NotchContainerView> {
 
         if state.mode == .expanded {
             width = state.expandedSize.width + NotchSizing.shadowPadding * 2
-            height = state.expandedSize.height + NotchSizing.shadowPadding
+            height = state.expandedTotalHeight + NotchSizing.shadowPadding
         } else {
             width = max(state.hoverProbeSize.width, state.collapsedSize.width) + 20
             height = max(state.hoverProbeSize.height, state.collapsedSize.height) + 12

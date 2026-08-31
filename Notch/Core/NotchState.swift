@@ -134,6 +134,26 @@ final class NotchState {
         return size
     }
 
+    /// True while a volume/brightness HUD is dropping below the open module.
+    /// The expanded slab grows by a band to hold it rather than covering the
+    /// module (see `NotchSizing.expandedHUDDropHeight`).
+    var isShowingExpandedHUD: Bool {
+        guard let transient = activities.transient else { return false }
+        switch transient {
+        case .volume, .brightness: true
+        default: false
+        }
+    }
+
+    /// The full height the open slab occupies: `expandedSize` plus, while a
+    /// HUD is dropping below the module, the band that holds it. Shared by the
+    /// view (which frames the slab) and the window controller (which sizes the
+    /// interactive region), so click and drag hit-testing always covers the
+    /// whole panel including the dropped bar.
+    var expandedTotalHeight: CGFloat {
+        expandedSize.height + (isShowingExpandedHUD ? NotchSizing.expandedHUDDropHeight : 0)
+    }
+
     /// Apps currently putting audio out besides the one the dashboard's
     /// music card shows — the row of chips beneath it. The slab sizes
     /// itself to this and HomeDashboardView renders it, so there is one
