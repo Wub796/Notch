@@ -520,13 +520,43 @@ final class MediaController {
         // actual player is paused.
         updateLyricActivityTimer()
 
-        // 1. Browser media (YouTube, web videos)
+        // 1. If music player is running/active, ALWAYS prioritize controlling the music player!
+        let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
+        let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
+
+        if !isBrowserVideo && (spotifyRunning || musicRunning) {
+            if let bundle = sourceAppBundleID {
+                if bundle == MusicProvider.spotify.bundleID {
+                    runProviderCommand(appName: "Spotify", command: newState ? "play" : "pause")
+                    return
+                } else if bundle == MusicProvider.appleMusic.bundleID {
+                    runProviderCommand(appName: "Music", command: newState ? "play" : "pause")
+                    return
+                }
+            }
+            if selectedProvider == .spotify && spotifyRunning {
+                runProviderCommand(appName: "Spotify", command: newState ? "play" : "pause")
+                return
+            } else if selectedProvider == .appleMusic && musicRunning {
+                runProviderCommand(appName: "Music", command: newState ? "play" : "pause")
+                return
+            }
+            if spotifyRunning {
+                runProviderCommand(appName: "Spotify", command: newState ? "play" : "pause")
+                return
+            } else if musicRunning {
+                runProviderCommand(appName: "Music", command: newState ? "play" : "pause")
+                return
+            }
+        }
+
+        // 2. Browser media (YouTube, web videos) - only when no music player is active
         if isBrowserVideo || isShowingBrowserSnapshot {
             toggleBrowserPlayback()
             return
         }
 
-        // 2. Specific Selected Provider
+        // 3. Specific Selected Provider
         if let provider = selectedProvider.appleScriptAppName {
             if selectedProvider == .spotify,
                SpotifyAuth.shared.state == .signedIn,
@@ -546,7 +576,7 @@ final class MediaController {
             return
         }
 
-        // 3. Automatic provider detection
+        // 4. Automatic provider detection
         if let bundle = sourceAppBundleID {
             if bundle == MusicProvider.spotify.bundleID {
                 runProviderCommand(appName: "Spotify", command: newState ? "play" : "pause")
@@ -593,6 +623,35 @@ final class MediaController {
     }
 
     func nextTrack() {
+        let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
+        let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
+
+        if !isBrowserVideo && (spotifyRunning || musicRunning) {
+            if let bundle = sourceAppBundleID {
+                if bundle == MusicProvider.spotify.bundleID {
+                    runProviderCommand(appName: "Spotify", command: "next track")
+                    return
+                } else if bundle == MusicProvider.appleMusic.bundleID {
+                    runProviderCommand(appName: "Music", command: "next track")
+                    return
+                }
+            }
+            if selectedProvider == .spotify && spotifyRunning {
+                runProviderCommand(appName: "Spotify", command: "next track")
+                return
+            } else if selectedProvider == .appleMusic && musicRunning {
+                runProviderCommand(appName: "Music", command: "next track")
+                return
+            }
+            if spotifyRunning {
+                runProviderCommand(appName: "Spotify", command: "next track")
+                return
+            } else if musicRunning {
+                runProviderCommand(appName: "Music", command: "next track")
+                return
+            }
+        }
+
         if isBrowserVideo || isShowingBrowserSnapshot {
             nextBrowserTrack()
             return
@@ -655,6 +714,35 @@ final class MediaController {
     }
 
     func previousTrack() {
+        let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
+        let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
+
+        if !isBrowserVideo && (spotifyRunning || musicRunning) {
+            if let bundle = sourceAppBundleID {
+                if bundle == MusicProvider.spotify.bundleID {
+                    runProviderCommand(appName: "Spotify", command: "previous track")
+                    return
+                } else if bundle == MusicProvider.appleMusic.bundleID {
+                    runProviderCommand(appName: "Music", command: "previous track")
+                    return
+                }
+            }
+            if selectedProvider == .spotify && spotifyRunning {
+                runProviderCommand(appName: "Spotify", command: "previous track")
+                return
+            } else if selectedProvider == .appleMusic && musicRunning {
+                runProviderCommand(appName: "Music", command: "previous track")
+                return
+            }
+            if spotifyRunning {
+                runProviderCommand(appName: "Spotify", command: "previous track")
+                return
+            } else if musicRunning {
+                runProviderCommand(appName: "Music", command: "previous track")
+                return
+            }
+        }
+
         if isBrowserVideo || isShowingBrowserSnapshot {
             previousBrowserTrack()
             return
@@ -725,6 +813,35 @@ final class MediaController {
         anchorDate = Date()
         displayedElapsed = clamped
         lyrics.updateCurrentLine(for: clamped)
+
+        let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
+        let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
+
+        if !isBrowserVideo && (spotifyRunning || musicRunning) {
+            if let bundle = sourceAppBundleID {
+                if bundle == MusicProvider.spotify.bundleID {
+                    runProviderCommand(appName: "Spotify", command: "set player position to \(Int(clamped))")
+                    return
+                } else if bundle == MusicProvider.appleMusic.bundleID {
+                    runProviderCommand(appName: "Music", command: "set player position to \(Int(clamped))")
+                    return
+                }
+            }
+            if selectedProvider == .spotify && spotifyRunning {
+                runProviderCommand(appName: "Spotify", command: "set player position to \(Int(clamped))")
+                return
+            } else if selectedProvider == .appleMusic && musicRunning {
+                runProviderCommand(appName: "Music", command: "set player position to \(Int(clamped))")
+                return
+            }
+            if spotifyRunning {
+                runProviderCommand(appName: "Spotify", command: "set player position to \(Int(clamped))")
+                return
+            } else if musicRunning {
+                runProviderCommand(appName: "Music", command: "set player position to \(Int(clamped))")
+                return
+            }
+        }
 
         if isBrowserVideo || isShowingBrowserSnapshot {
             seekBrowser(to: clamped)
@@ -1293,6 +1410,13 @@ final class MediaController {
 
         // If MediaRemote reports for a browser without a title, defer to the browser probe.
         if isBrowser && title.isEmpty {
+            return
+        }
+
+        // If a dedicated music player (Spotify or Apple Music) is running with a track, ignore browser reports!
+        let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
+        let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
+        if isBrowser && (spotifyRunning || musicRunning) && hasTrack && !isBrowserVideo {
             return
         }
 
