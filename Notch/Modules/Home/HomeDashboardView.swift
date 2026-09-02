@@ -57,7 +57,7 @@ struct HomeDashboardView: View {
             // date strip hugs the same gutter as the header's trailing icons
             // and they read as one aligned right edge.
             calendarSection
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
         // No vertical filler. The module is height-fitted to its content, and
         // a flexible maxHeight frame here would let the fit measure the full
@@ -421,10 +421,9 @@ struct HomeDashboardView: View {
                 }
             }
 
-            // Keep the event line close to the date strip. The fitted home
-            // module should end shortly after its real content rather than
-            // reserving a large artificial footer.
-            Spacer(minLength: 2)
+            // The event line ("no more items today") sits right under the
+            // date strip so the column reads as one compact block near the
+            // top, instead of its label floating at the slab's bottom edge.
             nextEventLine(next)
         }
         .contentShape(Rectangle())

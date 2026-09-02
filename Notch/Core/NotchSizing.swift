@@ -75,14 +75,16 @@ enum NotchSizing {
     /// tight to the transport row. The other surfaces keep the corner-radius
     /// clearance plus breathing room.
     static func contentSideInset(for tab: NotchTab) -> CGFloat {
-        tab == .home ? 18 : cornerRadiusInsets.opened.top + openContentInset
+        tab == .home ? 30 : cornerRadiusInsets.opened.top + openContentInset
     }
 
     /// Per-tab inset below the open module. Home's dashboard ends at the
-    /// transport row, so it gets a snug baseline; taller surfaces keep the
-    /// larger inset.
+    /// transport row, so its bottom sits flush with the slab edge (0pt —
+    /// negative values are ignored by SwiftUI padding, and the slab-height
+    /// math subtracts this inset, so a negative number would clip the row);
+    /// taller surfaces keep the larger inset.
     static func contentBottomInset(for tab: NotchTab) -> CGFloat {
-        tab == .home ? 8 : openContentInset
+        tab == .home ? 0 : openContentInset
     }
 
     /// Height the open slab grows by while a volume/brightness HUD drops below
