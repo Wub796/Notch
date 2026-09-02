@@ -40,8 +40,8 @@ live lyrics, a file shelf, your next 24 hours of events, and hardware telemetry.
 - **Settings** — a native tabbed preferences window (General / Notch / Media /
   Activities / System / About): launch at login (SMAppService), animation style,
   hover and scroll expansion with tunable delays and hover tolerance, sneak
-  peek, live-activity toggles, instant AirDrop, telemetry refresh rate, the
-  real-time audio meter, and the optional Spotify account.
+  peek, live-activity toggles, instant AirDrop, telemetry refresh rate, and
+  the real-time audio meter.
 - **Live Activities** (Sapphire-inspired) — the collapsed notch grows wings for
   whatever matters right now, by priority: a **volume HUD** (CoreAudio listener)
   when you change the system volume, a **battery event** when you plug/unplug or
@@ -50,14 +50,11 @@ live lyrics, a file shelf, your next 24 hours of events, and hardware telemetry.
   a **meeting-soon countdown** starting 15 minutes before your next event, and
   otherwise the now-playing artwork + equalizer. Every source is push-based — no
   polling while collapsed.
-- **Devices** — four sections behind one nav. *Now* is the player; *Library*
-  lists the Spotify account's playlists, sorted by Recents / Name / Owner, with
-  the one that is actually playing marked from the account's own playback
-  context; *Discover* searches tracks, playlists, albums and artists and
-  otherwise shows a For You shelf of what was recently played; *Audio* holds
-  four output tabs — Spotify Connect devices with their own volume, local
-  AirPlay outputs, the apps making sound, and every CoreAudio output. Playback
-  needs no account; the first three sections do.
+- **Devices** — two sections behind one nav. *Now* is the player; *Audio*
+  holds three output tabs — the apps making sound and their individual levels,
+  every CoreAudio output, and the local AirPlay ones. No accounts and no web
+  APIs anywhere: everything here is this Mac, read from CoreAudio and driven
+  over Apple Events and the hardware media keys.
 - **Instant audio detection** — CoreAudio property listeners (`'prs#'`,
   `'piro'`, and `deviceIsRunningSomewhere`) report the moment any process
   starts or stops output, so the Audio screen is current before it is opened

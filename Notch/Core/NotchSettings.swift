@@ -186,14 +186,6 @@ final class NotchSettings {
 
     var fetchLyrics = true { didSet { save(fetchLyrics, "fetchLyrics") } }
 
-    /// Which order the Spotify library screen is sorted in. A raw string so
-    /// the settings layer stays free of the view's enum.
-    var spotifyLibrarySort: String? {
-        didSet {
-            UserDefaults.standard.set(spotifyLibrarySort, forKey: "spotifyLibrarySort")
-        }
-    }
-
     /// Drive the visualiser from the real output mix rather than the volume.
     /// Off by default: it costs a Screen Recording permission.
     var realtimeAudioMeter = false {
@@ -237,7 +229,6 @@ final class NotchSettings {
     /// The user's own Spotify app client ID. Notch cannot ship one: a public
     /// client ID in an open repository gets rate-limited and revoked, and the
     /// app registration belongs to whoever runs it.
-    var spotifyClientID = "" { didSet { save(spotifyClientID, "spotifyClientID") } }
 
     /// Percentage beside the volume / brightness HUD bar
     /// (`showClosedNotchHUDPercentage` in the references).
@@ -426,7 +417,6 @@ final class NotchSettings {
         if defaults.object(forKey: "fetchLyrics") != nil {
             fetchLyrics = defaults.bool(forKey: "fetchLyrics")
         }
-        spotifyLibrarySort = defaults.string(forKey: "spotifyLibrarySort")
         if defaults.object(forKey: "realtimeAudioMeter") != nil {
             realtimeAudioMeter = defaults.bool(forKey: "realtimeAudioMeter")
         }
@@ -457,7 +447,6 @@ final class NotchSettings {
         ] where defaults.object(forKey: key) != nil {
             apply(defaults.double(forKey: key))
         }
-        spotifyClientID = defaults.string(forKey: "spotifyClientID") ?? ""
         hotKey = defaults.string(forKey: "hotKey")
             ?? HotKeyManager.Shortcut.optionCommandN.rawValue
         if defaults.object(forKey: "showHUDPercentage") != nil {

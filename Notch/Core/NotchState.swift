@@ -270,7 +270,6 @@ final class NotchState {
     let quickActions = QuickActions()
     let audioApps = AudioAppMonitor()
     let audioMeter = SystemAudioMeter()
-    let spotify = SpotifyLibrary()
 
     /// Which screen of the Devices surface is showing.
     var devicesSection: DevicesSection = .now {

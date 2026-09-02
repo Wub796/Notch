@@ -543,7 +543,6 @@ private struct DimensionSliders: View {
 private struct MediaSettingsPane: View {
     @Bindable var settings = NotchSettings.shared
     private var permissions = IntegrationPermissions.shared
-    private var auth = SpotifyAuth.shared
 
     private var isSpotifyConnected: Bool {
         permissions.musicStatus(for: .spotify) == .granted
@@ -585,12 +584,10 @@ private struct MediaSettingsPane: View {
                 name: "Spotify",
                 isConnected: isSpotifyConnected,
                 status: spotifyStatusLine,
-                showsDivider: true
+                showsDivider: false
             ) {
                 spotifyPrimaryButton
             }
-
-            spotifyAccountRow
 
             SettingsCallout(
                 text: "Free, local: Notch reads and controls the Spotify app on this Mac. Tap Allow once.",
@@ -600,173 +597,6 @@ private struct MediaSettingsPane: View {
         }
     }
 
-    /// The optional account, on top of the local control above.
-    ///
-    /// Playback needs none of this. The Devices screen's Library, Discover and
-    /// Spotify Connect sections do — they are the account's data, and without a
-    /// way to sign in they were permanently empty while telling the user to
-    /// "connect your account in Settings", where there was nothing to connect.
-    @ViewBuilder
-    private var spotifyAccountRow: some View {
-        SettingsRow(
-            systemImage: "person.crop.circle",
-            tint: .green,
-            title: "Spotify Account (optional)",
-            subtitle: spotifyAccountStatus,
-            showsDivider: auth.state == .needsClientID
-        ) {
-            switch auth.state {
-            case .signedIn:
-                Button("Sign Out") { SpotifyAuth.shared.signOut() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-            case .authorizing:
-                ProgressView().controlSize(.small)
-            case .needsClientID:
-                EmptyView()
-            case .signedOut, .failed:
-                Button("Connect") { SpotifyAuth.shared.signIn() }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-            }
-        }
-
-        if auth.state == .needsClientID {
-            SettingsRow(
-                systemImage: "key.fill",
-                tint: .green,
-                title: "Client ID",
-                subtitle: "Create an app on Spotify's developer dashboard, add "
-                    + "\(SpotifyAuth.redirectURI) as a redirect URI, and paste its client ID. "
-                    + "Notch can't ship one: a public client ID in an open repository gets "
-                    + "revoked, and the registration belongs to whoever runs the app.",
-                showsDivider: false
-            ) {
-                HStack(spacing: 8) {
-                    TextField("Client ID", text: Binding(
-                        get: { SpotifyAuth.shared.clientID },
-                        set: { SpotifyAuth.shared.clientID = $0.trimmingCharacters(in: .whitespaces) }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 210)
-
-                    Button("Dashboard") {
-                        if let url = URL(string: "https://developer.spotify.com/dashboard") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
-        }
-    }
-
-    private var spotifyAccountStatus: String {
-        switch auth.state {
-        case .signedIn:
-            "Connected. Your playlists, search and Connect devices are in the Devices screen."
-        case .authorizing:
-            "Waiting for Spotify in your browser…"
-        case .needsClientID:
-            "Adds your playlists, search and Spotify Connect devices. Needs a client ID."
-        case .signedOut:
-            "Adds your playlists, search and Spotify Connect devices to the Devices screen."
-        case let .failed(reason):
-            reason
-        }
-    }
-
-    private var spotifyStatusLine: String {
-        if isSpotifyConnected {
-            return "Ready. Controlling Spotify on this Mac."
-        }
-        if !IntegrationPermissions.isInstalled(.spotify) {
-            return "Spotify isn't installed on this Mac."
-        }
-        return "Not connected yet. Allow Notch to control Spotify."
-    }
-
-    @ViewBuilder
-    private var spotifyPrimaryButton: some View {
-        if isSpotifyConnected {
-            Button("Open Spotify") {
-                if let url = NSWorkspace.shared
-                    .urlForApplication(withBundleIdentifier: MusicProvider.spotify.bundleID) {
-                    NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-        } else if !IntegrationPermissions.isInstalled(.spotify) {
-            Button("Get Spotify") {
-                if let url = IntegrationPermissions.downloadURL(for: .spotify) {
-                    NSWorkspace.shared.open(url)
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-        } else if permissions.pending.contains(.music) {
-            ProgressView().controlSize(.small)
-        } else {
-            Button("Allow") {
-                permissions.grantMusicAccess(for: .spotify)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Color(red: 29/255, green: 185/255, blue: 84/255))
-            .controlSize(.small)
-            .help("Opens Spotify and lets Notch control it")
-        }
-    }
-
-    /// Apple Music needs no account or token — just Automation consent to read
-    /// and control the Music app on this Mac.
-    private var appleMusicCard: some View {
-        SettingsCard(title: "Apple Music") {
-            providerHeader(
-                icon: "apple.logo",
-                iconColor: Color(red: 250/255, green: 45/255, blue: 72/255),
-                name: "Apple Music",
-                isConnected: isAppleMusicConnected,
-                status: isAppleMusicConnected
-                    ? "Ready. Controls playback, library tracks and artwork automatically."
-                    : "Not connected yet. Allow Notch to read and control Apple Music.",
-                showsDivider: false
-            ) {
-                appleMusicPrimaryButton
-            }
-
-            SettingsCallout(
-                text: "Free, local: Notch reads and controls the Music app on this Mac. Tap Allow once.",
-                systemImage: "checkmark.shield.fill",
-                tint: .blue
-            )
-        }
-    }
-
-    @ViewBuilder
-    private var appleMusicPrimaryButton: some View {
-        if isAppleMusicConnected {
-            Button("Open Music") {
-                NSWorkspace.shared.open(URL(string: "music://")!)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-        } else if permissions.pending.contains(.music) {
-            ProgressView().controlSize(.small)
-        } else {
-            Button("Allow") {
-                permissions.grantMusicAccess(for: .appleMusic)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Color(red: 250/255, green: 45/255, blue: 72/255))
-            .controlSize(.small)
-            .help("Opens Apple Music and lets Notch read and control it")
-        }
-    }
-
-    /// Shared header for a provider card: icon tile, name, a status line, and
-    /// the primary action on the trailing edge with a live status badge.
     private func providerHeader<Action: View>(
         icon: String,
         iconColor: Color,

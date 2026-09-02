@@ -26,17 +26,6 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.notch.spotify-callback</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>notch</string>
-			</array>
-		</dict>
-	</array>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Notch. All rights reserved.</string>
 	<key>NSPrincipalClass</key>
@@ -49,8 +38,6 @@
 	<string>Notch communicates with Music and Spotify to read the current track when system now-playing data is unavailable.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Notch lists your paired Bluetooth audio devices so you can connect them from the audio screen.</string>
-	<key>NSAppleMusicUsageDescription</key>
-	<string>Notch displays the current track, album artwork, and synchronized lyrics for the media you are playing.</string>
 	<key>NSLocationUsageDescription</key>
 	<string>Notch uses your approximate location to show the current weather in the notch header.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

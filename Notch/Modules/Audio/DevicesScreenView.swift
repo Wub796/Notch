@@ -59,15 +59,12 @@ enum DevicesScreenMetrics {
 /// The Devices screen: a title row, the account chip, the section switch, and
 /// whichever section is selected.
 ///
-/// Every screen here is live: Now tracks whatever is playing, and Audio's four
-/// tabs deliberately mix two worlds — Spotify Connect devices are remote/account
-/// driven, while AirPlay, Apps and System are this Mac's own, read from
-/// CoreAudio.
+/// Every screen here is live: Now tracks whatever is playing, and Audio's tabs
+/// are all this Mac's own outputs, read from CoreAudio.
 struct DevicesScreenView: View {
     let state: NotchState
     let namespace: Namespace.ID
 
-    private var spotify: SpotifyLibrary { state.spotify }
     private var media: MediaController { state.media }
 
     private var activeAudioApp: AudioAppMonitor.App? {
@@ -137,12 +134,6 @@ struct DevicesScreenView: View {
             .animation(NotchAnimations.content, value: state.mediaShowsFullLyrics)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear {
-            spotify.refresh()
-        }
-        .onChange(of: spotify.isConnected) { _, connected in
-            if connected { spotify.refresh(force: true) }
-        }
     }
 
     // MARK: - Top Hero Row (Artwork + Title + Artist aligned with Section buttons & 3D lyrics)
@@ -174,12 +165,9 @@ struct DevicesScreenView: View {
 
             Spacer(minLength: 8)
 
-            // RIGHT: account and section controls only. Lyrics belong solely
-            // to Now and are centered below the hero.
-            HStack(spacing: 8) {
-                accountChip
-                sectionSwitch
-            }
+            // RIGHT: the section switch. Lyrics belong solely to Now and are
+            // centered below the hero.
+            sectionSwitch
         }
         .frame(minHeight: 78, maxHeight: 78)
     }
@@ -316,11 +304,6 @@ struct DevicesScreenView: View {
                 }
                 .buttonStyle(PressableButtonStyle())
             }
-        } else if let followers = media.followersLabel {
-            Text(followers)
-                .font(.notchCaption.weight(.semibold))
-                .foregroundStyle(NotchTheme.inkMuted)
-                .lineLimit(1)
         } else if let album = media.track?.album, !album.isEmpty {
             Text(album)
                 .font(.notchCaption)
@@ -464,41 +447,6 @@ struct DevicesScreenView: View {
         .accessibilityLabel(label)
     }
 
-    @ViewBuilder
-    private var accountChip: some View {
-        if spotify.isConnected {
-            HStack(spacing: 0) {
-                Text(spotify.profile?.displayName ?? "Spotify")
-                    .font(.notchBody.weight(.bold))
-                    .foregroundStyle(NotchTheme.inkPrimary)
-                    .lineLimit(1)
-                    // The pill row beside this is eight items wide; a long
-                    // display name must give way to it, not squeeze it.
-                    .frame(maxWidth: 130, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 12)
-
-                Rectangle()
-                    .fill(.white.opacity(0.14))
-                    .frame(width: 1, height: 18)
-
-                Button {
-                    SpotifyAuth.shared.signOut()
-                    spotify.clear()
-                    state.showToast("Logged out of Spotify", symbol: "power")
-                } label: {
-                    Text("Log out")
-                        .font(.notchCallout.weight(.semibold))
-                        .foregroundStyle(NotchTheme.inkSecondary)
-                        .padding(.horizontal, 12)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(PressableButtonStyle())
-            }
-            .frame(height: 34)
-            .background(Capsule().fill(Color.white.opacity(0.08)))
-        }
-    }
     private var sectionSwitch: some View {
         HStack(spacing: 4) {
             // Discover is intentionally omitted; Audio remains available as

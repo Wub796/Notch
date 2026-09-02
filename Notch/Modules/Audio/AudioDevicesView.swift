@@ -14,8 +14,6 @@ enum AudioScreenTab: String, CaseIterable, Identifiable {
     case system
     /// Local outputs CoreAudio reports as AirPlay.
     case airplay
-    /// Spotify Connect: the account's own devices, over the Web API.
-    case spotify
 
     var id: String { rawValue }
 
@@ -24,7 +22,6 @@ enum AudioScreenTab: String, CaseIterable, Identifiable {
         case .apps: "Apps & Web"
         case .system: "System"
         case .airplay: "AirPlay"
-        case .spotify: "Spotify"
         }
     }
 
@@ -33,7 +30,6 @@ enum AudioScreenTab: String, CaseIterable, Identifiable {
         case .apps: "waveform"
         case .system: "speaker.wave.2.fill"
         case .airplay: "airplayaudio"
-        case .spotify: "music.note"
         }
     }
 }
@@ -42,11 +38,10 @@ enum AudioScreenTab: String, CaseIterable, Identifiable {
 /// selected. The switch itself lives in `DevicesScreenView`, alongside the
 /// section pills, because the reference draws both in one capsule.
 ///
-/// Every tab reports real state, from two different places. Spotify is the
-/// account's Connect devices over the Web API — remote, and controllable
-/// wherever they are. AirPlay and System are this Mac's own CoreAudio
-/// outputs, fully interactive. Apps lists every process CoreAudio says is
-/// running output and exposes each process's independent volume level.
+/// Every tab reports real state, all of it this Mac's own. AirPlay and System
+/// are its CoreAudio outputs, fully interactive; Apps lists every process
+/// CoreAudio says is running output and exposes each process's independent
+/// volume level.
 struct AudioDevicesView: View {
     let state: NotchState
 
@@ -70,7 +65,6 @@ struct AudioDevicesView: View {
                 case .apps: appRows
                 case .system: deviceRows
                 case .airplay: airplayRows
-                case .spotify: spotifyRows
                 }
 
                 inputSection
@@ -83,7 +77,6 @@ struct AudioDevicesView: View {
             // rather than appear.
             .animation(.notchSpring, value: state.audioApps.apps)
             .animation(.notchSpring, value: state.audio.devices)
-            .animation(.notchSpring, value: spotify.devices)
         }
         .notchScrollFade(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -91,17 +84,6 @@ struct AudioDevicesView: View {
             state.audio.refresh()
             state.audioInput.refresh()
             refreshPairedBluetooth()
-        }
-        // Apps needs no timer at all any more: `AudioAppMonitor` listens to
-        // CoreAudio and the list is already current when this appears. A
-        // Connect device waking on the other side of the house is the one
-        // thing nothing pushes, so that tab — and only that tab — asks.
-        .task(id: state.audioTab) {
-            guard state.audioTab == .spotify else { return }
-            while !Task.isCancelled {
-                spotify.refreshDevices()
-                try? await Task.sleep(for: .seconds(4))
-            }
         }
     }
 
@@ -141,7 +123,6 @@ struct AudioDevicesView: View {
         }
     }
 
-    private var spotify: SpotifyLibrary { state.spotify }
 
     private var audioBannerTitle: String {
         if let activeAudioApp { return activeAudioApp.name }
@@ -234,98 +215,10 @@ struct AudioDevicesView: View {
         }
     }
 
-    // MARK: - Spotify Connect
-
-struct SpotifyDeviceCard: View {
-    let device: SpotifyClient.Device
-    let onSelect: () -> Void
-    let onVolume: (Double) -> Void
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 14) {
-                Image(systemName: device.symbolName).font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(device.isActive ? Color.green : NotchTheme.inkSecondary).frame(width: 30)
-                Text(device.name).font(.notchHeadline).foregroundStyle(NotchTheme.inkPrimary).lineLimit(1)
-                Spacer(minLength: 8)
-                if device.isActive { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
-                else { Button("Switch", action: onSelect).buttonStyle(PressableButtonStyle()) }
-            }
-            if device.supportsVolume { SpotifyVolumeBar(percent: device.volumePercent ?? 0, onChange: onVolume) }
-        }.padding(NotchTheme.Space.l).frame(maxWidth: .infinity, alignment: .leading)
-            .notchCard(isHighlighted: device.isActive, tint: .green)
-    }
-}
-
-struct SpotifyVolumeBar: View {
-    let percent: Int
-    let onChange: (Double) -> Void
-    @State private var dragFraction: Double?
-    var body: some View {
-        GeometryReader { proxy in
-            let fraction = dragFraction ?? min(max(Double(percent) / 100, 0), 1)
-            ZStack(alignment: .leading) {
-                Capsule().fill(NotchTheme.surfaceHover)
-                Capsule().fill(Color.accentColor).frame(width: max(proxy.size.width * fraction, 120))
-                HStack { Text("Volume").font(.notchHeadline); Spacer(); Text("\(Int((fraction * 100).rounded())) %").font(.notchHeadline.monospacedDigit()) }
-                    .foregroundStyle(.white).padding(.horizontal, 22)
-            }.contentShape(Capsule()).gesture(DragGesture(minimumDistance: 0).onChanged { value in
-                guard proxy.size.width > 0 else { return }
-                let next = min(max(value.location.x / proxy.size.width, 0), 1)
-                dragFraction = next; onChange(next)
-            }.onEnded { _ in dragFraction = nil })
-        }.frame(height: 52)
-    }
-}
-
-struct SpotifyConnectPrompt: View {
-    let message: String
-    var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "music.note.house.fill").font(.system(size: 28)).foregroundStyle(.green)
-            Text(message).font(.notchBody).multilineTextAlignment(.center)
-            Text("Settings → Media → Spotify Account. Playback works without it; "
-                 + "this is what fills the Library, Discover and Connect screens.")
-                .font(.notchFootnote).foregroundStyle(NotchTheme.inkMuted).multilineTextAlignment(.center)
-            Button("Open Media Settings") { SettingsWindowController.shared.show() }.buttonStyle(PressableButtonStyle())
-        }.padding(.vertical, 20).frame(maxWidth: .infinity)
-    }
-}
-
-
-    @ViewBuilder
-    private var spotifyRows: some View {
-        if !spotify.isConnected {
-            SpotifyConnectPrompt(
-                message: "Connect Spotify to see and control the devices on your account."
-            )
-        } else if spotify.devices.isEmpty {
-            emptyRow(spotify.isLoadingDevices
-                     ? "Looking for devices…"
-                     : "No Spotify devices are available. Open Spotify somewhere first.")
-        } else {
-            ForEach(spotify.devices) { device in
-                SpotifyDeviceCard(
-                    device: device,
-                    onSelect: { spotify.transfer(to: device) },
-                    onVolume: { spotify.setVolume($0, for: device) }
-                )
-            }
-
-            if let error = spotify.lastError {
-                Text(error)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(.orange)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
     // MARK: - AirPlay
 
     /// Local AirPlay outputs, which is what CoreAudio calls an Apple TV or a
-    /// HomePod once macOS has one selected. Spotify's own Connect speakers
-    /// live on the Spotify tab — they are a different transport, and merging
-    /// the two lists would make it impossible to tell which one a row means.
+    /// HomePod once macOS has one selected.
     @ViewBuilder
     private var airplayRows: some View {
         let outputs = state.audio.devices.filter {

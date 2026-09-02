@@ -95,7 +95,7 @@ struct MediaPlayerView: View {
                 MarqueeText(
                     text: displayTitle,
                     font: .system(size: 21, weight: .bold, design: .rounded),
-                    width: media.upNext == nil ? 300 : 200
+                    width: 300
                 )
                 .foregroundStyle(NotchTheme.inkPrimary)
 
@@ -105,14 +105,11 @@ struct MediaPlayerView: View {
             }
 
             Spacer(minLength: 8)
-
-            upNextCard
         }
         .frame(height: 78)
     }
 
-    /// The line under the artist: the follower count when Spotify is
-    /// connected, the album otherwise, or quick support for Apple Music & Spotify.
+    /// The line under the artist: the album, or quick links to the players.
     @ViewBuilder
     private var subtitleLine: some View {
         if media.track == nil && activeAudioApp == nil {
@@ -153,11 +150,6 @@ struct MediaPlayerView: View {
                 }
                 .buttonStyle(PressableButtonStyle())
             }
-        } else if let followers = media.followersLabel {
-            Text(followers)
-                .font(.notchCaption.weight(.semibold))
-                .foregroundStyle(NotchTheme.inkMuted)
-                .lineLimit(1)
         } else if let album = media.track?.album, !album.isEmpty {
             Text(album)
                 .font(.notchCaption)
@@ -179,49 +171,6 @@ struct MediaPlayerView: View {
                 .background(Capsule().fill(Color.white.opacity(0.08)))
             }
             .buttonStyle(PressableButtonStyle())
-        }
-    }
-
-    /// What plays next, from the connected player's own queue. Absent unless
-    /// Spotify is connected — nothing else exposes a queue.
-    @ViewBuilder
-    private var upNextCard: some View {
-        if let next = media.upNext {
-            HStack(spacing: 8) {
-                Group {
-                    if let art = next.artwork {
-                        Image(nsImage: art).resizable().aspectRatio(contentMode: .fill)
-                    } else {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Color.white.opacity(0.08))
-                    }
-                }
-                .frame(width: 32, height: 32)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("UP NEXT")
-                        .font(.system(size: 8.5, weight: .heavy, design: .rounded))
-                        .tracking(0.8)
-                        .foregroundStyle(NotchTheme.inkMuted)
-                    Text(next.title)
-                        .font(.notchCaption.weight(.bold))
-                        .foregroundStyle(NotchTheme.inkPrimary)
-                        .lineLimit(1)
-                    Text(next.artist)
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(NotchTheme.inkSecondary)
-                        .lineLimit(1)
-                }
-                .frame(width: 96, alignment: .leading)
-            }
-            .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-            )
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Up next: \(next.title) by \(next.artist)")
         }
     }
 

@@ -84,15 +84,6 @@ final class MediaController {
     /// IPC or disk work.
     var onNormalizedTrackChange: ((NotchMediaTrack?) -> Void)?
 
-    /// Queue and artist detail from Spotify, when it is connected. Empty
-    /// otherwise — nothing else on macOS exposes a playback queue.
-    private(set) var queue: [SpotifyClient.QueueItem] = []
-    private(set) var followersLabel: String?
-
-    /// The next track, for the player's Up Next card.
-    var upNext: SpotifyClient.QueueItem? { queue.first }
-
-    private var lastSpotifyLookup: String?
 
     /// Fired when a genuinely new track replaces a previous one — drives the
     /// collapsed-notch sneak peek.
@@ -659,20 +650,6 @@ final class MediaController {
 
         // 3. Specific Selected Provider
         if let provider = selectedProvider.appleScriptAppName {
-            if selectedProvider == .spotify,
-               SpotifyAuth.shared.state == .signedIn,
-               NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
-                Task {
-                    if let token = await SpotifyAuth.shared.validAccessToken() {
-                        if newState {
-                            await SpotifyClient.resume(token: token)
-                        } else {
-                            await SpotifyClient.pause(token: token)
-                        }
-                    }
-                }
-                return
-            }
             runProviderCommand(appName: provider, command: newState ? "play" : "pause")
             return
         }
@@ -698,19 +675,6 @@ final class MediaController {
 
         if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty {
             runProviderCommand(appName: "Music", command: newState ? "play" : "pause")
-            return
-        }
-
-        if SpotifyAuth.shared.state == .signedIn {
-            Task {
-                if let token = await SpotifyAuth.shared.validAccessToken() {
-                    if newState {
-                        await SpotifyClient.resume(token: token)
-                    } else {
-                        await SpotifyClient.pause(token: token)
-                    }
-                }
-            }
             return
         }
 
@@ -759,16 +723,6 @@ final class MediaController {
         }
 
         if let provider = selectedProvider.appleScriptAppName {
-            if selectedProvider == .spotify,
-               SpotifyAuth.shared.state == .signedIn,
-               NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
-                Task {
-                    if let token = await SpotifyAuth.shared.validAccessToken() {
-                        await SpotifyClient.next(token: token)
-                    }
-                }
-                return
-            }
             runProviderCommand(appName: provider, command: "next track")
             return
         }
@@ -793,15 +747,6 @@ final class MediaController {
 
         if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty {
             runProviderCommand(appName: "Music", command: "next track")
-            return
-        }
-
-        if SpotifyAuth.shared.state == .signedIn {
-            Task {
-                if let token = await SpotifyAuth.shared.validAccessToken() {
-                    await SpotifyClient.next(token: token)
-                }
-            }
             return
         }
 
@@ -850,16 +795,6 @@ final class MediaController {
         }
 
         if let provider = selectedProvider.appleScriptAppName {
-            if selectedProvider == .spotify,
-               SpotifyAuth.shared.state == .signedIn,
-               NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
-                Task {
-                    if let token = await SpotifyAuth.shared.validAccessToken() {
-                        await SpotifyClient.previous(token: token)
-                    }
-                }
-                return
-            }
             runProviderCommand(appName: provider, command: "previous track")
             return
         }
@@ -884,15 +819,6 @@ final class MediaController {
 
         if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty {
             runProviderCommand(appName: "Music", command: "previous track")
-            return
-        }
-
-        if SpotifyAuth.shared.state == .signedIn {
-            Task {
-                if let token = await SpotifyAuth.shared.validAccessToken() {
-                    await SpotifyClient.previous(token: token)
-                }
-            }
             return
         }
 
@@ -950,16 +876,6 @@ final class MediaController {
         }
 
         if let provider = selectedProvider.appleScriptAppName {
-            if selectedProvider == .spotify,
-               SpotifyAuth.shared.state == .signedIn,
-               NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
-                Task {
-                    if let token = await SpotifyAuth.shared.validAccessToken() {
-                        await SpotifyClient.seek(positionMs: Int(clamped * 1000), token: token)
-                    }
-                }
-                return
-            }
             runProviderCommand(appName: provider, command: "set player position to \(Int(clamped))")
             return
         }
@@ -981,15 +897,6 @@ final class MediaController {
 
         if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty {
             runProviderCommand(appName: "Music", command: "set player position to \(Int(clamped))")
-            return
-        }
-
-        if SpotifyAuth.shared.state == .signedIn {
-            Task {
-                if let token = await SpotifyAuth.shared.validAccessToken() {
-                    await SpotifyClient.seek(positionMs: Int(clamped * 1000), token: token)
-                }
-            }
             return
         }
 
@@ -1325,12 +1232,11 @@ final class MediaController {
     }
 
     /// Whether the heart can do anything for the player that is playing.
+    ///
+    /// Only Music has a favourite this app can set. Spotify's saved-songs
+    /// library is Web API only, and there is no account to reach it with.
     var canFavorite: Bool {
-        guard hasTrack else { return false }
-        if controlBundleID == MusicProvider.spotify.bundleID {
-            return SpotifyAuth.shared.state == .signedIn
-        }
-        return controlBundleID == "com.apple.Music"
+        hasTrack && controlBundleID == "com.apple.Music"
     }
 
     func toggleShuffle() {
@@ -1364,15 +1270,8 @@ final class MediaController {
             return
         }
 
-        Task { [weak self] in
-            guard let token = await SpotifyAuth.shared.validAccessToken(),
-                  let id = await SpotifyClient.playback(token: token)?.trackID,
-                  await SpotifyClient.setSaved(wanted, trackID: id, token: token)
-            else {
-                await MainActor.run { [weak self] in self?.isFavorite = !wanted }
-                return
-            }
-        }
+        // Nothing else to write to.
+        isFavorite = !wanted
     }
 
     /// Reads both states for the track that just started, so the controls show
@@ -1400,17 +1299,6 @@ final class MediaController {
             }
         }
 
-        guard !isMusic else { return }
-        Task { [weak self] in
-            guard let token = await SpotifyAuth.shared.validAccessToken(),
-                  let id = await SpotifyClient.playback(token: token)?.trackID
-            else { return }
-            let saved = await SpotifyClient.isSaved(trackID: id, token: token)
-            await MainActor.run { [weak self] in
-                guard let self, self.isFavorite != saved else { return }
-                self.isFavorite = saved
-            }
-        }
     }
 
     /// One fire-and-forget script, off the main thread, reporting whether it
@@ -1966,52 +1854,6 @@ final class MediaController {
             }
         }
     }
-
-    /// Pulls the queue and the artist's follower count once per track.
-    private func refreshSpotifyDetail(for track: Track) {
-        let key = track.title + "\u{1}" + track.artist
-        guard key != lastSpotifyLookup else { return }
-        lastSpotifyLookup = key
-
-        Task { [weak self] in
-            guard let token = await SpotifyAuth.shared.validAccessToken() else {
-                await MainActor.run { [weak self] in
-                    self?.queue = []
-                    self?.followersLabel = nil
-                }
-                return
-            }
-
-            var items = await SpotifyClient.queue(token: token)
-            if let first = items.first {
-                var withArt = first
-                withArt.artwork = await SpotifyClient.artwork(for: first)
-                items[0] = withArt
-            }
-            // Immutable snapshot so the concurrent MainActor closure captures
-            // a let, not a mutable var — Swift 6 forbids the latter.
-            let queue = items
-            let followers = await SpotifyClient.followers(forArtist: track.artist, token: token)
-
-            await MainActor.run { [weak self] in
-                guard let self, self.lastSpotifyLookup == key else { return }
-                self.queue = queue
-                self.followersLabel = followers.map {
-                    "Followers: " + Self.compactCount($0)
-                }
-            }
-        }
-    }
-
-    /// "245.3K", the way the reference renders its counts.
-    private static func compactCount(_ value: Int) -> String {
-        switch value {
-        case ..<1_000: return "\(value)"
-        case ..<1_000_000: return String(format: "%.1fK", Double(value) / 1_000)
-        default: return String(format: "%.1fM", Double(value) / 1_000_000)
-        }
-    }
-
     private func updateTrackIfChanged(_ newTrack: Track) {
         let previous = track
         guard newTrack != previous else {
@@ -2035,16 +1877,12 @@ final class MediaController {
             } else {
                 lyrics.clear()
             }
-            refreshSpotifyDetail(for: track)
             refreshShuffleAndFavorite()
         } else {
             lyrics.clear()
             setArtwork(nil, data: nil)
             accent = .white
             accentSourceHash = nil
-            queue = []
-            followersLabel = nil
-            lastSpotifyLookup = nil
         }
         onNormalizedTrackChange?(normalizedTrack)
     }
@@ -2180,9 +2018,7 @@ final class MediaController {
     var isMusicConnectedOrActive: Bool {
         let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
         let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
-        let isSpotifyAuth = SpotifyAuth.shared.state == .signedIn
-
-        if spotifyRunning || musicRunning || isSpotifyAuth {
+        if spotifyRunning || musicRunning {
             if hasTrack && !isBrowserVideo {
                 return true
             }
