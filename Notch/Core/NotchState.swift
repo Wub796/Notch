@@ -95,7 +95,7 @@ final class NotchState {
             ) + DevicesScreenMetrics.bottomSafePadding
             size.height = moduleHeight + header
         } else if NotchSizing.fitsHeight(for: tab) {
-            let header = topBarHeight + 6 + NotchSizing.openContentInset
+            let header = topBarHeight + 6 + NotchSizing.contentBottomInset(for: tab)
             let budget = max(size.height - header, NotchSizing.minimumFittedModuleHeight)
             // Home's natural height is derived from its content rather than
             // the runtime measurement: the artwork column plus the optional
@@ -204,11 +204,11 @@ final class NotchState {
     /// taken out. Module views are written to this budget.
     var moduleContentSize: CGSize {
         let open = expandedSize
-        let horizontal = (NotchSizing.cornerRadiusInsets.opened.top
-            + NotchSizing.openContentInset) * 2
+        let horizontal = NotchSizing.contentSideInset(for: tab) * 2
+        let vertical = topBarHeight + 6 + NotchSizing.contentBottomInset(for: tab)
         return CGSize(
             width: max(0, open.width - horizontal),
-            height: max(0, open.height - topBarHeight - 6 - NotchSizing.openContentInset)
+            height: max(0, open.height - vertical)
         )
     }
 

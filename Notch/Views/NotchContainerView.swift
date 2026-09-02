@@ -114,9 +114,11 @@ struct NotchContainerView: View {
         VStack(spacing: 0) {
             NotchLayoutView(state: state, namespace: notchNamespace, isHovering: state.isHovering)
                 .padding(.horizontal, state.mode == .expanded
-                    ? NotchSizing.cornerRadiusInsets.opened.top + NotchSizing.openContentInset
+                    ? NotchSizing.contentSideInset(for: state.tab)
                     : 0)
-                .padding(.bottom, state.mode == .expanded ? NotchSizing.openContentInset : 0)
+                .padding(.bottom, state.mode == .expanded
+                    ? NotchSizing.contentBottomInset(for: state.tab)
+                    : 0)
 
             // When the notch is open, the volume/brightness HUD drops below the
             // module in the band the slab grows by (see `expandedHUD`), rather

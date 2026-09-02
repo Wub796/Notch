@@ -40,6 +40,8 @@ struct HomeDashboardView: View {
         // one flush unit: the music column is the tallest and already runs
         // full height, and bottom-aligning the weather and calendar columns
         // keeps their content from floating with an empty strip beneath it.
+        // The slab's per-tab gutter supplies the ~5mm side margin, so the
+        // columns themselves sit flush to the content area.
         HStack(alignment: .bottom, spacing: 0) {
             musicSection
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -51,13 +53,12 @@ struct HomeDashboardView: View {
             weatherSection
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             Spacer(minLength: 12)
-            // The calendar column stretches too, so its "what's next" line
-            // pins to the card's bottom edge (the Spacer inside distributes
-            // the slack) instead of floating with blank space beneath it.
+            // The calendar column stretches too and is right-anchored, so its
+            // date strip hugs the same gutter as the header's trailing icons
+            // and they read as one aligned right edge.
             calendarSection
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         }
-        .padding(.horizontal, 6)
         // No vertical filler. The module is height-fitted to its content, and
         // a flexible maxHeight frame here would let the fit measure the full
         // budget instead of the columns' real height — the black band under
