@@ -543,6 +543,7 @@ private struct DimensionSliders: View {
 private struct MediaSettingsPane: View {
     @Bindable var settings = NotchSettings.shared
     private var permissions = IntegrationPermissions.shared
+    private var auth = SpotifyAuth.shared
 
     private var isSpotifyConnected: Bool {
         permissions.musicStatus(for: .spotify) == .granted
@@ -584,16 +585,95 @@ private struct MediaSettingsPane: View {
                 name: "Spotify",
                 isConnected: isSpotifyConnected,
                 status: spotifyStatusLine,
-                showsDivider: false
+                showsDivider: true
             ) {
                 spotifyPrimaryButton
             }
+
+            spotifyAccountRow
 
             SettingsCallout(
                 text: "Free, local: Notch reads and controls the Spotify app on this Mac. Tap Allow once.",
                 systemImage: "checkmark.shield.fill",
                 tint: .green
             )
+        }
+    }
+
+    /// The optional account, on top of the local control above.
+    ///
+    /// Playback needs none of this. The Devices screen's Library, Discover and
+    /// Spotify Connect sections do — they are the account's data, and without a
+    /// way to sign in they were permanently empty while telling the user to
+    /// "connect your account in Settings", where there was nothing to connect.
+    @ViewBuilder
+    private var spotifyAccountRow: some View {
+        SettingsRow(
+            systemImage: "person.crop.circle",
+            tint: .green,
+            title: "Spotify Account (optional)",
+            subtitle: spotifyAccountStatus,
+            showsDivider: auth.state == .needsClientID
+        ) {
+            switch auth.state {
+            case .signedIn:
+                Button("Sign Out") { SpotifyAuth.shared.signOut() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            case .authorizing:
+                ProgressView().controlSize(.small)
+            case .needsClientID:
+                EmptyView()
+            case .signedOut, .failed:
+                Button("Connect") { SpotifyAuth.shared.signIn() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
+        }
+
+        if auth.state == .needsClientID {
+            SettingsRow(
+                systemImage: "key.fill",
+                tint: .green,
+                title: "Client ID",
+                subtitle: "Create an app on Spotify's developer dashboard, add "
+                    + "\(SpotifyAuth.redirectURI) as a redirect URI, and paste its client ID. "
+                    + "Notch can't ship one: a public client ID in an open repository gets "
+                    + "revoked, and the registration belongs to whoever runs the app.",
+                showsDivider: false
+            ) {
+                HStack(spacing: 8) {
+                    TextField("Client ID", text: Binding(
+                        get: { SpotifyAuth.shared.clientID },
+                        set: { SpotifyAuth.shared.clientID = $0.trimmingCharacters(in: .whitespaces) }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 210)
+
+                    Button("Dashboard") {
+                        if let url = URL(string: "https://developer.spotify.com/dashboard") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private var spotifyAccountStatus: String {
+        switch auth.state {
+        case .signedIn:
+            "Connected. Your playlists, search and Connect devices are in the Devices screen."
+        case .authorizing:
+            "Waiting for Spotify in your browser…"
+        case .needsClientID:
+            "Adds your playlists, search and Spotify Connect devices. Needs a client ID."
+        case .signedOut:
+            "Adds your playlists, search and Spotify Connect devices to the Devices screen."
+        case let .failed(reason):
+            reason
         }
     }
 

@@ -266,9 +266,6 @@ struct CalendarDetailView: View {
         Color(red: 34 / 255, green: 197 / 255, blue: 94 / 255)
     }
 
-    private func weekdayName(of date: Date) -> String {
-        date.formatted(.dateTime.weekday(.abbreviated))
-    }
 }
 
 /// A tappable day in the week strip, with hover feedback and the selected

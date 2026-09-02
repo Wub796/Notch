@@ -2725,7 +2725,7 @@ final class MediaController {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var error: NSDictionary?
             script.executeAndReturnError(&error)
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 self?.refreshFromAppleScript()
             }
         }

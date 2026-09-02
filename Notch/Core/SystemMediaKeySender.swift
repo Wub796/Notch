@@ -38,11 +38,11 @@ enum SystemMediaKeySender {
                 data1: data1,
                 data2: -1
             )
-            if let cgEvent = ev?.cgEvent {
-                cgEvent.post(tap: .cghidEventTap)
-                cgEvent.post(tap: .cgSessionEventTap)
-                cgEvent.post(tap: .cgAnnotatedSessionEventTap)
-            }
+            // Posted once, at the HID level, from which it flows up through
+            // the session taps on its own. Posting to all three delivered the
+            // same key three times: play/pause toggled back and Next skipped
+            // two or three tracks.
+            ev?.cgEvent?.post(tap: .cghidEventTap)
         }
 
         postKey(down: true)

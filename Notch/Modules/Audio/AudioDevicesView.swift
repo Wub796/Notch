@@ -283,7 +283,8 @@ struct SpotifyConnectPrompt: View {
         VStack(spacing: 12) {
             Image(systemName: "music.note.house.fill").font(.system(size: 28)).foregroundStyle(.green)
             Text(message).font(.notchBody).multilineTextAlignment(.center)
-            Text("Connect your Spotify account in Settings to sync playlists, recent listening, and Spotify Connect.")
+            Text("Settings → Media → Spotify Account. Playback works without it; "
+                 + "this is what fills the Library, Discover and Connect screens.")
                 .font(.notchFootnote).foregroundStyle(NotchTheme.inkMuted).multilineTextAlignment(.center)
             Button("Open Media Settings") { SettingsWindowController.shared.show() }.buttonStyle(PressableButtonStyle())
         }.padding(.vertical, 20).frame(maxWidth: .infinity)

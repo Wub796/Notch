@@ -39,8 +39,9 @@ live lyrics, a file shelf, your next 24 hours of events, and hardware telemetry.
   (IOKit power assertion), and a gear that opens Settings.
 - **Settings** — a native tabbed preferences window (General / Notch / Media /
   Activities / System / About): launch at login (SMAppService), animation style,
-  hover and scroll expansion with tunable delays, haptics, sneak peek, idle
-  face, live-activity toggles, instant AirDrop, telemetry refresh rate.
+  hover and scroll expansion with tunable delays and hover tolerance, sneak
+  peek, live-activity toggles, instant AirDrop, telemetry refresh rate, the
+  real-time audio meter, and the optional Spotify account.
 - **Live Activities** (Sapphire-inspired) — the collapsed notch grows wings for
   whatever matters right now, by priority: a **volume HUD** (CoreAudio listener)
   when you change the system volume, a **battery event** when you plug/unplug or
@@ -49,6 +50,25 @@ live lyrics, a file shelf, your next 24 hours of events, and hardware telemetry.
   a **meeting-soon countdown** starting 15 minutes before your next event, and
   otherwise the now-playing artwork + equalizer. Every source is push-based — no
   polling while collapsed.
+- **Devices** — four sections behind one nav. *Now* is the player; *Library*
+  lists the Spotify account's playlists, sorted by Recents / Name / Owner, with
+  the one that is actually playing marked from the account's own playback
+  context; *Discover* searches tracks, playlists, albums and artists and
+  otherwise shows a For You shelf of what was recently played; *Audio* holds
+  four output tabs — Spotify Connect devices with their own volume, local
+  AirPlay outputs, the apps making sound, and every CoreAudio output. Playback
+  needs no account; the first three sections do.
+- **Instant audio detection** — CoreAudio property listeners (`'prs#'`,
+  `'piro'`, and `deviceIsRunningSomewhere`) report the moment any process
+  starts or stops output, so the Audio screen is current before it is opened
+  and the closed notch can wear the cover-and-visualiser wings for a browser
+  video or a game. Nothing polls.
+- **Real-time visualiser** (opt-in) — with Screen Recording permission the bars
+  follow the actual output mix through ScreenCaptureKit, split into three
+  bands. Without it they follow the output volume, which is real but static.
+- **Click-through** — the panel hands the mouse back to the rest of the system
+  everywhere except the notch itself, so the top of the screen stays usable
+  while Notch is running.
 - **Scroll gesture** (DynamicNotch-style) — a two-finger scroll over the closed
   notch springs it open.
 - **Hover peek** — hovering scales the closed pill 1.10× (Sapphire's signature
@@ -59,7 +79,6 @@ live lyrics, a file shelf, your next 24 hours of events, and hardware telemetry.
 - **Animation profiles** — Snappy / Bouncy / Calm personalities with distinct
   springs per gesture (overshooting expand, hard-settling collapse, quick hover,
   fully damped content), adapted from Sapphire's animation tables.
-- Haptic feedback (trackpads) on expand/collapse, drops, and the keep-awake toggle.
 
 ## First launch
 
@@ -77,7 +96,9 @@ anywhere outside to close.
    overlay and a menu bar item (settings / quit).
 
 On first expansion macOS will prompt for **Calendars** access; the first Apple Events
-use (media fallback) prompts for **Automation** consent. Launch-at-login registration
+use (media fallback) prompts for **Automation** consent. **Screen Recording** is
+optional and only asked for by the real-time audio meter, and **Accessibility**
+only if you let the notch replace the system volume and brightness HUDs. Launch-at-login registration
 requires a signed build.
 
 ## Architecture
@@ -85,7 +106,7 @@ requires a signed build.
 ```
 Notch/
 ├── App/
-│   ├── NotchApp.swift            @main entry, menu bar extra, Settings scene
+│   ├── NotchApp.swift            @main entry and the menu bar item's commands
 │   ├── AppDelegate.swift         Screen selection, panel lifecycle, display changes
 │   ├── NotchPanel.swift          Borderless non-activating NSPanel @ .statusBar level
 │   ├── NotchWindowController.swift  Sizes/anchors the panel top-center on the notch screen
@@ -97,7 +118,7 @@ Notch/
 │   │                             wakes/sleeps modules on expand
 │   ├── NotchSettings.swift       Preferences (UserDefaults) + SMAppService login item
 │   ├── NotchAnimation.swift      Per-gesture timing curves, three selectable profiles
-│   ├── NotchTheme.swift          Design tokens, artwork accent extraction, haptics
+│   ├── NotchTheme.swift          Design tokens and artwork accent extraction
 │   ├── IntegrationPermissions.swift  Cached, live authorization status per integration
 │   ├── HotKeyManager.swift       Carbon RegisterEventHotKey (no Accessibility needed)
 │   └── KeepAwakeController.swift IOKit power assertion toggle
@@ -110,7 +131,11 @@ Notch/
 │   ├── WeatherDetailView.swift   Hero band, hourly and five-day strips
 │   ├── CalendarDetailView.swift  Week strip, month grid, day agenda
 │   ├── MarqueeText.swift         Scrolling label for overlong titles
-│   ├── SettingsWindowActivator.swift  Opening and focusing Settings from an agent app
+│   ├── SettingsWindowController.swift  A real NSWindow — SwiftUI's Settings
+│   │                             scene never focuses in an LSUIElement app
+│   ├── NotchScreenComponents.swift  The type, radius and spacing scales, the
+│   │                             shared card, screen headers and empty states
+│   ├── NotchLayoutView.swift     Header strip and module as animating siblings
 │   └── SettingsView.swift        Sidebar Settings window
 └── Modules/
     ├── Home/                     The dashboard: music, weather, calendar

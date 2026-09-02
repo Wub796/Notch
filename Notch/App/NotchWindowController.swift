@@ -112,12 +112,16 @@ final class NotchWindowController: NSWindowController {
         let update: (NSEvent) -> Void = { [weak self] _ in
             self?.updateIgnoreMouseEvents()
         }
+        let mask: NSEvent.EventTypeMask = [
+            .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+            .leftMouseDown, .leftMouseUp,
+        ]
         mouseMoveGlobalMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged],
+            matching: mask,
             handler: update
         )
         mouseMoveLocalMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
+            matching: mask
         ) { [weak self] event in
             self?.updateIgnoreMouseEvents()
             return event
@@ -128,21 +132,31 @@ final class NotchWindowController: NSWindowController {
     func updateIgnoreMouseEvents() {
         guard let panel = window, let screen = trackedScreen else { return }
 
-        // Hard guard: while expanded, NEVER ignore mouse events
-        if state.mode == .expanded {
-            if panel.ignoresMouseEvents {
-                panel.ignoresMouseEvents = false
-            }
-            return
-        }
-
-        // Collapsed/peek mode: test live interactive rect in screen coordinates
-        let mouseLocation = NSEvent.mouseLocation
+        // The same test in both modes. Exempting the expanded state meant the
+        // whole window took the mouse while the notch was open — and the
+        // window is nearly as wide as the screen and ~537pt tall, so opening
+        // the notch made the top half of the display dead again. Worse, an
+        // outside click could not dismiss it: `hitTest` dropped the click, and
+        // AppDelegate's *global* monitor never sees events delivered to this
+        // app. `interactiveScreenRect` already returns the slab when expanded,
+        // which is exactly the region that should take the mouse.
         let activeRect = interactiveScreenRect(on: screen)
+        let pointerInside = activeRect.contains(NSEvent.mouseLocation)
 
-        let shouldIgnore = !activeRect.contains(mouseLocation)
-        if panel.ignoresMouseEvents != shouldIgnore {
-            panel.ignoresMouseEvents = shouldIgnore
+        // While a button is held anywhere, stay interactive: a file dragged
+        // from Finder arrives as a dragging session rather than as mouse-moved
+        // events, and a window that ignores the mouse is not a drop target.
+        let dragging = NSEvent.pressedMouseButtons != 0
+        let shouldIgnore = !pointerInside && !dragging
+
+        guard panel.ignoresMouseEvents != shouldIgnore else { return }
+        panel.ignoresMouseEvents = shouldIgnore
+
+        // The panel stops receiving events the moment it starts ignoring them,
+        // so SwiftUI never sees the pointer leave. Say so directly, or the
+        // notch stays open behind a pointer that is long gone.
+        if shouldIgnore, state.isHovering {
+            state.hoverChanged(false)
         }
     }
 

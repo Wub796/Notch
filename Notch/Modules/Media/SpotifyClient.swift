@@ -321,23 +321,6 @@ extension SpotifyClient {
         }
     }
 
-    static func currentlyPlaying(token: String) async -> NotchMediaTrack? {
-        guard let data = await get("me/player/currently-playing", token: token),
-              let response = try? JSONDecoder().decode(CurrentlyPlayingResponse.self, from: data),
-              let item = response.item
-        else { return nil }
-        return NotchMediaTrack(
-            title: item.name,
-            artist: item.artists.first?.name ?? "",
-            album: item.album.name,
-            artwork: nil,
-            duration: TimeInterval(item.duration_ms) / 1000,
-            currentPosition: TimeInterval(response.progress_ms ?? 0) / 1000,
-            isPlaying: response.is_playing,
-            mediaSource: .spotify
-        )
-    }
-
     // MARK: Playback state
 
     struct Playback: Equatable {

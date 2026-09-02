@@ -44,23 +44,6 @@ final class TimerManager {
         onStateChange?()
     }
 
-    func addMinutes(_ minutes: Int) {
-        let delta = TimeInterval(minutes) * 60
-        if isPaused {
-            pausedRemaining += delta
-            remaining = pausedRemaining
-        } else if let deadline {
-            let newDeadline = deadline.addingTimeInterval(delta)
-            self.deadline = newDeadline
-            remaining = max(newDeadline.timeIntervalSinceNow, 0)
-        } else {
-            start(duration: delta)
-            return
-        }
-        totalDuration += delta
-        onStateChange?()
-    }
-
     func togglePause() {
         if isPaused {
             deadline = Date().addingTimeInterval(pausedRemaining)

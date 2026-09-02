@@ -28,14 +28,6 @@ final class EyeBreakManager {
         enabled ? scheduleNextBreak() : stop()
     }
 
-    func skipCurrentBreak() {
-        endBreak()
-    }
-
-    func takeBreakNow() {
-        beginBreak()
-    }
-
     private func stop() {
         timer?.invalidate()
         timer = nil

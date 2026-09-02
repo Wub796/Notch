@@ -118,6 +118,12 @@ final class AudioAppMonitor {
     /// this runs for the life of the app rather than only while the Audio
     /// screen happens to be open.
     func startObserving() {
+        audioQueue.async { [weak self] in
+            self?.performStartObserving()
+        }
+    }
+
+    private func performStartObserving() {
         guard !isObserving else { return }
         isObserving = true
 
@@ -126,23 +132,20 @@ final class AudioAppMonitor {
         }
         listenerBlock = block
 
-        audioQueue.async { [weak self] in
-            guard let self else { return }
-            if #available(macOS 14.4, *) {
-                var address = Self.address(Self.processObjectListSelector)
-                AudioObjectAddPropertyListenerBlock(
-                    AudioObjectID(kAudioObjectSystemObject), &address, self.audioQueue, block
-                )
-            }
-
-            var deviceList = Self.address(kAudioHardwarePropertyDevices)
+        if #available(macOS 14.4, *) {
+            var address = Self.address(Self.processObjectListSelector)
             AudioObjectAddPropertyListenerBlock(
-                AudioObjectID(kAudioObjectSystemObject), &deviceList, self.audioQueue, block
+                AudioObjectID(kAudioObjectSystemObject), &address, audioQueue, block
             )
-
-            self.attachPerObjectListeners()
-            self.handleActivityChange()
         }
+
+        var deviceList = Self.address(kAudioHardwarePropertyDevices)
+        AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &deviceList, audioQueue, block
+        )
+
+        attachPerObjectListeners()
+        handleActivityChange()
     }
 
     /// Tears the listeners down and puts them back. After a sleep/wake cycle
@@ -150,15 +153,30 @@ final class AudioAppMonitor {
     /// re-enumerates devices on wake — and listeners on a dead object never
     /// fire again, which would leave the screen quietly stale forever.
     func restartObserving() {
-        stopObserving()
-        startObserving()
+        audioQueue.async { [weak self] in
+            guard let self else { return }
+            self.performStopObserving()
+            self.performStartObserving()
+        }
     }
 
     deinit {
-        stopObserving()
+        // The queue is serial and this object is gone by the time a queued
+        // block would run, so the teardown has to happen inline here.
+        performStopObserving()
     }
 
+    /// Everything below runs on `audioQueue`. `pendingChange`,
+    /// `observedProcessObjects` and `observedDevices` are all mutated from the
+    /// listener path, which fires there — reaching in from the main queue at
+    /// shutdown or on wake was a data race on all three.
     func stopObserving() {
+        audioQueue.async { [weak self] in
+            self?.performStopObserving()
+        }
+    }
+
+    private func performStopObserving() {
         pendingChange?.cancel()
         pendingChange = nil
         guard isObserving, let block = listenerBlock else { return }

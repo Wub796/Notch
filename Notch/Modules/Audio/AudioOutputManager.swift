@@ -450,18 +450,6 @@ final class AudioOutputManager {
         devices.first { $0.id == currentDeviceID }?.symbolName ?? "speaker.wave.2.fill"
     }
 
-    /// Cycles the default output to the next available device.
-    func cycleToNextDevice() {
-        if devices.isEmpty {
-            refresh()
-        }
-        let list = devices
-        guard list.count > 1,
-              let index = list.firstIndex(where: { $0.id == currentDeviceID })
-        else { return }
-        select(list[(index + 1) % list.count])
-    }
-
     /// Switches the system default output. Alerts and UI sounds use a
     /// separate device property, so both are set — otherwise switching to
     /// headphones left system sounds playing out of the speakers.

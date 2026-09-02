@@ -357,15 +357,6 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    /// Asks macOS for all essential permissions on first run or explicit request.
-    func requestAll() {
-        request(.accessibility)
-        request(.music)
-        request(.calendar)
-        request(.location)
-        request(.screenCapture)
-    }
-
     /// Whether a player is installed at all, so the UI can offer to install it
     /// rather than asking for permission to automate something absent.
     static func isInstalled(_ provider: MusicProvider) -> Bool {

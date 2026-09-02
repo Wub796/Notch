@@ -461,11 +461,6 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         date.formatted(.dateTime.weekday(.abbreviated))
     }
 
-    /// "07:12" in the user's locale, for sunrise and sunset.
-    static func timeLabel(for date: Date) -> String {
-        date.formatted(.dateTime.hour().minute())
-    }
-
     /// Locale-aware wind speed ("13 km/h" / "8 mph").
     static func windString(kmh: Double) -> String {
         let formatter = MeasurementFormatter()
