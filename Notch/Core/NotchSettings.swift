@@ -67,12 +67,11 @@ final class NotchSettings {
     /// Dwell required before a hover opens the notch.
     var openDelay = 0.22 { didSet { save(openDelay, "openDelay") } }
 
-    /// Points of slack around the hardware notch that still count as hovering
-    /// it. The probe is otherwise exactly the notch, which is precise but
-    /// unforgiving — a pointer arriving from below has to land inside a 32pt
-    /// strip. The slack is added to the sides and the bottom only, never the
-    /// top: above the notch is the screen edge.
-    var hoverTolerance = 8.0 { didSet { save(hoverTolerance, "hoverTolerance") } }
+    /// Points of slack around the notch that still count as hovering it.
+    /// The probe is exactly the notch by default (the closed pill already
+    /// carries the coverage bleed, so hovering the pill is hovering the
+    /// notch); only a deliberate increase here widens the target.
+    var hoverTolerance = 0.0 { didSet { save(hoverTolerance, "hoverTolerance") } }
     var closeDelay = 0.2 { didSet { save(closeDelay, "closeDelay") } }
 
     /// When on, dropped files go straight to AirDrop; when off they land on

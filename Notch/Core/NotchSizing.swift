@@ -170,13 +170,6 @@ enum NotchSizing {
     /// margin at 13pt a side, up from 18's 9pt).
     static let notchCoverageBleed: CGFloat = 26
 
-    /// How far the collapsed hover probe dips below the hardware notch, on
-    /// top of the user's tolerance slack. A cursor arriving from below the
-    /// notch is usually moving fast, and a thin band can be crossed entirely
-    /// between two hover polls — the underside gets a fixed reach the sides
-    /// do not need, since the wings already widen the visible target there.
-    static let hoverProbeUnderReach: CGFloat = 14
-
     /// Each screen's natural size at the default width.
     private static func baseSize(for tab: NotchTab) -> CGSize {
         switch tab {

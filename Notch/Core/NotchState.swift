@@ -574,32 +574,22 @@ final class NotchState {
         return size
     }
 
-    /// The closed notch's hover target: the real notch, guaranteed by the
-    /// coverage bleed in `safeNotchSize`, plus the tolerance slack on the
-    /// sides and below. Deliberately *not* the wings or the dropped activity
-    /// bars — the window's interactive rect has to be generous so dragging a
-    /// HUD and click-through work, but only the probe should count as
-    /// "hovering the notch", or the notch peeks and expands whenever the
-    /// cursor is merely near it. Fixed geometry, not derived from the
-    /// animating slab — that is what used to make the region balloon after a
-    /// collapse.
+    /// The closed notch's hover target: exactly the notch itself, nothing
+    /// more. The probe is drawn to `safeNotchSize`, which already includes
+    /// the coverage bleed the pill is drawn with — so hovering anywhere the
+    /// notch visibly sits counts, and everything around it (the wings, the
+    /// menu-bar strip beneath) does not. The wings and dropped activity bars
+    /// are deliberately not part of it, so merely resting the cursor near
+    /// the notch can never peek it open. The only allowance is the optional
+    /// Hover Tolerance slack in Settings, which defaults to zero. Fixed
+    /// geometry, not derived from the animating slab.
     var hoverProbeSize: CGSize {
-        // Keep a generous target around the notch so a pointer crossing the
-        // menu bar does not fall out of the probe between SwiftUI frames.
         // The window controller adds the same tolerance to its own hover
         // feed, keeping hover state and event routing in lockstep.
         let slack = min(max(settings.hoverTolerance, 0), 32)
-        // The underside reaches further than the sides: a cursor arriving
-        // from below the notch is usually moving fast, and a thin band can
-        // be crossed entirely between two hover polls. The probe therefore
-        // dips a fixed extra margin under the notch. Not while a draggable
-        // HUD is up — the volume/brightness bar owns that band.
-        let belowReach = collapsedActivityIsInteractive
-            ? 0
-            : slack * 2 + NotchSizing.hoverProbeUnderReach
         return CGSize(
             width: safeNotchSize.width + slack * 2,
-            height: safeNotchSize.height + belowReach
+            height: safeNotchSize.height + slack * 2
         )
     }
 
