@@ -10,6 +10,7 @@ final class NotchWindowController: NSWindowController {
     private var spaceObserver: NSObjectProtocol?
     private var mouseMoveGlobalMonitor: Any?
     private var mouseMoveLocalMonitor: Any?
+    private var cursorTrackingTimer: Timer?
     private var collapseResizeWork: DispatchWorkItem?
 
     init(state: NotchState, screen: NSScreen) {
@@ -65,6 +66,8 @@ final class NotchWindowController: NSWindowController {
             NSEvent.removeMonitor(mouseMoveLocalMonitor)
             self.mouseMoveLocalMonitor = nil
         }
+        cursorTrackingTimer?.invalidate()
+        cursorTrackingTimer = nil
     }
 
     // MARK: - Window Anchoring
@@ -127,6 +130,19 @@ final class NotchWindowController: NSWindowController {
             return event
         }
         updateIgnoreMouseEvents()
+
+        // A global monitor does not receive mouse-moved events when the user
+        // has disabled mouse-move reporting or when another app owns the
+        // event stream. Keep the notch responsive by checking the cursor at a
+        // low-cost cadence while it is collapsed; this also prevents a stale
+        // `ignoresMouseEvents` value from making the hover probe unreachable.
+        cursorTrackingTimer?.invalidate()
+        cursorTrackingTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+            self?.updateIgnoreMouseEvents()
+        }
+        if let cursorTrackingTimer {
+            RunLoop.main.add(cursorTrackingTimer, forMode: .common)
+        }
     }
 
     func updateIgnoreMouseEvents() {
@@ -149,8 +165,19 @@ final class NotchWindowController: NSWindowController {
         let dragging = NSEvent.pressedMouseButtons != 0
         let shouldIgnore = !pointerInside && !dragging
 
-        guard panel.ignoresMouseEvents != shouldIgnore else { return }
-        panel.ignoresMouseEvents = shouldIgnore
+        let didChangeHitTesting = panel.ignoresMouseEvents != shouldIgnore
+        if didChangeHitTesting {
+            panel.ignoresMouseEvents = shouldIgnore
+        }
+
+        // If the probe is reachable and the cursor is inside it, keep the
+        // state machine fed even when AppKit does not deliver an onHover
+        // transition because hit-testing changed on the previous frame.
+        if pointerInside, state.mode == .collapsed, !state.isHovering {
+            state.hoverChanged(true)
+        }
+
+        guard didChangeHitTesting else { return }
 
         // The panel stops receiving events the moment it starts ignoring them,
         // so SwiftUI never sees the pointer leave. Say so directly, or the
