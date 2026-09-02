@@ -435,6 +435,10 @@ struct HomeDashboardView: View {
             nextEventLine(next)
                 .fixedSize(horizontal: true, vertical: false)
         }
+        // Float the block a touch off the slab's right edge: the rest of the
+        // dashboard hugs the gutter, but the calendar reads better with a
+        // small inward offset instead of touching the rounded corner.
+        .padding(.trailing, 8)
         .contentShape(Rectangle())
         .onTapGesture { state.select(.calendar) }
         .help("Open the calendar")
