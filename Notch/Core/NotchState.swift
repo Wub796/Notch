@@ -574,22 +574,29 @@ final class NotchState {
         return size
     }
 
-    /// The closed notch's hover target: the notch itself, plus the tolerance
-    /// on the sides and below. Fixed geometry, not derived from the animating
-    /// slab — that is what used to make the region balloon after a collapse.
+    /// The closed notch's hover target: the whole closed pill — the hardware
+    /// notch plus whatever wings an activity is showing — plus the tolerance
+    /// slack on the sides and below. Fixed geometry derived from the static
+    /// collapsed size (a rare state flip, not the animating slab — that is
+    /// what used to make the region balloon after a collapse). Covering the
+    /// wings means crossing from the notch onto the music cover, the weather
+    /// readout, or a dropped bar no longer drops the peek, which is what made
+    /// the notch close on its own.
     var hoverProbeSize: CGSize {
-        // Keep a generous target around the notch so a pointer crossing the
+        // Keep a generous target around the pill so a pointer crossing the
         // menu bar does not fall out of the probe between SwiftUI frames.
         // The window controller adds the same tolerance to its AppKit hit
         // rect, keeping hover state and event routing in lockstep.
         let slack = min(max(settings.hoverTolerance, 0), 32)
         return CGSize(
-            width: safeNotchSize.width + slack * 2,
+            width: max(collapsedSize.width, safeNotchSize.width) + slack * 2,
             // A draggable HUD hangs directly below the notch, so the probe
             // keeps off its bar while one is up. Otherwise include tolerance
             // above/below; the top portion is harmless because it is at the
             // screen edge.
-            height: safeNotchSize.height + (collapsedActivityIsInteractive ? 0 : slack * 2)
+            height: collapsedActivityIsInteractive
+                ? safeNotchSize.height
+                : collapsedSize.height + slack * 2
         )
     }
 
