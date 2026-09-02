@@ -409,11 +409,9 @@ struct HomeDashboardView: View {
 
         // Trailing-aligned so the whole block — the date strip *and* the
         // event line under it — shares the right gutter, giving the calendar
-        // the same side spacing as the cover art on the left. (A leading
-        // alignment lets the event line hang ~90pt short of the strip's
-        // right edge, which reads as the column sitting too far left.)
-        return VStack(alignment: .trailing, spacing: 8) {
-            HStack(alignment: .center, spacing: 12) {
+        // the same side spacing as the cover art on the left.
+        return VStack(alignment: .trailing, spacing: 6) {
+            HStack(alignment: .center, spacing: 10) {
                 Text(today.formatted(.dateTime.month(.abbreviated)))
                     .font(.system(size: 27, weight: .heavy, design: .rounded))
                     .fixedSize()
@@ -430,7 +428,12 @@ struct HomeDashboardView: View {
             // The event line ("no more items today") sits right under the
             // date strip so the column reads as one compact block near the
             // top, instead of its label floating at the slab's bottom edge.
+            // The line hugs its content: without fixedSize, the title's
+            // 180pt cap frame expands to fill the whole trailing-aligned
+            // column, leaving a ~90pt dead strip between the title text and
+            // the gutter.
             nextEventLine(next)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .contentShape(Rectangle())
         .onTapGesture { state.select(.calendar) }
