@@ -70,17 +70,19 @@ enum NotchSizing {
 
     /// Per-tab horizontal gutter between the open slab's edge and its content.
     /// The home dashboard's columns are bottom-anchored against the rounded
-    /// corners, so a tight ~5mm (14pt) gutter on each side is readable; the
-    /// other surfaces keep the corner-radius clearance plus breathing room.
+    /// corners; the side gutter carries a little more air than the bottom so
+    /// the row reads as relaxed rather than cramped, while the bottom stays
+    /// tight to the transport row. The other surfaces keep the corner-radius
+    /// clearance plus breathing room.
     static func contentSideInset(for tab: NotchTab) -> CGFloat {
-        tab == .home ? 14 : cornerRadiusInsets.opened.top + openContentInset
+        tab == .home ? 18 : cornerRadiusInsets.opened.top + openContentInset
     }
 
     /// Per-tab inset below the open module. Home's dashboard ends at the
-    /// transport row, so it gets the same ~5mm gutter; taller surfaces keep
-    /// the baseline inset.
+    /// transport row, so it gets a snug baseline; taller surfaces keep the
+    /// larger inset.
     static func contentBottomInset(for tab: NotchTab) -> CGFloat {
-        tab == .home ? 14 : openContentInset
+        tab == .home ? 8 : openContentInset
     }
 
     /// Height the open slab grows by while a volume/brightness HUD drops below
@@ -165,11 +167,11 @@ enum NotchSizing {
     /// Each screen's natural size at the default width.
     private static func baseSize(for tab: NotchTab) -> CGSize {
         switch tab {
-        // 222 leaves the module budget room for the dashboard's tallest
+        // 214 leaves the module budget room for the dashboard's tallest
         // content — the music column plus the optional other-audio chips row
-        // and the 14pt bottom gutter — so the home slab can hug its content
+        // and the 8pt bottom gutter — so the home slab can hug its content
         // without clipping the transport row or the chips.
-        case .home: CGSize(width: 860, height: 222)
+        case .home: CGSize(width: 860, height: 214)
         // The standalone compact media surface is no longer used; media opens
         // from the home card into the full player layout.
         case .media: CGSize(width: 900, height: 255)
