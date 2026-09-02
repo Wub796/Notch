@@ -189,7 +189,7 @@ struct MediaPlayerView: View {
                 .transition(.opacity)
         }
         .frame(width: 78, height: 78)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: media.accent.opacity(0.38), radius: 14, y: 5)
         .animation(NotchAnimations.content, value: media.artworkVersion)
@@ -208,7 +208,7 @@ struct MediaPlayerView: View {
                 .padding(14)
                 .background(Color.white.opacity(0.08))
         } else {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(Color.white.opacity(0.06))
                 .overlay {
                     Image(systemName: "music.note")

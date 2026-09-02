@@ -10,12 +10,14 @@ import SwiftUI
 /// open to a fixed panel and fit their modules inside it, so switching tabs
 /// only changes what is drawn.
 enum NotchSizing {
-    /// Corner radii for the two states, taken verbatim from the references.
-    /// Top corners flare into the menu bar; bottom corners round inward.
+    /// Corner radii for the two states. Top corners flare into the menu bar;
+    /// bottom corners round inward. Both pairs are deliberately generous —
+    /// the slab reads as a soft pill rather than a hard rectangle, and the
+    /// content insets below clear them.
     static let cornerRadiusInsets: (
         opened: (top: CGFloat, bottom: CGFloat),
         closed: (top: CGFloat, bottom: CGFloat)
-    ) = (opened: (top: 19, bottom: 24), closed: (top: 12, bottom: 14))
+    ) = (opened: (top: 26, bottom: 30), closed: (top: 16, bottom: 18))
 
     /// Transparent margin the panel window keeps around the slab so the drop
     /// shadow is never clipped by the window bounds.
@@ -56,7 +58,7 @@ enum NotchSizing {
 
     /// Album art in the two states, as in `MusicPlayerImageSizes`.
     enum ArtworkSizes {
-        static let cornerRadius: (opened: CGFloat, closed: CGFloat) = (opened: 13, closed: 4)
+        static let cornerRadius: (opened: CGFloat, closed: CGFloat) = (opened: 18, closed: 6)
         static let size: (opened: CGSize, closed: CGSize) = (
             opened: CGSize(width: 90, height: 90),
             closed: CGSize(width: 20, height: 20)
@@ -64,9 +66,9 @@ enum NotchSizing {
     }
 
     /// Inner padding of the open slab: the horizontal inset matches the open
-    /// top radius so content clears the flare, plus the references' extra 12
+    /// top radius so content clears the flare, plus the references' extra 5
     /// on the sides and bottom.
-    static let openContentInset: CGFloat = 12
+    static let openContentInset: CGFloat = 5
 
     /// Per-tab horizontal gutter between the open slab's edge and its content.
     /// The home dashboard's columns are bottom-anchored against the rounded
@@ -82,7 +84,7 @@ enum NotchSizing {
     /// side gutters exactly so the slab reads as a symmetric frame around the
     /// dashboard; taller surfaces keep the baseline inset.
     static func contentBottomInset(for tab: NotchTab) -> CGFloat {
-        tab == .home ? contentSideInset(for: tab) : openContentInset
+        tab == .home ? 0 : openContentInset
     }
 
     /// Height the open slab grows by while a volume/brightness HUD drops below

@@ -389,7 +389,7 @@ struct CollapsedNotchView: View {
                 .transition(.opacity)
         }
         .frame(width: 22, height: 22)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .animation(NotchAnimations.activity, value: state.media.artworkVersion)
         .accessibilityHidden(true)
     }
@@ -405,7 +405,7 @@ struct CollapsedNotchView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
         } else {
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(NotchTheme.surfaceHover)
                 .overlay {
                     Image(systemName: "music.note")

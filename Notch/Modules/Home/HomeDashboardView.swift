@@ -227,7 +227,7 @@ struct HomeDashboardView: View {
                 .transition(.opacity)
         }
         .frame(width: 88, height: 88)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: state.media.accent.opacity(0.38), radius: 12, y: 4)
         .animation(NotchAnimations.content, value: state.media.artworkVersion)
@@ -263,7 +263,7 @@ struct HomeDashboardView: View {
                 .padding(14)
                 .background(Color.white.opacity(0.08))
         } else {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(Color.white.opacity(0.06))
                 .overlay {
                     Image(systemName: "music.note")
