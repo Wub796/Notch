@@ -407,7 +407,12 @@ struct HomeDashboardView: View {
             !$0.isAllDay && $0.start > today && Calendar.current.isDateInToday($0.start)
         }
 
-        return VStack(alignment: .leading, spacing: 8) {
+        // Trailing-aligned so the whole block — the date strip *and* the
+        // event line under it — shares the right gutter, giving the calendar
+        // the same side spacing as the cover art on the left. (A leading
+        // alignment lets the event line hang ~90pt short of the strip's
+        // right edge, which reads as the column sitting too far left.)
+        return VStack(alignment: .trailing, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 Text(today.formatted(.dateTime.month(.abbreviated)))
                     .font(.system(size: 27, weight: .heavy, design: .rounded))

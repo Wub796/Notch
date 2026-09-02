@@ -81,10 +81,12 @@ enum NotchSizing {
     }
 
     /// Per-tab inset below the open module. Home's bottom gutter mirrors the
-    /// side gutters exactly so the slab reads as a symmetric frame around the
-    /// dashboard; taller surfaces keep the baseline inset.
+    /// side gutter so the slab reads as a symmetric frame around the
+    /// dashboard — the transport row floats the same distance off the bottom
+    /// edge as the artwork does off the sides. Taller surfaces keep the
+    /// baseline inset.
     static func contentBottomInset(for tab: NotchTab) -> CGFloat {
-        tab == .home ? 0 : openContentInset
+        tab == .home ? contentSideInset(for: tab) : openContentInset
     }
 
     /// Height the open slab grows by while a volume/brightness HUD drops below
@@ -175,8 +177,9 @@ enum NotchSizing {
         switch tab {
         // 236 only sets the module-budget ceiling for the home dashboard —
         // the fitted slab hugs the content (header + the 88pt music row, up
-        // to +24pt for the other-audio chips), so the base height simply
-        // needs to leave that tallest case room to fit.
+        // to +24pt for the other-audio chips, plus the 30pt bottom gutter
+        // that mirrors the sides), so the base height simply needs to leave
+        // that tallest case room to fit.
         case .home: CGSize(width: 860, height: 236)
         // The standalone compact media surface is no longer used; media opens
         // from the home card into the full player layout.
