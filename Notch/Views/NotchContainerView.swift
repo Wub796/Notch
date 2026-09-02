@@ -93,8 +93,10 @@ struct NotchContainerView: View {
             slab
 
             // Closed, hovering and clicking are detected by this and nothing
-            // else: a rectangle of exactly the hardware notch's size, pinned to
-            // the top centre.
+            // else: a generous rectangle around the hardware notch, pinned to
+            // the top centre. Keeping this larger than the visible pill makes
+            // crossing into the notch forgiving without making the whole menu
+            // bar interactive.
             if state.mode != .expanded {
                 Color.black.opacity(0.001)
                     .frame(

@@ -176,8 +176,8 @@ final class NotchWindowController: NSWindowController {
         } else {
             let probe = state.hoverProbeSize
             let collapsed = state.collapsedSize
-            let width = max(probe.width, collapsed.width) + 16
-            let height = max(probe.height, collapsed.height) + 12
+            let width = max(probe.width, collapsed.width) + 24
+            let height = max(probe.height, collapsed.height) + 20
             return NSRect(
                 x: screen.frame.midX - width / 2,
                 y: screen.frame.maxY - height,
@@ -242,8 +242,8 @@ final class NotchHostingView: NSHostingView<NotchContainerView> {
             width = state.expandedSize.width + NotchSizing.shadowPadding * 2
             height = state.expandedTotalHeight + NotchSizing.shadowPadding
         } else {
-            width = max(state.hoverProbeSize.width, state.collapsedSize.width) + 20
-            height = max(state.hoverProbeSize.height, state.collapsedSize.height) + 12
+            width = max(state.hoverProbeSize.width, state.collapsedSize.width) + 28
+            height = max(state.hoverProbeSize.height, state.collapsedSize.height) + 20
         }
 
         let minX = bounds.midX - width / 2

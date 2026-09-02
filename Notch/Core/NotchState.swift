@@ -578,12 +578,18 @@ final class NotchState {
     /// on the sides and below. Fixed geometry, not derived from the animating
     /// slab — that is what used to make the region balloon after a collapse.
     var hoverProbeSize: CGSize {
-        let slack = min(max(settings.hoverTolerance, 0), 24)
+        // Keep a generous target around the notch so a pointer crossing the
+        // menu bar does not fall out of the probe between SwiftUI frames.
+        // The window controller adds the same tolerance to its AppKit hit
+        // rect, keeping hover state and event routing in lockstep.
+        let slack = min(max(settings.hoverTolerance, 0), 32)
         return CGSize(
             width: safeNotchSize.width + slack * 2,
             // A draggable HUD hangs directly below the notch, so the probe
-            // keeps off its bar while one is up.
-            height: safeNotchSize.height + (collapsedActivityIsInteractive ? 0 : slack)
+            // keeps off its bar while one is up. Otherwise include tolerance
+            // above/below; the top portion is harmless because it is at the
+            // screen edge.
+            height: safeNotchSize.height + (collapsedActivityIsInteractive ? 0 : slack * 2)
         )
     }
 
