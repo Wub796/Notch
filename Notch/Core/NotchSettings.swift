@@ -67,11 +67,14 @@ final class NotchSettings {
     /// Dwell required before a hover opens the notch.
     var openDelay = 0.22 { didSet { save(openDelay, "openDelay") } }
 
-    /// Points of slack around the notch that still count as hovering it.
-    /// The probe is exactly the notch by default (the closed pill already
-    /// carries the coverage bleed, so hovering the pill is hovering the
-    /// notch); only a deliberate increase here widens the target.
-    var hoverTolerance = 0.0 { didSet { save(hoverTolerance, "hoverTolerance") } }
+    /// Points of slack on each SIDE of the notch that still count as
+    /// hovering it. The probe's height stays exactly the notch — vertical
+    /// slack made the notch peek whenever the cursor merely rested beneath
+    /// the menu bar — so this knob only widens the sides, catching fast
+    /// crossings. Defaults to 12pt so the target is forgiving out of the
+    /// box; the closed pill already carries the 13pt coverage bleed, so the
+    /// effective side catch is ~25pt past the hardware cutout.
+    var hoverTolerance = 12.0 { didSet { save(hoverTolerance, "hoverTolerance") } }
     var closeDelay = 0.2 { didSet { save(closeDelay, "closeDelay") } }
 
     /// When on, dropped files go straight to AirDrop; when off they land on
