@@ -29,7 +29,7 @@ enum NotchSizing {
     /// in one place and a module switch can never crop the rail against the
     /// hardware notch.
     static let topBarRailIconSize: CGFloat = 28
-    static let topBarRailSpacing: CGFloat = 13
+    static let topBarRailSpacing: CGFloat = 10
 
     /// How many controls the home rail carries: the Home button, Settings, and
     /// the four module icons in `NotchTopBarView.modules`. Keep in step with
@@ -154,7 +154,7 @@ enum NotchSizing {
         // content — the music column (130) plus the other-audio chips row
         // (26) and the header — so the home slab can hug its content without
         // clipping the transport row or the chips.
-        case .home: CGSize(width: 860, height: 232)
+        case .home: CGSize(width: 860, height: 218)
         // The standalone compact media surface is no longer used; media opens
         // from the home card into the full player layout.
         case .media: CGSize(width: 900, height: 255)

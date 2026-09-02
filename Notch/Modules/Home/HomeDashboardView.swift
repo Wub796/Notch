@@ -36,14 +36,28 @@ struct HomeDashboardView: View {
     let namespace: Namespace.ID
 
     var body: some View {
-        HStack(alignment: .center, spacing: 0) {
+        // Columns anchor to the card's bottom edge so the dashboard reads as
+        // one flush unit: the music column is the tallest and already runs
+        // full height, and bottom-aligning the weather and calendar columns
+        // keeps their content from floating with an empty strip beneath it.
+        HStack(alignment: .bottom, spacing: 0) {
             musicSection
-            Spacer(minLength: 20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 12)
+            // The weather block is shorter than the music column, so stretch
+            // its column to the card height and center the content — the
+            // remaining margin is symmetric breathing room instead of a
+            // dead strip at the bottom.
             weatherSection
-            Spacer(minLength: 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            Spacer(minLength: 12)
+            // The calendar column stretches too, so its "what's next" line
+            // pins to the card's bottom edge (the Spacer inside distributes
+            // the slack) instead of floating with blank space beneath it.
             calendarSection
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 6)
         // No vertical filler. The module is height-fitted to its content, and
         // a flexible maxHeight frame here would let the fit measure the full
         // budget instead of the columns' real height — the black band under
@@ -94,8 +108,8 @@ struct HomeDashboardView: View {
     }
 
     private var musicSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .center, spacing: 16) {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center, spacing: 12) {
                 Button {
                     state.select(.audio)
                 } label: {
@@ -147,7 +161,7 @@ struct HomeDashboardView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 4)
+                    .padding(.top, 2)
                 }
                 .fixedSize(horizontal: true, vertical: false)
                 .help("Open the full player")
@@ -406,6 +420,10 @@ struct HomeDashboardView: View {
                 }
             }
 
+            // Keep the event line close to the date strip. The fitted home
+            // module should end shortly after its real content rather than
+            // reserving a large artificial footer.
+            Spacer(minLength: 2)
             nextEventLine(next)
         }
         .contentShape(Rectangle())

@@ -20,6 +20,7 @@ struct NotchTopBarView: View {
     var body: some View {
         HStack(spacing: 0) {
             leadingControls
+                .padding(.leading, 8)
                 .frame(width: flankWidth, alignment: .leading)
                 .clipped()
 
@@ -31,6 +32,7 @@ struct NotchTopBarView: View {
                 .mask { NotchShape() }
 
             trailingControls
+                .padding(.trailing, 8)
                 .frame(width: flankWidth, alignment: .trailing)
                 .clipped()
         }
