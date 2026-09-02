@@ -78,13 +78,11 @@ enum NotchSizing {
         tab == .home ? 30 : cornerRadiusInsets.opened.top + openContentInset
     }
 
-    /// Per-tab inset below the open module. Home's dashboard ends at the
-    /// transport row, so its bottom sits flush with the slab edge (0pt —
-    /// negative values are ignored by SwiftUI padding, and the slab-height
-    /// math subtracts this inset, so a negative number would clip the row);
-    /// taller surfaces keep the larger inset.
+    /// Per-tab inset below the open module. Home's bottom gutter mirrors the
+    /// side gutters exactly so the slab reads as a symmetric frame around the
+    /// dashboard; taller surfaces keep the baseline inset.
     static func contentBottomInset(for tab: NotchTab) -> CGFloat {
-        tab == .home ? 0 : openContentInset
+        tab == .home ? contentSideInset(for: tab) : openContentInset
     }
 
     /// Height the open slab grows by while a volume/brightness HUD drops below
@@ -169,11 +167,11 @@ enum NotchSizing {
     /// Each screen's natural size at the default width.
     private static func baseSize(for tab: NotchTab) -> CGSize {
         switch tab {
-        // 214 leaves the module budget room for the dashboard's tallest
+        // 236 leaves the module budget room for the dashboard's tallest
         // content — the music column plus the optional other-audio chips row
-        // and the 8pt bottom gutter — so the home slab can hug its content
-        // without clipping the transport row or the chips.
-        case .home: CGSize(width: 860, height: 214)
+        // and the 30pt bottom gutter that mirrors the side — so the home slab
+        // can hug its content without clipping the transport row or the chips.
+        case .home: CGSize(width: 860, height: 236)
         // The standalone compact media surface is no longer used; media opens
         // from the home card into the full player layout.
         case .media: CGSize(width: 900, height: 255)
