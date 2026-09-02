@@ -137,7 +137,11 @@ final class NotchWindowController: NSWindowController {
         // low-cost cadence while it is collapsed; this also prevents a stale
         // `ignoresMouseEvents` value from making the hover probe unreachable.
         cursorTrackingTimer?.invalidate()
-        cursorTrackingTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+        // Poll at a tight cadence so a cursor flicking up under the notch is
+        // still sampled inside the probe — a fast crossing can clear the
+        // collapsed target between two slow polls. The work is a couple of
+        // rect checks per tick, so 20 Hz costs nothing.
+        cursorTrackingTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             self?.updateIgnoreMouseEvents()
         }
         if let cursorTrackingTimer {

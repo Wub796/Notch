@@ -163,8 +163,19 @@ enum NotchSizing {
     /// evenly between the two sides. The notch measurement can run a couple
     /// of points short of the hardware cutout; this margin keeps everything
     /// laid out beside the notch — header flanks, the collapsed wings, the
-    /// hover probe — clear of the real notch even then.
-    static let notchCoverageBleed: CGFloat = 18
+    /// hover probe — clear of the real notch even then. It is also the closed
+    /// pill's side padding: the collapsed notch is drawn to `safeNotchSize`,
+    /// so half of this bleed is how far the black shape visibly extends past
+    /// the hardware cutout on each side (26 keeps the closed pill's side
+    /// margin at 13pt a side, up from 18's 9pt).
+    static let notchCoverageBleed: CGFloat = 26
+
+    /// How far the collapsed hover probe dips below the hardware notch, on
+    /// top of the user's tolerance slack. A cursor arriving from below the
+    /// notch is usually moving fast, and a thin band can be crossed entirely
+    /// between two hover polls — the underside gets a fixed reach the sides
+    /// do not need, since the wings already widen the visible target there.
+    static let hoverProbeUnderReach: CGFloat = 14
 
     /// Each screen's natural size at the default width.
     private static func baseSize(for tab: NotchTab) -> CGSize {

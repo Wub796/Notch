@@ -589,15 +589,17 @@ final class NotchState {
         // The window controller adds the same tolerance to its own hover
         // feed, keeping hover state and event routing in lockstep.
         let slack = min(max(settings.hoverTolerance, 0), 32)
+        // The underside reaches further than the sides: a cursor arriving
+        // from below the notch is usually moving fast, and a thin band can
+        // be crossed entirely between two hover polls. The probe therefore
+        // dips a fixed extra margin under the notch. Not while a draggable
+        // HUD is up — the volume/brightness bar owns that band.
+        let belowReach = collapsedActivityIsInteractive
+            ? 0
+            : slack * 2 + NotchSizing.hoverProbeUnderReach
         return CGSize(
             width: safeNotchSize.width + slack * 2,
-            // A draggable HUD hangs directly below the notch, so the probe
-            // keeps off its bar while one is up. Otherwise include tolerance
-            // above/below; the top portion is harmless because it is at the
-            // screen edge.
-            height: collapsedActivityIsInteractive
-                ? safeNotchSize.height
-                : safeNotchSize.height + slack * 2
+            height: safeNotchSize.height + belowReach
         )
     }
 
