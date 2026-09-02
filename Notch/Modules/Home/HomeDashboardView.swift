@@ -6,14 +6,15 @@ import SwiftUI
 /// measurement (which never reliably landed, leaving a black band under the
 /// dashboard). Keep these in step with the layout below.
 enum HomeDashboardMetrics {
-    /// The full music column: the artwork/text row (88pt artwork, which is
-    /// the tallest row) plus the 6pt VStack gap and the transport row under
-    /// it (32pt buttons + 4pt top padding = 36pt). Only the artwork was
-    /// counted before, so the slab fitted 42pt short of its content and
-    /// clipped the transport row at the bottom.
-    static let musicColumnHeight: CGFloat = 130
-    /// A row of other-audio chips beneath the transports, spacing included.
-    static let otherAudioChipsHeight: CGFloat = 26
+    /// The full music column: a single artwork/text row. The 88pt artwork
+    /// tile is the tallest element — the title/artist/transport block sits
+    /// beside it, not beneath it — so the row is 88pt and no transport row
+    /// is stacked below (counting one made the slab ~42pt taller than its
+    /// content, leaving the black strip under the transport).
+    static let musicColumnHeight: CGFloat = 88
+    /// A row of other-audio chips beneath the music row: the 4pt VStack gap
+    /// plus the chip row itself (14pt glyph + 3pt padding above and below).
+    static let otherAudioChipsHeight: CGFloat = 24
 
     static func naturalHeight(hasOtherAudioChips: Bool) -> CGFloat {
         hasOtherAudioChips
