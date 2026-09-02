@@ -170,10 +170,13 @@ final class NotchWindowController: NSWindowController {
             panel.ignoresMouseEvents = shouldIgnore
         }
 
-        // If the probe is reachable and the cursor is inside it, keep the
-        // state machine fed even when AppKit does not deliver an onHover
-        // transition because hit-testing changed on the previous frame.
-        if pointerInside, state.mode == .collapsed, !state.isHovering {
+        // If the cursor is inside the hover probe, keep the state machine fed
+        // even when AppKit does not deliver an onHover transition (e.g. the
+        // panel only just stopped ignoring events). Scoped to the probe rect,
+        // never the wider interactive area: the notch must not peek just
+        // because the cursor is near it.
+        let probeRect = probeScreenRect(on: screen)
+        if probeRect.contains(NSEvent.mouseLocation), state.mode == .collapsed, !state.isHovering {
             state.hoverChanged(true)
         }
 
@@ -185,6 +188,20 @@ final class NotchWindowController: NSWindowController {
         if shouldIgnore, state.isHovering {
             state.hoverChanged(false)
         }
+    }
+
+    /// The hover probe's screen rect: centered on the slab and anchored to the
+    /// top of the screen, exactly where the SwiftUI probe view in
+    /// NotchContainerView is drawn. Used to keep the state machine fed while
+    /// the cursor rests on the notch.
+    private func probeScreenRect(on screen: NSScreen) -> NSRect {
+        let probe = state.hoverProbeSize
+        return NSRect(
+            x: screen.frame.midX - probe.width / 2,
+            y: screen.frame.maxY - probe.height,
+            width: probe.width,
+            height: probe.height
+        )
     }
 
     private func interactiveScreenRect(on screen: NSScreen) -> NSRect {

@@ -574,29 +574,30 @@ final class NotchState {
         return size
     }
 
-    /// The closed notch's hover target: the whole closed pill — the hardware
-    /// notch plus whatever wings an activity is showing — plus the tolerance
-    /// slack on the sides and below. Fixed geometry derived from the static
-    /// collapsed size (a rare state flip, not the animating slab — that is
-    /// what used to make the region balloon after a collapse). Covering the
-    /// wings means crossing from the notch onto the music cover, the weather
-    /// readout, or a dropped bar no longer drops the peek, which is what made
-    /// the notch close on its own.
+    /// The closed notch's hover target: the real notch, guaranteed by the
+    /// coverage bleed in `safeNotchSize`, plus the tolerance slack on the
+    /// sides and below. Deliberately *not* the wings or the dropped activity
+    /// bars — the window's interactive rect has to be generous so dragging a
+    /// HUD and click-through work, but only the probe should count as
+    /// "hovering the notch", or the notch peeks and expands whenever the
+    /// cursor is merely near it. Fixed geometry, not derived from the
+    /// animating slab — that is what used to make the region balloon after a
+    /// collapse.
     var hoverProbeSize: CGSize {
-        // Keep a generous target around the pill so a pointer crossing the
+        // Keep a generous target around the notch so a pointer crossing the
         // menu bar does not fall out of the probe between SwiftUI frames.
-        // The window controller adds the same tolerance to its AppKit hit
-        // rect, keeping hover state and event routing in lockstep.
+        // The window controller adds the same tolerance to its own hover
+        // feed, keeping hover state and event routing in lockstep.
         let slack = min(max(settings.hoverTolerance, 0), 32)
         return CGSize(
-            width: max(collapsedSize.width, safeNotchSize.width) + slack * 2,
+            width: safeNotchSize.width + slack * 2,
             // A draggable HUD hangs directly below the notch, so the probe
             // keeps off its bar while one is up. Otherwise include tolerance
             // above/below; the top portion is harmless because it is at the
             // screen edge.
             height: collapsedActivityIsInteractive
                 ? safeNotchSize.height
-                : collapsedSize.height + slack * 2
+                : safeNotchSize.height + slack * 2
         )
     }
 
