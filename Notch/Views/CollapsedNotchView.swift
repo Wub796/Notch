@@ -101,6 +101,9 @@ struct CollapsedNotchView: View {
                             .font(.notchBody.weight(.bold)
                                 .monospacedDigit())
                             .contentTransition(.numericText())
+                            // The transition above needs a value-bound animation
+                            // or the percent hard-cuts between readings.
+                            .animation(NotchAnimations.content, value: percent)
                             .fixedSize()
                         Image(systemName: low
                               ? "battery.25percent"

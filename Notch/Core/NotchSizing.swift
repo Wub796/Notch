@@ -85,7 +85,7 @@ enum NotchSizing {
     /// of the 30pt side gutter so the panel doesn't carry a tall black band
     /// beneath the dashboard. Taller surfaces keep the baseline inset.
     static func contentBottomInset(for tab: NotchTab) -> CGFloat {
-        tab == .home ? 12 : openContentInset
+        tab == .home ? 5 : openContentInset
     }
 
     /// Height the open slab grows by while a volume/brightness HUD drops below

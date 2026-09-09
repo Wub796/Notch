@@ -252,7 +252,10 @@ struct ScreenTextButton: View {
                 Capsule().fill(
                     isProminent
                         ? Color.accentColor.opacity(isHovering ? 1 : 0.88)
-                        : NotchTheme.surface.opacity(isHovering ? 1.8 : 1)
+                        // `NotchTheme.surface` is `Color.clear`, so the quiet
+                        // variant's hover fill used to multiply two zeroes and
+                        // never appear. `surfaceHover` is the real 8% white.
+                        : NotchTheme.surfaceHover.opacity(isHovering ? 1.8 : 1)
                 )
             }
             .contentShape(Capsule())

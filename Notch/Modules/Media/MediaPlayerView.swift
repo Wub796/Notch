@@ -466,6 +466,8 @@ struct ScrubberBar: View {
                 // Sized by its content: a fixed 34 clipped anything past
                 // "9:59", so long tracks and podcasts lost digits.
                 .fixedSize()
+                .contentTransition(.numericText())
+                .animation(dragFraction == nil ? NotchAnimations.content : nil, value: elapsed)
 
             GeometryReader { proxy in
                 let width = proxy.size.width
@@ -503,6 +505,8 @@ struct ScrubberBar: View {
                 )
             }
             .frame(height: 14)
+            // The thickness/grow settle keeps the house spring; the elapsed
+            // label fades between values instead of hard-cutting each tick.
             .animation(.notchSpring, value: isInteracting)
             .onHover { hovering = $0 }
 

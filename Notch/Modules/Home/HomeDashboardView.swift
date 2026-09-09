@@ -117,7 +117,10 @@ struct HomeDashboardView: View {
                 } label: {
                     artwork
                 }
-                .buttonStyle(.plain)
+                // The tile opens the full player, so it needs the same press
+                // feedback as every other control — `.plain` left the biggest
+                // tappable thing on the dashboard feeling dead under the finger.
+                .buttonStyle(PressableButtonStyle())
                 .contentShape(Rectangle())
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -313,7 +316,10 @@ struct HomeDashboardView: View {
                     Text(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
                         .font(.system(size: 38, weight: .heavy, design: .rounded).monospacedDigit())
                         .foregroundStyle(NotchTheme.inkPrimary)
+                        // Digits roll when the reading changes; without a
+                        // value-bound animation the contentTransition is inert.
                         .contentTransition(.numericText())
+                        .animation(NotchAnimations.content, value: weather.temperatureCelsius)
 
                     Text(state.weather.placeName ?? "Your Location")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -337,6 +343,7 @@ struct HomeDashboardView: View {
                 }
             }
             .contentShape(Rectangle())
+            .tileHover()
             .onTapGesture { state.select(.weather) }
             .help("Open the weather detail")
             .accessibilityElement(children: .ignore)
@@ -381,6 +388,7 @@ struct HomeDashboardView: View {
             }
         }
         .contentShape(Rectangle())
+        .tileHover()
         .onTapGesture { state.select(.weather) }
         .help("Open the weather detail")
     }
@@ -438,8 +446,9 @@ struct HomeDashboardView: View {
         // Float the block a touch off the slab's right edge: the rest of the
         // dashboard hugs the gutter, but the calendar reads better with a
         // small inward offset instead of touching the rounded corner.
-        .padding(.trailing, 8)
+        .padding(.trailing, 30)
         .contentShape(Rectangle())
+        .tileHover()
         .onTapGesture { state.select(.calendar) }
         .help("Open the calendar")
         .accessibilityElement(children: .ignore)

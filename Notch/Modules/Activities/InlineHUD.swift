@@ -46,14 +46,17 @@ struct DraggableProgressBar: View {
                     // A zero-width capsule still paints a dot; hiding it keeps
                     // muted and zero-brightness from looking broken.
                     .opacity(value.isZero ? 0 : 1)
+                    // Remote value changes (media keys, per-app mixers) glide
+                    // to the new level; the width also animates its thickness
+                    // settle. While the finger is down the animation is nil so
+                    // the fill sticks to 1:1 tracking — a tween here would
+                    // chase the cursor.
+                    .animation(isDragging ? nil : NotchAnimations.content, value: value)
             }
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { gesture in
                         // 1:1 tracking: the fill follows the pointer instantly.
-                        // No animation on the value while the finger is down —
-                        // a fixed-duration tween would chase the cursor instead
-                        // of sticking to it.
                         isDragging = true
                         update(to: gesture.location.x, in: geometry)
                     }
@@ -62,13 +65,14 @@ struct DraggableProgressBar: View {
                         // (profile-aware; collapses to a short fade under
                         // Reduce Motion). The value itself is already where the
                         // finger left it.
-                        withAnimation(NotchAnimations.content) {
-                            isDragging = false
-                        }
+                        isDragging = false
                     }
             )
         }
         .frame(height: height)
+        // The thickness jump (5 → 8) springs with the house curve; under the
+        // finger the value animation above is disabled, so this owns the settle.
+        .animation(NotchAnimations.content, value: isDragging)
         .accessibilityElement()
         .accessibilityValue("\(Int(value * 100)) percent")
         .accessibilityAdjustableAction { direction in

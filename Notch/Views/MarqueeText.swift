@@ -61,6 +61,18 @@ struct MarqueeText: View {
         .onAppear {
             if shouldScroll { animate = true }
         }
+        // A new text swaps in while the loop is mid-flight, the offset would
+        // jump to wherever the old scroll happened to be — and worse, the
+        // `measuredText` width changes under it. Restarting the run (offset 0
+        // → scroll) makes every track change start the marquee from its home
+        // position, which is what the references do.
+        .onChange(of: text) { _, _ in
+            guard shouldScroll else { return }
+            animate = false
+            // Let the reset land before restarting, so the new run is a
+            // fresh spring from offset 0 rather than a retarget mid-loop.
+            DispatchQueue.main.async { animate = true }
+        }
         .onChange(of: shouldScroll) { _, scrolling in
             animate = scrolling
         }

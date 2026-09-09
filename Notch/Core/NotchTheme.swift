@@ -125,7 +125,9 @@ struct HoverLiftModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(hovering ? scale : 1)
+            // Reduce Motion drops the scale, not the interaction: the hover
+            // still registers, it just stops moving things around.
+            .scaleEffect(hovering && !NotchAnimations.prefersReducedMotion ? scale : 1)
             .animation(.spring(response: 0.22, dampingFraction: 0.78), value: hovering)
             .onHover { hovering = $0 }
     }
@@ -135,6 +137,41 @@ extension View {
     func hoverLift(_ scale: CGFloat = 1.05) -> some View {
         modifier(HoverLiftModifier(scale: scale))
     }
+}
+
+/// Hover + cursor affordance for tap-through tiles — the dashboard's weather
+/// and calendar blocks select via `.onTapGesture`, so unlike Buttons they got
+/// neither the pointing-hand cursor nor any hover response. This restores
+/// both: the system pointing hand while the pointer is over the tile, and a
+/// faint brightening so the tile reads as live under the cursor.
+struct TileHoverModifier: ViewModifier {
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .brightness(hovering ? 0.07 : 0)
+            .animation(NotchAnimations.content, value: hovering)
+            .onHover { entering in
+                hovering = entering
+                // Balanced push/pop: the pop only ever runs for a push this
+                // modifier made, including the view vanishing mid-hover.
+                if entering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .onDisappear {
+                if hovering {
+                    NSCursor.pop()
+                    hovering = false
+                }
+            }
+    }
+}
+
+extension View {
+    func tileHover() -> some View { modifier(TileHoverModifier()) }
 }
 
 // MARK: - Transitions

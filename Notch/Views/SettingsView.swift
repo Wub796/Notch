@@ -287,7 +287,7 @@ private struct GeneralSettingsPane: View {
                 }
 
                 SettingsSliderRow(
-                    title: "Hover Tolerance",
+                    title: "Hover Side Tolerance",
                     value: $settings.hoverTolerance,
                     range: 0 ... 24,
                     step: 1,
@@ -574,6 +574,48 @@ private struct MediaSettingsPane: View {
         }
     }
 
+    private var spotifyStatusLine: String {
+        if isSpotifyConnected {
+            return "Ready. Controlling Spotify on this Mac."
+        }
+        if !IntegrationPermissions.isInstalled(.spotify) {
+            return "Spotify isn't installed on this Mac."
+        }
+        return "Not connected yet. Allow Notch to control Spotify."
+    }
+
+    @ViewBuilder
+    private var spotifyPrimaryButton: some View {
+        if isSpotifyConnected {
+            Button("Open Spotify") {
+                if let url = NSWorkspace.shared
+                    .urlForApplication(withBundleIdentifier: MusicProvider.spotify.bundleID) {
+                    NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        } else if !IntegrationPermissions.isInstalled(.spotify) {
+            Button("Get Spotify") {
+                if let url = IntegrationPermissions.downloadURL(for: .spotify) {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        } else if permissions.pending.contains(.music) {
+            ProgressView().controlSize(.small)
+        } else {
+            Button("Allow") {
+                permissions.grantMusicAccess(for: .spotify)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color(red: 29/255, green: 185/255, blue: 84/255))
+            .controlSize(.small)
+            .help("Opens Spotify and lets Notch control it")
+        }
+    }
+
     /// Spotify connects entirely through macOS Automation — system media keys,
     /// MediaRemote and AppleScript. No Premium, no developer account, no OAuth.
     private var spotifyCard: some View {
@@ -593,6 +635,55 @@ private struct MediaSettingsPane: View {
                 text: "Free, local: Notch reads and controls the Spotify app on this Mac. Tap Allow once.",
                 systemImage: "checkmark.shield.fill",
                 tint: .green
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var appleMusicPrimaryButton: some View {
+        if isAppleMusicConnected {
+            Button("Open Music") {
+                if let url = NSWorkspace.shared
+                    .urlForApplication(withBundleIdentifier: MusicProvider.appleMusic.bundleID) {
+                    NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        } else if permissions.pending.contains(.music) {
+            ProgressView().controlSize(.small)
+        } else {
+            Button("Allow") {
+                permissions.grantMusicAccess(for: .appleMusic)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color(red: 250/255, green: 45/255, blue: 72/255))
+            .controlSize(.small)
+            .help("Opens Apple Music and lets Notch control it")
+        }
+    }
+
+    /// Apple Music needs no account or token — just Automation consent to read
+    /// and control the Music app on this Mac.
+    private var appleMusicCard: some View {
+        SettingsCard(title: "Apple Music") {
+            providerHeader(
+                icon: "apple.logo",
+                iconColor: Color(red: 250/255, green: 45/255, blue: 72/255),
+                name: "Apple Music",
+                isConnected: isAppleMusicConnected,
+                status: isAppleMusicConnected
+                    ? "Ready. Controls playback, library tracks and artwork automatically."
+                    : "Not connected yet. Allow Notch to read and control Apple Music.",
+                showsDivider: false
+            ) {
+                appleMusicPrimaryButton
+            }
+
+            SettingsCallout(
+                text: "Free, local: Notch reads and controls the Music app on this Mac. Tap Allow once.",
+                systemImage: "checkmark.shield.fill",
+                tint: .blue
             )
         }
     }
