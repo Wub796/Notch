@@ -9,11 +9,10 @@ import Observation
 /// process — so "is this app making sound" is a fact that can be read rather
 /// than guessed. That covers device audio generally: a browser tab, a game, a
 /// call, anything, not only whatever holds the now-playing session.
-///    /// Per-process volume is exposed through the CoreAudio process object's
-    /// `voul` property on supported macOS releases.
-
 ///
-/// The three selectors are spelled as four-character codes rather than by
+/// Per-process volume is exposed through the CoreAudio process object's
+/// `voul` property on supported macOS releases. The three selectors are
+/// spelled as four-character codes rather than by
 /// name. `kAudioHardwarePropertyProcessObjectList` and friends only exist in
 /// the macOS 14.4 SDK, so naming them makes the whole file — and therefore
 /// this type — fail to compile on Xcode 15.2 and earlier, which then reads as
@@ -56,6 +55,47 @@ final class AudioAppMonitor {
     }
 
     private(set) var apps: [App] = []
+
+    /// Apps the user muted from the Audio screen, by bundle id. Held here —
+    /// not in the view — because the audio screen is torn down every time
+    /// the notch collapses: @State mute flags died with it, so a mute you
+    /// set was forgotten the moment the notch closed (the app's volume
+    /// stayed zero but the UI showed it unmuted and the restore level was
+    /// lost). The monitor lives for the app's lifetime, so the mute state
+    /// does too.
+    private(set) var mutedAppIDs: Set<String> = []
+
+    /// The level each muted app was silenced from, keyed by bundle id, so
+    /// unmuting puts the app back where it was rather than jumping to 1.
+    private var priorVolumeBeforeMute: [String: Float] = [:]
+
+    /// Whether the given app is currently muted through the Audio screen.
+    func isAppMuted(_ id: String) -> Bool {
+        mutedAppIDs.contains(id)
+    }
+
+    /// Mutes or unmutes one app on its own process volume: remember the
+    /// level it was at, drop it to zero, and put it back on unmute. This is
+    /// what makes one row's mute button silent *that* app (and only that
+    /// app) instead of every output on the Mac.
+    ///
+    /// Returns the level the app now sits at (0 when muted, the restored
+    /// level after unmute) so the caller's volume mirror can follow.
+    @discardableResult
+    func toggleAppMute(_ app: App) -> Float {
+        let current = app.volume() ?? 1
+        if mutedAppIDs.contains(app.id) {
+            mutedAppIDs.remove(app.id)
+            let restore = priorVolumeBeforeMute.removeValue(forKey: app.id) ?? 1
+            app.setVolume(restore)
+            return restore
+        } else {
+            priorVolumeBeforeMute[app.id] = current
+            app.setVolume(0)
+            mutedAppIDs.insert(app.id)
+            return 0
+        }
+    }
 
     /// True the instant anything on this Mac is putting audio out, whatever
     /// it is. On 14.4+ this is the union of the per-process flags; below that

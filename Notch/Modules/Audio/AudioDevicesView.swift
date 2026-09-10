@@ -50,8 +50,6 @@ struct AudioDevicesView: View {
     }
 
     @State private var appVolumes: [String: Float] = [:]
-    @State private var mutedApps: Set<String> = []
-    @State private var priorVolumeBeforeMute: [String: Float] = [:]
     @State private var pairedBluetoothDevices: [BluetoothAudioDevices.PairedDevice] = []
 
     var body: some View {
@@ -499,29 +497,20 @@ struct AudioDevicesView: View {
 
     // MARK: - Per-app mute
 
-    /// Muting is per-app, on the app's own process volume: remember the level
-    /// it was at, drop it to zero, and put it back on unmute. This is what
-    /// makes one row's mute button silent *that* app (and only that app)
-    /// instead of every output on the Mac.
+    /// Mute state lives on AudioAppMonitor, not here: the audio screen is
+    /// torn down whenever the notch collapses, so @State mute flags were
+    /// forgotten the moment the notch closed even though the app's volume
+    /// stayed zero — the UI showed it unmuted and the restore level was
+    /// lost. The monitor lives for the app's lifetime, so the mute state
+    /// does too.
     private func isAppMuted(_ id: String) -> Bool {
-        mutedApps.contains(id)
+        state.audioApps.isAppMuted(id)
     }
 
     private func toggleAppMute(_ app: AudioAppMonitor.App) {
-        let current = appVolumes[app.id] ?? app.volume() ?? 1
-        if mutedApps.contains(app.id) {
-            // Unmute: restore the level it was silenced from.
-            mutedApps.remove(app.id)
-            let restore = priorVolumeBeforeMute[app.id] ?? 1
-            appVolumes[app.id] = restore
-            app.setVolume(restore)
-        } else {
-            // Mute: remember where it is, then zero this app's own volume.
-            priorVolumeBeforeMute[app.id] = current
-            appVolumes[app.id] = 0
-            app.setVolume(0)
-            mutedApps.insert(app.id)
-        }
+        // Keep the row's level mirror in step so the bar sits at the new
+        // value (0 while muted, the restored level after).
+        appVolumes[app.id] = state.audioApps.toggleAppMute(app)
     }
 
     private func emptyRow(_ text: String) -> some View {

@@ -20,10 +20,10 @@ enum AnimationProfile: String, CaseIterable, Identifiable, Hashable, Sendable {
 
 /// Shared animation curves.
 ///
-/// The open and close springs are the references' shape — critically damped —
-/// but much longer than their 0.42/0.45, which snap. Opening is the slower of
-/// the two here: a panel unfolding wants to be savoured, where closing wants
-/// to get out of the way.
+/// Springs, per the Apple-style fluid-motion vocabulary: interruptible and
+/// velocity-aware, which is exactly what a notch you can grab and reverse
+/// mid-flight needs. The three profiles vary response and damping together,
+/// and every value collapses to a short fade under Reduce Motion.
 /// They live here rather than in the view so the Animation Style picker
 /// actually reaches the expansion, which is the motion it most obviously
 /// describes.
@@ -39,20 +39,10 @@ enum NotchAnimations {
         NotchSettings.shared.animationProfile
     }
 
-    /// Opening into the full panel.
-    ///
-    /// A timing curve rather than a spring, and this is the one place the two
-    /// differ on purpose. A spring applies its full restoring force from the
-    /// first frame: it leaves at speed and spends its length decelerating,
-    /// which is why opening felt abrupt however long the response got. These
-    /// control points hold the opening almost still for the first tenth and
-    /// only reach a quarter of the way by the time a third of the duration has
-    /// passed, so the panel eases away from the notch before it travels, then
-    /// glides the rest. Closing keeps its spring — leaving briskly is the
-    /// right behaviour on the way out.
-    /// Opening into the full panel.
-    ///
-    /// Natural Apple fluid spring curves that are interruptible and momentum-aware.
+    /// Opening into the full panel: a natural, fluid spring that is
+    /// interruptible and momentum-aware. Opening is the slower of the two
+    /// directions on purpose — a panel unfolding wants to be savoured, where
+    /// closing wants to get out of the way.
     static var open: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {

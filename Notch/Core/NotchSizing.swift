@@ -80,9 +80,9 @@ enum NotchSizing {
         tab == .home ? 30 : cornerRadiusInsets.opened.top + openContentInset
     }
 
-    /// Per-tab inset below the open module. Home's bottom gutter is a modest
-    /// 12pt — visible breathing room under the transport row, but well short
-    /// of the 30pt side gutter so the panel doesn't carry a tall black band
+    /// Per-tab inset below the open module. Home's bottom gutter is kept
+    /// tight (5pt) — just enough air under the transport row, well short of
+    /// the 30pt side gutter so the panel doesn't carry a tall black band
     /// beneath the dashboard. Taller surfaces keep the baseline inset.
     static func contentBottomInset(for tab: NotchTab) -> CGFloat {
         tab == .home ? 5 : openContentInset
@@ -176,7 +176,7 @@ enum NotchSizing {
         switch tab {
         // 236 only sets the module-budget ceiling for the home dashboard —
         // the fitted slab hugs the content (header + the 88pt music row, up
-        // to +24pt for the other-audio chips, plus the 12pt bottom gutter),
+        // to +24pt for the other-audio chips, plus the 5pt bottom gutter),
         // so the base height simply needs to leave that tallest case room
         // to fit.
         case .home: CGSize(width: 860, height: 236)

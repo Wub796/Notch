@@ -594,6 +594,81 @@ final class MediaController {
 
     // MARK: - Transport controls
 
+    /// Where a transport command should go. Resolved once so the four
+    /// controls (play/pause, next, previous, seek) share one priority ladder
+    /// instead of four copies that can drift:
+    ///
+    /// 1. A running music player always wins (by the now-playing app, then
+    ///    the selected provider, then whichever player is actually running).
+    /// 2. Browser media (YouTube, web videos) — only when no music player
+    ///    is active.
+    /// 3. The selected provider's own AppleScript app, when it has one.
+    /// 4. Automatic detection from the now-playing app's bundle id.
+    /// 5. Any running Spotify, then any running Music, as a last resort.
+    /// 6. The system fallback (adapter, MediaRemote, media keys).
+    private enum TransportTarget {
+        case provider(appName: String, command: String)
+        case browser
+        case system
+    }
+
+    private func resolveTransportTarget(providerCommand: String) -> TransportTarget {
+        let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
+        let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
+
+        // 1. If a music player is running/active, ALWAYS prioritize controlling the music player!
+        if !isBrowserVideo && (spotifyRunning || musicRunning) {
+            if let bundle = sourceAppBundleID {
+                if bundle == MusicProvider.spotify.bundleID {
+                    return .provider(appName: "Spotify", command: providerCommand)
+                } else if bundle == MusicProvider.appleMusic.bundleID {
+                    return .provider(appName: "Music", command: providerCommand)
+                }
+            }
+            if selectedProvider == .spotify && spotifyRunning {
+                return .provider(appName: "Spotify", command: providerCommand)
+            } else if selectedProvider == .appleMusic && musicRunning {
+                return .provider(appName: "Music", command: providerCommand)
+            }
+            if spotifyRunning {
+                return .provider(appName: "Spotify", command: providerCommand)
+            } else if musicRunning {
+                return .provider(appName: "Music", command: providerCommand)
+            }
+        }
+
+        // 2. Browser media (YouTube, web videos) — only when no music player is active
+        if isBrowserVideo || isShowingBrowserSnapshot {
+            return .browser
+        }
+
+        // 3. Specific Selected Provider
+        if let provider = selectedProvider.appleScriptAppName {
+            return .provider(appName: provider, command: providerCommand)
+        }
+
+        // 4. Automatic provider detection
+        if let bundle = sourceAppBundleID {
+            if bundle == MusicProvider.spotify.bundleID {
+                return .provider(appName: "Spotify", command: providerCommand)
+            } else if bundle == MusicProvider.appleMusic.bundleID {
+                return .provider(appName: "Music", command: providerCommand)
+            } else if Self.browserTargets.contains(where: { $0.bundleID == bundle }) {
+                return .browser
+            }
+        }
+
+        // 5. Last resort: any running player.
+        if spotifyRunning {
+            return .provider(appName: "Spotify", command: providerCommand)
+        }
+        if musicRunning {
+            return .provider(appName: "Music", command: providerCommand)
+        }
+
+        return .system
+    }
+
     func togglePlayPause() {
         let newState = !isPlaying
         isPlaying = newState
@@ -612,300 +687,81 @@ final class MediaController {
         // Filter conflicting playback reports until one confirms this toggle.
         armOptimisticWindow(newState)
 
-        // 1. If music player is running/active, ALWAYS prioritize controlling the music player!
-        let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
-        let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
-
-        if !isBrowserVideo && (spotifyRunning || musicRunning) {
-            if let bundle = sourceAppBundleID {
-                if bundle == MusicProvider.spotify.bundleID {
-                    runProviderCommand(appName: "Spotify", command: newState ? "play" : "pause")
-                    return
-                } else if bundle == MusicProvider.appleMusic.bundleID {
-                    runProviderCommand(appName: "Music", command: newState ? "play" : "pause")
-                    return
-                }
-            }
-            if selectedProvider == .spotify && spotifyRunning {
-                runProviderCommand(appName: "Spotify", command: newState ? "play" : "pause")
-                return
-            } else if selectedProvider == .appleMusic && musicRunning {
-                runProviderCommand(appName: "Music", command: newState ? "play" : "pause")
-                return
-            }
-            if spotifyRunning {
-                runProviderCommand(appName: "Spotify", command: newState ? "play" : "pause")
-                return
-            } else if musicRunning {
-                runProviderCommand(appName: "Music", command: newState ? "play" : "pause")
-                return
-            }
-        }
-
-        // 2. Browser media (YouTube, web videos) - only when no music player is active
-        if isBrowserVideo || isShowingBrowserSnapshot {
+        switch resolveTransportTarget(providerCommand: newState ? "play" : "pause") {
+        case let .provider(appName, command):
+            runProviderCommand(appName: appName, command: command)
+        case .browser:
             toggleBrowserPlayback()
-            return
-        }
-
-        // 3. Specific Selected Provider
-        if let provider = selectedProvider.appleScriptAppName {
-            runProviderCommand(appName: provider, command: newState ? "play" : "pause")
-            return
-        }
-
-        // 4. Automatic provider detection
-        if let bundle = sourceAppBundleID {
-            if bundle == MusicProvider.spotify.bundleID {
-                runProviderCommand(appName: "Spotify", command: newState ? "play" : "pause")
-                return
-            } else if bundle == MusicProvider.appleMusic.bundleID {
-                runProviderCommand(appName: "Music", command: newState ? "play" : "pause")
-                return
-            } else if Self.browserTargets.contains(where: { $0.bundleID == bundle }) {
-                toggleBrowserPlayback()
-                return
+        case .system:
+            if useAdapter {
+                adapter.sendCommand(.togglePlayPause)
+            } else if useMediaRemote {
+                bridge.send(.togglePlayPause)
+            } else {
+                SystemMediaKeySender.togglePlayPause()
             }
-        }
-
-        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
-            runProviderCommand(appName: "Spotify", command: newState ? "play" : "pause")
-            return
-        }
-
-        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty {
-            runProviderCommand(appName: "Music", command: newState ? "play" : "pause")
-            return
-        }
-
-        if useAdapter {
-            adapter.sendCommand(.togglePlayPause)
-        } else if useMediaRemote {
-            bridge.send(.togglePlayPause)
-        } else {
-            SystemMediaKeySender.togglePlayPause()
         }
     }
 
     func nextTrack() {
-        let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
-        let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
-
-        if !isBrowserVideo && (spotifyRunning || musicRunning) {
-            if let bundle = sourceAppBundleID {
-                if bundle == MusicProvider.spotify.bundleID {
-                    runProviderCommand(appName: "Spotify", command: "next track")
-                    return
-                } else if bundle == MusicProvider.appleMusic.bundleID {
-                    runProviderCommand(appName: "Music", command: "next track")
-                    return
-                }
-            }
-            if selectedProvider == .spotify && spotifyRunning {
-                runProviderCommand(appName: "Spotify", command: "next track")
-                return
-            } else if selectedProvider == .appleMusic && musicRunning {
-                runProviderCommand(appName: "Music", command: "next track")
-                return
-            }
-            if spotifyRunning {
-                runProviderCommand(appName: "Spotify", command: "next track")
-                return
-            } else if musicRunning {
-                runProviderCommand(appName: "Music", command: "next track")
-                return
-            }
-        }
-
-        if isBrowserVideo || isShowingBrowserSnapshot {
+        switch resolveTransportTarget(providerCommand: "next track") {
+        case let .provider(appName, command):
+            runProviderCommand(appName: appName, command: command)
+        case .browser:
             nextBrowserTrack()
-            return
-        }
-
-        if let provider = selectedProvider.appleScriptAppName {
-            runProviderCommand(appName: provider, command: "next track")
-            return
-        }
-
-        if let bundle = sourceAppBundleID {
-            if bundle == MusicProvider.spotify.bundleID {
-                runProviderCommand(appName: "Spotify", command: "next track")
-                return
-            } else if bundle == MusicProvider.appleMusic.bundleID {
-                runProviderCommand(appName: "Music", command: "next track")
-                return
-            } else if Self.browserTargets.contains(where: { $0.bundleID == bundle }) {
-                nextBrowserTrack()
-                return
+        case .system:
+            if useAdapter {
+                adapter.sendCommand(.nextTrack)
+            } else if useMediaRemote {
+                bridge.send(.nextTrack)
+            } else {
+                SystemMediaKeySender.nextTrack()
             }
-        }
-
-        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
-            runProviderCommand(appName: "Spotify", command: "next track")
-            return
-        }
-
-        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty {
-            runProviderCommand(appName: "Music", command: "next track")
-            return
-        }
-
-        if useAdapter {
-            adapter.sendCommand(.nextTrack)
-        } else if useMediaRemote {
-            bridge.send(.nextTrack)
-        } else {
-            SystemMediaKeySender.nextTrack()
         }
     }
 
     func previousTrack() {
-        let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
-        let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
-
-        if !isBrowserVideo && (spotifyRunning || musicRunning) {
-            if let bundle = sourceAppBundleID {
-                if bundle == MusicProvider.spotify.bundleID {
-                    runProviderCommand(appName: "Spotify", command: "previous track")
-                    return
-                } else if bundle == MusicProvider.appleMusic.bundleID {
-                    runProviderCommand(appName: "Music", command: "previous track")
-                    return
-                }
-            }
-            if selectedProvider == .spotify && spotifyRunning {
-                runProviderCommand(appName: "Spotify", command: "previous track")
-                return
-            } else if selectedProvider == .appleMusic && musicRunning {
-                runProviderCommand(appName: "Music", command: "previous track")
-                return
-            }
-            if spotifyRunning {
-                runProviderCommand(appName: "Spotify", command: "previous track")
-                return
-            } else if musicRunning {
-                runProviderCommand(appName: "Music", command: "previous track")
-                return
-            }
-        }
-
-        if isBrowserVideo || isShowingBrowserSnapshot {
+        switch resolveTransportTarget(providerCommand: "previous track") {
+        case let .provider(appName, command):
+            runProviderCommand(appName: appName, command: command)
+        case .browser:
             previousBrowserTrack()
-            return
-        }
-
-        if let provider = selectedProvider.appleScriptAppName {
-            runProviderCommand(appName: provider, command: "previous track")
-            return
-        }
-
-        if let bundle = sourceAppBundleID {
-            if bundle == MusicProvider.spotify.bundleID {
-                runProviderCommand(appName: "Spotify", command: "previous track")
-                return
-            } else if bundle == MusicProvider.appleMusic.bundleID {
-                runProviderCommand(appName: "Music", command: "previous track")
-                return
-            } else if Self.browserTargets.contains(where: { $0.bundleID == bundle }) {
-                previousBrowserTrack()
-                return
+        case .system:
+            if useAdapter {
+                adapter.sendCommand(.previousTrack)
+            } else if useMediaRemote {
+                bridge.send(.previousTrack)
+            } else {
+                SystemMediaKeySender.previousTrack()
             }
-        }
-
-        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
-            runProviderCommand(appName: "Spotify", command: "previous track")
-            return
-        }
-
-        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty {
-            runProviderCommand(appName: "Music", command: "previous track")
-            return
-        }
-
-        if useAdapter {
-            adapter.sendCommand(.previousTrack)
-        } else if useMediaRemote {
-            bridge.send(.previousTrack)
-        } else {
-            SystemMediaKeySender.previousTrack()
         }
     }
 
     /// Jumps playback to an absolute position (scrubber drag or lyric tap).
     func seek(to seconds: TimeInterval) {
-        let upperBound = (track?.duration ?? 0) > 0 ? track!.duration : seconds
-        let clamped = max(0, min(seconds, upperBound))
+        // Clamp to the track's length when known; otherwise allow any
+        // non-negative position (the player clamps on its side).
+        let duration = track?.duration ?? 0
+        let clamped = duration > 0 ? max(0, min(seconds, duration)) : max(0, seconds)
 
         elapsedAnchor = clamped
         anchorDate = Date()
         displayedElapsed = clamped
         lyrics.updateCurrentLine(for: clamped)
 
-        let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
-        let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
-
-        if !isBrowserVideo && (spotifyRunning || musicRunning) {
-            if let bundle = sourceAppBundleID {
-                if bundle == MusicProvider.spotify.bundleID {
-                    runProviderCommand(appName: "Spotify", command: "set player position to \(Int(clamped))")
-                    return
-                } else if bundle == MusicProvider.appleMusic.bundleID {
-                    runProviderCommand(appName: "Music", command: "set player position to \(Int(clamped))")
-                    return
-                }
-            }
-            if selectedProvider == .spotify && spotifyRunning {
-                runProviderCommand(appName: "Spotify", command: "set player position to \(Int(clamped))")
-                return
-            } else if selectedProvider == .appleMusic && musicRunning {
-                runProviderCommand(appName: "Music", command: "set player position to \(Int(clamped))")
-                return
-            }
-            if spotifyRunning {
-                runProviderCommand(appName: "Spotify", command: "set player position to \(Int(clamped))")
-                return
-            } else if musicRunning {
-                runProviderCommand(appName: "Music", command: "set player position to \(Int(clamped))")
-                return
-            }
-        }
-
-        if isBrowserVideo || isShowingBrowserSnapshot {
+        switch resolveTransportTarget(providerCommand: "set player position to \(Int(clamped))") {
+        case let .provider(appName, command):
+            runProviderCommand(appName: appName, command: command)
+        case .browser:
             seekBrowser(to: clamped)
-            return
-        }
-
-        if let provider = selectedProvider.appleScriptAppName {
-            runProviderCommand(appName: provider, command: "set player position to \(Int(clamped))")
-            return
-        }
-
-        if let bundle = sourceAppBundleID {
-            if bundle == MusicProvider.spotify.bundleID {
-                runProviderCommand(appName: "Spotify", command: "set player position to \(Int(clamped))")
-                return
-            } else if bundle == MusicProvider.appleMusic.bundleID {
-                runProviderCommand(appName: "Music", command: "set player position to \(Int(clamped))")
-                return
+        case .system:
+            if useAdapter {
+                adapter.seek(to: clamped)
+            } else if useMediaRemote, bridge.canSeek {
+                bridge.setElapsedTime(clamped)
+            } else {
+                runMusicCommand("set player position to \(Int(clamped))")
             }
-        }
-
-        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty {
-            runProviderCommand(appName: "Spotify", command: "set player position to \(Int(clamped))")
-            return
-        }
-
-        if !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty {
-            runProviderCommand(appName: "Music", command: "set player position to \(Int(clamped))")
-            return
-        }
-
-        if useAdapter {
-            adapter.seek(to: clamped)
-        } else if useMediaRemote, bridge.canSeek {
-            bridge.setElapsedTime(clamped)
-        } else {
-            runMusicCommand("set player position to \(Int(clamped))")
         }
     }
 
