@@ -47,7 +47,7 @@ final class BluetoothBatteryMonitor {
     func start() {
         guard timer == nil else { return }
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledRepeating(every: 30) { [weak self] in
             self?.refresh()
         }
     }

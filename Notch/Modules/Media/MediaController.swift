@@ -428,9 +428,7 @@ final class MediaController {
             // Events path has to ask, so it keeps a slow poll rather than
             // going dark until the notch is opened again.
             if !useMediaRemote, wantsCollapsedMediaUpdates {
-                fallbackTimer = Timer.scheduledTimer(
-                    withTimeInterval: 4.0, repeats: true
-                ) { [weak self] _ in
+                fallbackTimer = Timer.scheduledRepeating(every: 4.0) { [weak self] in
                     self?.refreshFromAppleScript()
                 }
             }
@@ -446,7 +444,7 @@ final class MediaController {
             // browser-derived track needs a probe of its own to stay honest:
             // MediaRemote never answers for browsers, so nothing else would
             // tell us when the tab closes or the video changes.
-            browserProbeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            browserProbeTimer = Timer.scheduledRepeating(every: 1.0) { [weak self] in
                 self?.tickBrowserProbe()
             }
             tickBrowserProbe()
@@ -459,7 +457,7 @@ final class MediaController {
             probeFallbackIfMediaRemoteSilent()
         } else {
             refreshFromAppleScript()
-            fallbackTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            fallbackTimer = Timer.scheduledRepeating(every: 2.0) { [weak self] in
                 self?.refreshFromAppleScript()
             }
         }
@@ -467,7 +465,7 @@ final class MediaController {
         // 0.1s keeps lyric highlighting within ~50ms of the LRC timestamp.
         // A half-second tick quantized the highlight to every 0.5s beat,
         // which read as lyrics arriving late on top of the anchor lag.
-        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        progressTimer = Timer.scheduledRepeating(every: 0.1) { [weak self] in
             self?.tickProgress()
         }
         tickProgress()
@@ -509,7 +507,7 @@ final class MediaController {
 
         if wanted {
             guard lyricActivityTimer == nil else { return }
-            lyricActivityTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            lyricActivityTimer = Timer.scheduledRepeating(every: 0.1) { [weak self] in
                 self?.tickCollapsedLyric()
             }
             tickCollapsedLyric()

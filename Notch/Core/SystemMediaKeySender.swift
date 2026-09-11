@@ -23,10 +23,18 @@ enum SystemMediaKeySender {
         sendMediaKey(NX_KEYTYPE_PREVIOUS)
     }
 
+    /// `NX_KEYDOWN` / `NX_KEYUP` from IOKit's `ev_keymap.h`. A system-defined
+    /// media-key event carries one of these in the modifier-flags field *and*
+    /// in the low word of `data1` — naming them beats the bare hex pair that
+    /// these snippets usually ship with.
+    private static let keyDownFlag: Int32 = 0xa00
+    private static let keyUpFlag: Int32 = 0xb00
+
     private static func sendMediaKey(_ key: Int32) {
         func postKey(down: Bool) {
-            let flags = NSEvent.ModifierFlags(rawValue: down ? 0xa00 : 0xb00)
-            let data1 = Int((key << 16) | (down ? 0xa00 : 0xb00))
+            let flag = down ? keyDownFlag : keyUpFlag
+            let flags = NSEvent.ModifierFlags(rawValue: UInt(flag))
+            let data1 = Int((key << 16) | flag)
             let ev = NSEvent.otherEvent(
                 with: .systemDefined,
                 location: .zero,

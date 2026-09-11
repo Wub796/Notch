@@ -24,7 +24,7 @@ final class SystemAudioMeter {
         failureReason = nil
         isLive = true
         update()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledRepeating(every: 1.0 / 20.0) { [weak self] in
             self?.update()
         }
     }

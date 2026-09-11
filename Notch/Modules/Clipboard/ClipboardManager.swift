@@ -36,7 +36,7 @@ final class ClipboardManager {
 
     func start() {
         guard timer == nil, NotchSettings.shared.clipboardHistoryEnabled else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledRepeating(every: 1.0) { [weak self] in
             self?.poll()
         }
     }

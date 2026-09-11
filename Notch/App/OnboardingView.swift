@@ -153,8 +153,11 @@ struct OnboardingView: View {
         .background(Capsule().fill(.white.opacity(0.07)))
     }
 
-    @State private var refreshToken = 0
-
+    /// `IntegrationPermissions` is `@Observable`, so reading a status here
+    /// subscribes this view to it — a grant re-renders the row on its own.
+    /// (The old `.id(token)` trick changed the whole row's identity to force a
+    /// re-read, which also tore down and rebuilt the three buttons under the
+    /// pointer on every status change.)
     private var permissions: some View {
         let accessibilityGranted = IntegrationPermissions.shared.status(for: .accessibility) == .granted
         let calendarGranted = IntegrationPermissions.shared.status(for: .calendar) == .granted
@@ -164,30 +167,26 @@ struct OnboardingView: View {
             HStack(spacing: 8) {
                 permissionButton(
                     accessibilityGranted ? "checkmark.circle.fill" : "accessibility",
-                    accessibilityGranted ? "Accessibility" : "Accessibility",
+                    "Accessibility",
                     isGranted: accessibilityGranted
                 ) {
-                    IntegrationPermissions.shared.request(.accessibility) {
-                        refreshToken += 1
-                    }
+                    IntegrationPermissions.shared.request(.accessibility)
                 }
                 permissionButton(
                     calendarGranted ? "checkmark.circle.fill" : "calendar",
-                    calendarGranted ? "Calendar" : "Calendar",
+                    "Calendar",
                     isGranted: calendarGranted
                 ) {
                     IntegrationPermissions.shared.request(.calendar) {
-                        refreshToken += 1
                         state.calendar.refresh()
                     }
                 }
                 permissionButton(
                     locationGranted ? "checkmark.circle.fill" : "location.fill",
-                    locationGranted ? "Weather" : "Weather",
+                    "Weather",
                     isGranted: locationGranted
                 ) {
                     IntegrationPermissions.shared.request(.location) {
-                        refreshToken += 1
                         state.weather.refresh(force: true)
                     }
                 }
@@ -196,7 +195,6 @@ struct OnboardingView: View {
                 .font(.system(size: 9.5))
                 .foregroundStyle(.white.opacity(0.4))
         }
-        .id(refreshToken)
     }
 
     private func permissionButton(

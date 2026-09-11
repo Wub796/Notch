@@ -73,15 +73,13 @@ final class TimerManager {
     private func scheduleTick() {
         tickTimer?.invalidate()
         updateRemaining()
-        let timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        self.tickTimer = Timer.scheduledRepeating(every: 0.25) { [weak self] in
             guard let self else { return }
             self.updateRemaining()
             if self.remaining <= 0 {
                 self.finish()
             }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        self.tickTimer = timer
     }
 
     private func updateRemaining() {

@@ -64,7 +64,7 @@ final class QuickActions {
         run(script, describing: "lock the screen", failure: { [weak self] in
             self?.sleepDisplay()
             self?.lastError = "Locking needs Accessibility access — slept the display instead."
-        }, completion: nil)
+        })
     }
 
     // MARK: - Trash
@@ -108,7 +108,7 @@ final class QuickActions {
         _ source: String,
         describing action: String,
         failure: (() -> Void)? = nil,
-        completion: (() -> Void)?
+        completion: (() -> Void)? = nil
     ) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var error: NSDictionary?

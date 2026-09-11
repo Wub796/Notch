@@ -746,6 +746,7 @@ final class NotchState {
         audioApps.stopObserving()
         activities.stop()
         MediaKeyInterceptor.shared.stop()
+        clipboard.stop()
         timer.cancel()
         sleepModules()
     }

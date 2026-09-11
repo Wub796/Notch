@@ -32,6 +32,9 @@ final class FocusModeMonitor {
     }
 
     func start() {
+        // Starting twice would open a second descriptor and drop the first
+        // source without cancelling it, leaking both.
+        guard source == nil else { return }
         reload(notify: false)
 
         descriptor = open(databaseURL.path, O_EVTONLY)

@@ -112,7 +112,7 @@ final class ShelfController {
             scale: 2,
             representationTypes: .thumbnail
         )
-        QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] representation, _ in
+        QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, _ in
             guard let representation else { return }
             let image = NSImage(
                 cgImage: representation.cgImage,

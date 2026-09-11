@@ -141,11 +141,8 @@ final class NotchWindowController: NSWindowController {
         // still sampled inside the probe — a fast crossing can clear the
         // collapsed target between two slow polls. The work is a couple of
         // rect checks per tick, so 20 Hz costs nothing.
-        cursorTrackingTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+        cursorTrackingTimer = Timer.scheduledRepeating(every: 0.05) { [weak self] in
             self?.updateIgnoreMouseEvents()
-        }
-        if let cursorTrackingTimer {
-            RunLoop.main.add(cursorTrackingTimer, forMode: .common)
         }
     }
 
