@@ -4,11 +4,14 @@ import SwiftUI
 /// Layout constants, following boring.notch's `sizing/matters.swift` and
 /// Atoll's variant of it.
 ///
-/// The important idea borrowed from both: **one open size for every tab**.
-/// Sizing each screen to its own content meant the slab resized whenever you
-/// switched tabs, which is the jankiest thing a notch can do. Both references
-/// open to a fixed panel and fit their modules inside it, so switching tabs
-/// only changes what is drawn.
+/// The references open to **one fixed panel for every tab** and fit their
+/// modules inside it, because a slab that resizes on every tab switch is the
+/// jankiest thing a notch can do. This app keeps the spirit but not the
+/// letter: a month grid and a weather hero are genuinely different shapes, and
+/// forcing both into one box shrank each past legibility. So the size is
+/// per-tab (`baseSize(for:)`), and the two size preferences scale every tab
+/// together rather than setting any one of them — switching tabs moves the
+/// slab, but always between two sizes the user's own sliders chose.
 enum NotchSizing {
     /// Corner radii for the two states. Top corners flare into the menu bar;
     /// bottom corners round inward. Both pairs are deliberately generous —
@@ -33,11 +36,10 @@ enum NotchSizing {
     static let topBarRailIconSize: CGFloat = 28
     static let topBarRailSpacing: CGFloat = 10
 
-    /// How many controls the home rail carries: the Home button, Settings, and
-    /// the four module icons in `NotchTopBarView.modules`. Keep in step with
-    /// that list. The slab-width floor needs it, so adding a rail control must
-    /// bump this number or narrow modules will start clipping the rail again.
-    static let topBarRailControlCount: Int = 6
+    /// How many controls the home rail carries. Derived from the rail's own
+    /// list so adding a control can never leave this behind — a stale count
+    /// here lets narrow modules clip the rail against the hardware notch.
+    static var topBarRailControlCount: Int { NotchTopBarView.railControlCount }
 
     /// Intrinsic width of the top-bar rail for `count` controls (icons plus
     /// the gaps between them).
@@ -51,7 +53,7 @@ enum NotchSizing {
     /// the slab wide enough to hold the whole rail beside the hardware notch.
     static func usesFullTopRail(for tab: NotchTab) -> Bool {
         switch tab {
-        case .home, .shelf, .clipboard, .notes, .tools, .telemetry: true
+        case .home, .shelf, .clipboard, .notes, .tools, .telemetry, .camera: true
         default: false
         }
     }
@@ -116,28 +118,42 @@ enum NotchSizing {
     static let defaultOpenHeight: Double = 215
     static let maximumOpenHeight: Double = 500
 
-    static func maxAllowedOpenWidth(for screen: NSScreen? = NSScreen.main) -> Double {
-        guard let width = screen?.frame.width, width > 0 else { return 900 }
+    /// The widest slab a display can hold. Defaults to the screen the notch
+    /// actually lives on, not `NSScreen.main` — main is whichever display has
+    /// keyboard focus, so using it made the slab's width cap change as the
+    /// user moved between windows on a multi-display Mac.
+    static func maxAllowedOpenWidth(
+        for screen: NSScreen? = NotchGeometry.preferredScreen
+    ) -> Double {
+        guard let width = screen?.frame.width, width > 0 else { return defaultOpenWidth }
         return max(Double(width) - 60, minimumOpenWidth)
     }
 
-    /// The open slab for a given screen.
+    /// The open slab for a tab, scaled by the user's two size preferences.
     ///
-    /// Per-tab again. Sharing one size across every screen kept the panel from
-    /// resizing on a tab switch, which is what boring.notch and Atoll do — but
-    /// these screens are genuinely different shapes, and forcing a month grid
-    /// and a weather hero into the same box shrank both past legibility. The
-    /// width preference now scales them together rather than setting one.
+    /// Each preference drives its own axis: width scales the per-tab base
+    /// width, height scales the per-tab base height. Height used to be scaled
+    /// by the *width* preference, which left the "Open height" slider with
+    /// nothing to do — it saved a value nothing ever read.
     static func openNotchSize(for tab: NotchTab, showsLyrics: Bool = true) -> CGSize {
         let base = baseSize(for: tab)
-        let scale = min(max(NotchSettings.shared.openNotchWidth, minimumOpenWidth),
-                        maxAllowedOpenWidth()) / defaultOpenWidth
-        let height = min(base.height * scale, maximumOpenHeight)
+        let maxWidth = maxAllowedOpenWidth()
+        let widthScale = min(max(NotchSettings.shared.openNotchWidth, minimumOpenWidth),
+                             maxWidth) / defaultOpenWidth
+        let heightScale = min(max(NotchSettings.shared.openNotchHeight, minimumOpenHeight),
+                              maximumOpenHeight) / defaultOpenHeight
+        let height = min(base.height * heightScale, maximumOpenHeight)
         return CGSize(
-            width: min(base.width * scale, maxAllowedOpenWidth()),
-            height: tab == .media && !showsLyrics ? max(height - 46, 150) : height
+            width: min(base.width * widthScale, maxWidth),
+            height: tab == .audio && !showsLyrics
+                ? max(height - mediaLyricsRowHeight, minimumOpenHeight)
+                : height
         )
     }
+
+    /// Height the Now player's compact synced-lyric row occupies, removed from
+    /// the Audio slab's budget when the row is switched off.
+    static let mediaLyricsRowHeight: CGFloat = 46
 
     /// Whether the open module's height should hug its content instead of
     /// the fixed per-tab budget.
@@ -167,9 +183,14 @@ enum NotchSizing {
     /// hover probe — clear of the real notch even then. It is also the closed
     /// pill's side padding: the collapsed notch is drawn to `safeNotchSize`,
     /// so half of this bleed is how far the black shape visibly extends past
-    /// the hardware cutout on each side (26 keeps the closed pill's side
-    /// margin at 13pt a side, up from 18's 9pt).
-    static let notchCoverageBleed: CGFloat = 26
+    /// the hardware cutout on each side — 30 gives 15pt a side.
+    ///
+    /// This is the *only* coverage margin. `NotchGeometry` used to fold an
+    /// undocumented `+ 4` into its measurement as well, so the real bleed was
+    /// the sum of two numbers in two files and neither comment was right about
+    /// it. That 4 was moved here, which is why this reads 30 rather than 26 —
+    /// the drawn pill is unchanged.
+    static let notchCoverageBleed: CGFloat = 30
 
     /// Each screen's natural size at the default width.
     private static func baseSize(for tab: NotchTab) -> CGSize {
@@ -179,10 +200,11 @@ enum NotchSizing {
         // to +24pt for the other-audio chips, plus the 5pt bottom gutter),
         // so the base height simply needs to leave that tallest case room
         // to fit.
-        case .home: CGSize(width: 860, height: 236)
-        // The standalone compact media surface is no longer used; media opens
-        // from the home card into the full player layout.
-        case .media: CGSize(width: 900, height: 255)
+        // 900, not 860: the dashboard's three columns are surfaces now, and a
+        // surface costs its own horizontal padding — 54pt across the row. The
+        // extra 40 gives that back, so the columns keep the breathing room
+        // they had before the tiles were added.
+        case .home: CGSize(width: 900, height: 236)
         case .audio: CGSize(width: 880, height: 390)
         case .weather: CGSize(width: 600, height: 320)
         case .calendar: CGSize(width: 620, height: 350)
@@ -191,15 +213,10 @@ enum NotchSizing {
         case .tools: CGSize(width: 880, height: 295)
         case .notes: CGSize(width: 580, height: 265)
         case .telemetry: CGSize(width: 800, height: 275)
+        // Taller than the rest: the preview is the content, and a 16:9 feed in
+        // a short panel is a letterboxed sliver.
+        case .camera: CGSize(width: 620, height: 380)
         }
     }
 
-    /// The window is sized once for the largest slab the sliders allow, plus
-    /// the shadow margin, so growing the panel never clips against its window.
-    static var windowSize: CGSize {
-        CGSize(
-            width: maxAllowedOpenWidth() + Double(shadowPadding) * 2,
-            height: maximumOpenHeight + Double(shadowPadding) * 2
-        )
-    }
 }

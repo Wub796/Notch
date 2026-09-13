@@ -47,8 +47,9 @@ struct ShelfView: View {
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: NotchTheme.Space.m) {
-                        ForEach(shelf.items) { item in
+                        ForEach(Array(shelf.items.enumerated()), id: \.element.id) { index, item in
                             ShelfItemCard(item: item, shelf: shelf, state: state)
+                                .notchRowEntrance(index)
                         }
                     }
                     .padding(.vertical, 4)
@@ -77,7 +78,7 @@ private struct ShelfItemCard: View {
     @State private var hovering = false
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             Image(nsImage: item.icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -130,7 +131,11 @@ private struct ShelfItemCard: View {
             NSWorkspace.shared.open(item.url)
         }
         .onDrag {
-            NSItemProvider(contentsOf: item.url) ?? NSItemProvider()
+            // The provider is handed to the destination; the shelf only needs
+            // to know the drag started so it can clear the item afterwards
+            // when the user has asked it to.
+            defer { shelf.handleDragOut(item) }
+            return NSItemProvider(contentsOf: item.url) ?? NSItemProvider()
         }
         .contextMenu {
             Button("Open") { NSWorkspace.shared.open(item.url) }

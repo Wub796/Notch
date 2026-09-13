@@ -35,18 +35,25 @@ enum DevicesSection: String, CaseIterable, Identifiable {
 /// Sizing the whole tab to Now would starve it, so the fit is scoped to this
 /// one section.
 enum DevicesScreenMetrics {
-    /// The hero row (artwork, track info, account chip + section switch).
-    static let heroRowHeight: CGFloat = 82
+    /// The hero row (artwork, track info, account chip + section switch),
+    /// including the surface padding it now carries.
+    static let heroRowHeight: CGFloat = 82 + NotchTheme.Space.s * 2
     /// Vertical gap between the top-level stacked rows.
     static let sectionSpacing: CGFloat = 8
     /// The centered synced-lyric line shown when lyrics are toggled on.
     static let centeredLyricsHeight: CGFloat = 46
-    /// progress + transport + heart/shuffle rows, their spacing and top inset.
-    static let playbackControlsHeight: CGFloat = 108
-    /// Extra inset kept beneath the heart/shuffle row so the icons clear the
-    /// slab's rounded bottom edge instead of sitting flush against it. The
-    /// slab's structural `openContentInset` adds a little more on top of this.
-    static let bottomSafePadding: CGFloat = 20
+    /// progress + transport + heart/shuffle rows, their spacing, and the
+    /// surface padding around them. The 108 included a 4pt top inset that the
+    /// surface's own padding replaced.
+    static let playbackControlsHeight: CGFloat = 104 + NotchTheme.Space.s * 2
+    /// Extra inset beneath the controls so they clear the slab's rounded
+    /// bottom edge instead of sitting flush against it.
+    ///
+    /// Small now: the controls sit in a surface with its own bottom padding,
+    /// which provides that clearance. Keeping the old 20 on top of it left a
+    /// visible band of empty slab below the card's bottom edge — invisible
+    /// when the controls were bare on black, obvious once they had an edge.
+    static let bottomSafePadding: CGFloat = 6
 
     static func naturalNowHeight(showsLyrics: Bool) -> CGFloat {
         let base = heroRowHeight + sectionSpacing + playbackControlsHeight
@@ -104,6 +111,9 @@ struct DevicesScreenView: View {
                         .padding(.top, 6)
                 } else {
                     topHeroRow
+                        .padding(.horizontal, NotchTheme.Space.m)
+                        .padding(.vertical, NotchTheme.Space.s)
+                        .notchTile(radius: NotchTheme.Radius.card)
                         .transition(.opacity.combined(with: .offset(y: -4)))
                 }
             }
@@ -139,13 +149,13 @@ struct DevicesScreenView: View {
     // MARK: - Top Hero Row (Artwork + Title + Artist aligned with Section buttons & 3D lyrics)
 
     private var topHeroRow: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 12) {
             // LEFT: Album Art + Track Info + Subtitle
             HStack(alignment: .center, spacing: 12) {
                 artwork
 
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         MarqueeText(
                             text: displayTitle,
                             font: .system(size: 19, weight: .bold, design: .rounded),
@@ -189,7 +199,7 @@ struct DevicesScreenView: View {
     // MARK: - Now Playback Controls (Lifted Higher)
 
     private var nowPlaybackSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NotchTheme.Space.s) {
             progressRow
 
             transportRow
@@ -197,7 +207,12 @@ struct DevicesScreenView: View {
             bottomActions
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 4)
+        .padding(.horizontal, NotchTheme.Space.m)
+        .padding(.vertical, NotchTheme.Space.s)
+        // The scrubber, transport and the heart/shuffle row are one
+        // instrument; on bare black they read as three unrelated rows adrift
+        // in a wide panel.
+        .notchTile(radius: NotchTheme.Radius.card)
     }
 
     // MARK: - Media Artwork & Info Subcomponents
@@ -213,6 +228,10 @@ struct DevicesScreenView: View {
         }
         .frame(width: 76, height: 76)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(NotchTheme.Surface.borderStrong, lineWidth: 1)
+        }
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: media.accent.opacity(0.38), radius: 14, y: 5)
         .animation(NotchAnimations.content, value: media.artworkVersion)
@@ -247,7 +266,7 @@ struct DevicesScreenView: View {
     }
 
     private var artistRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Text(String(displayArtist.prefix(1)).uppercased())
                 .font(.system(size: 9, weight: .heavy, design: .rounded))
                 .foregroundStyle(NotchTheme.inkPrimary)
@@ -344,7 +363,7 @@ struct DevicesScreenView: View {
                 "backward.fill",
                 size: 16,
                 label: "Previous track",
-                isEnabled: media.canControlTransport
+                isEnabled: true
             ) {
                 media.previousTrack()
             }
@@ -364,8 +383,6 @@ struct DevicesScreenView: View {
             }
             .buttonStyle(PressableButtonStyle())
             .hoverLift(1.08)
-            .disabled(!media.canControlTransport)
-            .opacity(media.canControlTransport ? 1 : 0.4)
             .contentTransition(.symbolEffect(.replace))
             .accessibilityLabel(media.isPlaying ? "Pause" : "Play")
 
@@ -373,7 +390,7 @@ struct DevicesScreenView: View {
                 "forward.fill",
                 size: 16,
                 label: "Next track",
-                isEnabled: media.canControlTransport
+                isEnabled: true
             ) {
                 media.nextTrack()
             }
@@ -390,7 +407,7 @@ struct DevicesScreenView: View {
                     size: 15,
                     label: media.isShuffling ? "Turn off shuffle" : "Shuffle",
                     tint: media.isShuffling ? .blue : nil,
-                    isEnabled: media.canControlTransport
+                    isEnabled: true
                 ) {
                     withAnimation(NotchAnimations.content) {
                         media.toggleShuffle()
@@ -480,7 +497,7 @@ struct DevicesScreenView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 Image(systemName: symbol)
                     .font(.system(size: 11, weight: .semibold))
                 Text(title)

@@ -158,12 +158,28 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         refreshMusicStatus()
     }
 
+    /// Whether we have ever put the system prompt for `integration` on screen.
+    ///
+    /// Neither `AXIsProcessTrusted` nor `CGPreflightScreenCaptureAccess` can
+    /// tell "never asked" from "asked and refused" — both just answer false.
+    /// Remembering the ask is the only way to stop the pane reporting a firm
+    /// denial as "Not requested" forever.
+    private static func hasRequested(_ integration: Integration) -> Bool {
+        UserDefaults.standard.bool(forKey: "requested.\(integration.rawValue)")
+    }
+
+    private static func markRequested(_ integration: Integration) {
+        UserDefaults.standard.set(true, forKey: "requested.\(integration.rawValue)")
+    }
+
     private func accessibilityStatus() -> Status {
-        AXIsProcessTrusted() ? .granted : .notDetermined
+        if AXIsProcessTrusted() { return .granted }
+        return Self.hasRequested(.accessibility) ? .denied : .notDetermined
     }
 
     private func screenCaptureStatus() -> Status {
-        CGPreflightScreenCaptureAccess() ? .granted : .notDetermined
+        if CGPreflightScreenCaptureAccess() { return .granted }
+        return Self.hasRequested(.screenCapture) ? .denied : .notDetermined
     }
 
     /// Apple Events authorization is read off the main thread.
@@ -232,6 +248,13 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         musicStatuses[provider] ?? .unknown
     }
 
+    /// Whether Apple Events to this app are already allowed, asked without
+    /// raising the consent dialog. Used before any speculative script — a
+    /// background probe at launch must never be what puts a prompt on screen.
+    static func isAutomationAllowed(_ bundleID: String) -> Bool {
+        automationPermission(for: bundleID, askUser: false) == noErr
+    }
+
     /// Asks macOS whether this app may automate `bundleID`.
     ///
     /// With `askUser` true this is also what *raises* the Automation prompt —
@@ -240,13 +263,6 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     /// which is unreliable while it is launching.
     ///
     /// Blocks. Never call it on the main thread.
-    /// Whether Apple Events to this app are already allowed, asked without
-    /// raising the consent dialog. Used before any speculative script — a
-    /// background probe at launch must never be what puts a prompt on screen.
-    static func isAutomationAllowed(_ bundleID: String) -> Bool {
-        automationPermission(for: bundleID, askUser: false) == noErr
-    }
-
     private static func automationPermission(for bundleID: String, askUser: Bool) -> OSStatus {
         guard let data = bundleID.data(using: .utf8) else { return OSStatus(-50) }
 
@@ -311,6 +327,7 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
 
         switch integration {
         case .accessibility:
+            Self.markRequested(.accessibility)
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
             let trusted = AXIsProcessTrustedWithOptions(options)
             if !trusted {
@@ -322,9 +339,13 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
                     NSWorkspace.shared.open(url)
                 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: finish)
+            // These two are granted in System Settings, out of band — there is
+            // no callback. A fixed 1.2s wait finished long before anyone could
+            // click anything, so the pane always concluded "nothing moved".
+            awaitGrant(integration, finish: finish)
 
         case .screenCapture:
+            Self.markRequested(.screenCapture)
             NSApp.activate(ignoringOtherApps: true)
             let hasAccess = CGRequestScreenCaptureAccess()
             if !hasAccess {
@@ -348,6 +369,8 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
             }
 
         case .location:
+            // The user pressed Grant, so pulling focus is what they asked for:
+            // macOS attaches the prompt to the frontmost app.
             NSApp.activate(ignoringOtherApps: true)
             locationManager.requestWhenInUseAuthorization()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: finish)
@@ -355,6 +378,36 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         case .music:
             grantMusicAccess(finish: finish)
         }
+    }
+
+    /// Waits for an out-of-band grant (System Settings) to land.
+    ///
+    /// Re-reads the real status roughly once a second and finishes the moment
+    /// it changes, giving up after `timeout`. The row stays in its pending
+    /// state meanwhile, which is the honest thing to show while the user is
+    /// off in System Settings.
+    private func awaitGrant(
+        _ integration: Integration,
+        timeout: TimeInterval = 45,
+        finish: @escaping () -> Void
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        let before = status(for: integration)
+
+        func poll() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self else { return }
+                let now: Status = integration == .accessibility
+                    ? self.accessibilityStatus()
+                    : self.screenCaptureStatus()
+                if now != before || Date() >= deadline {
+                    finish()
+                } else {
+                    poll()
+                }
+            }
+        }
+        poll()
     }
 
     /// Whether a player is installed at all, so the UI can offer to install it

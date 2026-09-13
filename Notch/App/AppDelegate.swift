@@ -31,6 +31,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
         installWakeObservers()
+
+        #if DEBUG
+        // Screenshot hooks for development: there is no other way to drive the
+        // panel from a script, because opening it needs either a click or the
+        // global hotkey and both require Accessibility.
+        if CommandLine.arguments.contains("--debug-expand") {
+            // Re-assert rather than expand once. A display wake triggers a
+            // screen re-attach, which collapses the panel by design, and an
+            // outside click collapses it too — both of which happen while a
+            // screenshot is being taken on a machine somebody is using.
+            for step in 0 ..< 14 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5 + 0.5 * Double(step)) { [weak self] in
+                    guard let self else { return }
+                    if self.state.mode != .expanded { self.state.expand() }
+                    self.state.isPinned = true
+                }
+            }
+        }
+        if CommandLine.arguments.contains("--debug-settings") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                SettingsWindowController.shared.show()
+            }
+        }
+        if let index = CommandLine.arguments.firstIndex(of: "--debug-tab"),
+           index + 1 < CommandLine.arguments.count,
+           let tab = NotchTab(rawValue: CommandLine.arguments[index + 1]) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.state.select(tab)
+            }
+        }
+        #endif
     }
 
     /// Waking is not a quiet event for this app: CoreAudio re-enumerates its
@@ -88,6 +119,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// alone do not require rebuilding: the panel is joined to every Space and
     /// its controller re-anchors its existing window without disrupting hover.
     private func attachToBestScreen() {
+        // Cancel, don't just forget: a direct call (the screen preference
+        // changing) while a debounced rebuild was armed left the old work item
+        // scheduled, so the panel was rebuilt a second time 0.4s later.
+        screenChangeWork?.cancel()
         screenChangeWork = nil
         guard let screen = NotchGeometry.preferredScreen else { return }
         // Never carry an expanded panel across a display change — the new

@@ -24,7 +24,7 @@ struct DraggableProgressBar: View {
     @State private var isDragging = false
 
     private var height: CGFloat {
-        inline ? (isDragging ? 8 : 5) : (isDragging ? 9 : 6)
+        inline ? (isDragging ? 9 : 6) : (isDragging ? 10 : 7)
     }
 
     var body: some View {
@@ -70,7 +70,7 @@ struct DraggableProgressBar: View {
             )
         }
         .frame(height: height)
-        // The thickness jump (5 → 8) springs with the house curve; under the
+        // The thickness jump (6 → 9) springs with the house curve; under the
         // finger the value animation above is disabled, so this owns the settle.
         .animation(NotchAnimations.content, value: isDragging)
         .accessibilityElement()
@@ -95,6 +95,7 @@ struct DraggableProgressBar: View {
 /// This is the layout the notch actually uses. `InlineHUD` below is the
 /// references' wing arrangement, kept because it is the right shape when the
 /// bar has to sit beside the camera housing rather than under it.
+/// The volume / brightness bar that drops beneath the notch.
 struct DroppedHUDBar: View {
     let kind: InlineHUD.Kind
     @Binding var value: CGFloat
@@ -102,7 +103,7 @@ struct DroppedHUDBar: View {
     var onChange: ((CGFloat) -> Void)?
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             glyph
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(NotchTheme.inkPrimary)
@@ -124,7 +125,10 @@ struct DroppedHUDBar: View {
                     .contentTransition(.numericText())
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, NotchTheme.Space.m)
+        .padding(.vertical, NotchTheme.Space.xs)
+        .notchTile(radius: NotchTheme.Radius.tile)
+        .padding(.horizontal, 10)
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
@@ -193,7 +197,7 @@ struct InlineHUD: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 glyph
                     .foregroundStyle(.white)
                     .symbolVariant(.fill)
@@ -211,7 +215,7 @@ struct InlineHUD: View {
             Color.clear
                 .frame(width: max(0, notchWidth - 20))
 
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 DraggableProgressBar(value: $value, tint: kind.tint, onChange: onChange)
 
                 if case let .volume(muted) = kind, muted || value.isZero {

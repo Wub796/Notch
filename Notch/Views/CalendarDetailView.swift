@@ -251,10 +251,6 @@ struct CalendarDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 5)
                         .padding(.horizontal, 10)
-                        .background {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(NotchTheme.surface)
-                        }
                     }
                 }
             }

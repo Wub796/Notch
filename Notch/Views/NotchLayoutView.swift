@@ -77,8 +77,11 @@ struct NotchLayoutView: View {
                 .frame(width: state.collapsedSize.width, height: state.collapsedSize.height)
                 // Hovering the closed pill widens it slightly, the way both
                 // references pad their wings out on hover. The amount is the
-                // user's "hover grow" preference.
-                .padding(.horizontal, isHovering ? min(state.hoverExpansion, 5) : 0)
+                // user's "hover grow" preference, clamped in `hoverExpansion`
+                // itself — a `min(…, 5)` here used to cap it below the 6pt
+                // default, so every setting above 1.083x behaved identically
+                // and the slider looked broken.
+                .padding(.horizontal, isHovering ? state.hoverExpansion : 0)
                 .transition(.opacity)
                 .zIndex(2)
         }
@@ -165,8 +168,6 @@ struct NotchLayoutView: View {
         switch state.tab {
         case .home:
             HomeDashboardView(state: state, namespace: namespace)
-        case .media:
-            MediaPlayerView(state: state, namespace: namespace)
         case .audio:
             DevicesScreenView(state: state, namespace: namespace)
         case .weather:
@@ -183,6 +184,8 @@ struct NotchLayoutView: View {
             NotesView(state: state)
         case .telemetry:
             TelemetryView(telemetry: state.telemetry)
+        case .camera:
+            CameraView(state: state)
         }
     }
 }
@@ -191,7 +194,7 @@ struct NotchLayoutView: View {
 /// zero; NotchState ignores non-positive values, so the slab is unaffected
 /// until a real measurement arrives.
 private struct ModuleNaturalHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
+    static let defaultValue: CGFloat = 0
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()

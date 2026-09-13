@@ -23,14 +23,28 @@ final class ClipboardManager {
     private var lastChangeCount = NSPasteboard.general.changeCount
     private var isSelfCopying = false
 
-    private static let historyLimit = 40
     private static let pinnedKey = "clipboardPinned"
+    /// Pinned entries are stored as `copiedAt` epoch seconds keyed by text, so
+    /// a relaunch restores when each was actually copied rather than stamping
+    /// them all "just now".
+    private static let pinnedDatesKey = "clipboardPinnedDates"
 
     init() {
         // Pinned items survive relaunches; unpinned history does not, which
         // keeps sensitive clipboard content from being written to disk.
-        if let saved = UserDefaults.standard.stringArray(forKey: Self.pinnedKey) {
-            entries = saved.map { Entry(text: $0, copiedAt: Date(), isPinned: true) }
+        guard let saved = UserDefaults.standard.stringArray(forKey: Self.pinnedKey) else {
+            return
+        }
+        let dates = UserDefaults.standard
+            .dictionary(forKey: Self.pinnedDatesKey) as? [String: Double] ?? [:]
+        entries = saved.map { text in
+            Entry(
+                text: text,
+                // Falling back to "now" only for entries pinned by a build that
+                // did not record the date.
+                copiedAt: dates[text].map(Date.init(timeIntervalSince1970:)) ?? Date(),
+                isPinned: true
+            )
         }
     }
 
@@ -48,14 +62,21 @@ final class ClipboardManager {
 
     private func poll() {
         let pasteboard = NSPasteboard.general
-        guard pasteboard.changeCount != lastChangeCount else { return }
-        lastChangeCount = pasteboard.changeCount
+        let changeCount = pasteboard.changeCount
+        guard changeCount != lastChangeCount else { return }
+
+        // `copyBack` already recorded its own change count, so anything still
+        // arriving here is somebody else's copy. Claim it *after* that test,
+        // not before: advancing `lastChangeCount` up front meant a real copy
+        // landing inside the 0.3s self-copy window was swallowed and never
+        // reached the history at all.
+        guard !isSelfCopying else { return }
+        lastChangeCount = changeCount
 
         // Ignore items marked transient/concealed (password managers).
         let types = pasteboard.types ?? []
         guard !types.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")),
               !types.contains(NSPasteboard.PasteboardType("org.nspasteboard.TransientType")),
-              !isSelfCopying,
               let text = pasteboard.string(forType: .string),
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return }
@@ -117,12 +138,18 @@ final class ClipboardManager {
 
     func clearUnpinned() {
         entries.removeAll { !$0.isPinned }
+        persistPinned()
     }
 
     private func persistPinned() {
+        let pinned = entries.filter(\.isPinned)
+        UserDefaults.standard.set(pinned.map(\.text), forKey: Self.pinnedKey)
         UserDefaults.standard.set(
-            entries.filter(\.isPinned).map(\.text),
-            forKey: Self.pinnedKey
+            Dictionary(
+                pinned.map { ($0.text, $0.copiedAt.timeIntervalSince1970) },
+                uniquingKeysWith: max
+            ),
+            forKey: Self.pinnedDatesKey
         )
     }
 }

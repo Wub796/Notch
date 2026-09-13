@@ -148,7 +148,7 @@ struct NotchContainerView: View {
                 color: (state.mode == .expanded || state.isHovering)
                     ? .black.opacity(0.7)
                     : .clear,
-                radius: state.settings.cornerRadiusScaling ? 6 : 4
+                radius: 6
             )
             .animation(notchAnimation, value: state.mode)
             // Hover motion is fast and the expansion is slow; leaving the fast

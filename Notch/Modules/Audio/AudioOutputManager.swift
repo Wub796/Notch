@@ -103,14 +103,23 @@ final class AudioOutputManager {
     }
 
     /// Reads the current alert volume through AppleScript. Called on launch
-    /// and when the Settings pane opens; it is slow, so never per-frame.
+    /// and when the Settings pane opens; it is slow, so never per-frame — and
+    /// off the main thread, because "slow" here is an Apple Event round trip
+    /// that used to run inline during app launch.
     func refreshAlertVolume() {
-        let script = NSAppleScript(source: "get alert volume of (get volume settings)")
-        var error: NSDictionary?
-        guard let result = script?.executeAndReturnError(&error) else { return }
-        let pct = Int(result.int32Value)
-        alertVolume = Float(pct) / 100.0
+        Self.alertVolumeQueue.async { [weak self] in
+            let script = NSAppleScript(source: "get alert volume of (get volume settings)")
+            var error: NSDictionary?
+            guard let result = script?.executeAndReturnError(&error) else { return }
+            let level = Float(Int(result.int32Value)) / 100.0
+            DispatchQueue.main.async { self?.alertVolume = level }
+        }
     }
+
+    /// Serial, because `NSAppleScript` is not thread-safe.
+    private static let alertVolumeQueue = DispatchQueue(
+        label: "com.notch.alert-volume", qos: .utility
+    )
 
     /// Debounce task for alert volume writes: `osascript` is heavy and the
     /// slider re-fires the binding on every render, so writes are coalesced.
@@ -233,6 +242,32 @@ final class AudioOutputManager {
         attachVolumeListener()
     }
 
+    /// Releases every system listener this manager holds.
+    ///
+    /// There was no way to do this at all: `startListening` had no counterpart
+    /// and the class has no `deinit`, so the CoreAudio listeners outlived
+    /// anything that cared about them — including app termination, which
+    /// `NotchState.shutdown()` claimed to hand them back on.
+    func stopListening() {
+        guard isListening, let block = listenerBlock else { return }
+        isListening = false
+        pendingRefresh?.cancel()
+        pendingRefresh = nil
+
+        detachVolumeListener()
+        AudioObjectRemovePropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &Self.defaultOutputAddress, audioQueue, block
+        )
+        AudioObjectRemovePropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &Self.deviceListAddress, audioQueue, block
+        )
+        listenerBlock = nil
+    }
+
+    deinit {
+        stopListening()
+    }
+
     /// Volume lives on the device, so the listener has to follow the default
     /// output as it changes.
     ///
@@ -250,6 +285,19 @@ final class AudioOutputManager {
     }
 
     private static let listenerElements: [UInt32] = [kAudioObjectPropertyElementMain, 1, 2]
+
+    /// Drops the per-device volume listeners, wherever they are currently
+    /// attached. Split out of `attachVolumeListener` so `stopListening` can
+    /// reuse it rather than carrying a third copy of the same loop.
+    private func detachVolumeListener() {
+        guard let block = listenerBlock, volumeDeviceID != kAudioObjectUnknown else { return }
+        for element in Self.listenerElements {
+            var address = Self.scalarAddress(element: element)
+            AudioObjectRemovePropertyListenerBlock(volumeDeviceID, &address, audioQueue, block)
+        }
+        var mute = Self.muteAddress
+        AudioObjectRemovePropertyListenerBlock(volumeDeviceID, &mute, audioQueue, block)
+    }
 
     private func attachVolumeListener() {
         guard let block = listenerBlock else { return }
@@ -328,116 +376,149 @@ final class AudioOutputManager {
         return AudioObjectSetPropertyData(device, &address, 0, nil, needed, &level) == noErr
     }
 
-    /// The current level, averaged across whichever elements answer.
+    /// The current level.
+    ///
+    /// Returns the published value rather than re-reading the device. The
+    /// listeners installed by `startListening` keep it current, so a blocking
+    /// read adds nothing but latency — and this is called from the media-key
+    /// tap on the main thread, where each call was fifteen synchronous
+    /// CoreAudio calls (five elements, three calls each) at key-repeat rate.
     func currentVolume() -> Float {
-        let device = currentDeviceID
-        guard device != kAudioObjectUnknown else { return volume }
+        volume
+    }
+
+    /// A real, blocking read of the device, averaged across whichever elements
+    /// answer. Only called on `audioQueue`, and given its device explicitly so
+    /// it never reads `currentDeviceID` — observable storage the main thread
+    /// owns — from that queue.
+    private func readCurrentVolumeBlocking(device: AudioDeviceID) -> Float? {
+        guard device != kAudioObjectUnknown else { return nil }
         let readings = Self.volumeElements.compactMap { readScalar(device: device, element: $0) }
-        guard !readings.isEmpty else { return volume }
+        guard !readings.isEmpty else { return nil }
         return min(max(readings.reduce(0, +) / Float32(readings.count), 0), 1)
     }
 
-    private func readVolume() {
-        let device = currentDeviceID
+    /// Re-reads level and mute from the device and publishes both on main.
+    /// The reads block, so they run on `audioQueue` whoever calls this.
+    private func readVolume(device: AudioDeviceID) {
         guard device != kAudioObjectUnknown else { return }
+        audioQueue.async { [weak self] in
+            guard let self else { return }
+            let level = self.readCurrentVolumeBlocking(device: device)
 
-        let readings = Self.volumeElements.compactMap { readScalar(device: device, element: $0) }
-        if !readings.isEmpty {
-            volume = min(max(readings.reduce(0, +) / Float32(readings.count), 0), 1)
-        }
+            var muted: UInt32 = 0
+            var muteSize = UInt32(MemoryLayout<UInt32>.size)
+            var address = Self.muteAddress
+            let hasMute = AudioObjectHasProperty(device, &address)
+                && AudioObjectGetPropertyData(
+                    device, &address, 0, nil, &muteSize, &muted
+                ) == noErr
+            let isMuted = muted != 0
 
-        var muted: UInt32 = 0
-        var muteSize = UInt32(MemoryLayout<UInt32>.size)
-        if AudioObjectHasProperty(device, &Self.muteAddress),
-           AudioObjectGetPropertyData(
-               device, &Self.muteAddress, 0, nil, &muteSize, &muted
-           ) == noErr {
-            isMuted = muted != 0
-        } else {
-            isMuted = softwareMuted
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if let level { self.volume = level }
+                self.isMuted = hasMute ? isMuted : self.softwareMuted
+            }
         }
     }
 
     /// Sets the output volume, unmuting first so dragging the HUD off zero
     /// actually makes sound. Falls back to per-channel writes where the main
     /// element refuses.
+    ///
+    /// The published value moves immediately and the device write happens on
+    /// `audioQueue`. This is called from a drag gesture and from the media-key
+    /// tap, both on the main thread, and `AudioObjectSetPropertyData` blocks —
+    /// against a Bluetooth device for long enough to be felt. The listeners
+    /// reconcile the published value if the device disagrees.
     func setVolume(_ newValue: Float) {
         let device = currentDeviceID
         guard device != kAudioObjectUnknown else { return }
         let level = Float32(min(max(newValue, 0), 1))
 
-        if level > 0, isMuted {
-            toggleMute()
-        }
+        // Dragging off zero unmutes; dragging all the way down mutes, as macOS
+        // treats it. Decided here against the published state so the two never
+        // race a stale read.
+        let shouldUnmute = level > 0 && isMuted
+        let shouldMute = level == 0 && !isMuted
 
-        if !writeScalar(device: device, element: kAudioObjectPropertyElementMain, value: level) {
-            var wroteAny = false
-            for element in UInt32(1) ... UInt32(4)
-            where writeScalar(device: device, element: element, value: level) {
-                wroteAny = true
-            }
-            guard wroteAny else { return }
-        }
         volume = level
+        if shouldUnmute || shouldMute {
+            isMuted = shouldMute
+        }
 
-        // Dragging all the way down is a mute, as macOS treats it.
-        if level == 0, !isMuted {
-            toggleMute()
+        audioQueue.async { [weak self] in
+            guard let self else { return }
+            if !self.writeScalar(
+                device: device, element: kAudioObjectPropertyElementMain, value: level
+            ) {
+                for element in UInt32(1) ... UInt32(4) {
+                    _ = self.writeScalar(device: device, element: element, value: level)
+                }
+            }
+            if shouldUnmute || shouldMute {
+                self.writeMute(device: device, muted: shouldMute)
+            }
+        }
+    }
+
+    /// Writes the device's mute property, falling back to writing zero volume
+    /// on devices that expose no mute property at all. Only called on
+    /// `audioQueue`.
+    private func writeMute(device: AudioDeviceID, muted: Bool) {
+        var address = Self.muteAddress
+        if AudioObjectHasProperty(device, &address) {
+            var value: UInt32 = muted ? 1 : 0
+            let size = UInt32(MemoryLayout<UInt32>.size)
+            if AudioObjectSetPropertyData(device, &address, 0, nil, size, &value) == noErr {
+                return
+            }
+        }
+        // Software fallback: remember the level and write zero.
+        if muted {
+            let current = readCurrentVolumeBlocking(device: device) ?? 0
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if current > 0.001 { self.volumeBeforeSoftwareMute = current }
+                self.softwareMuted = true
+            }
+            _ = writeScalar(device: device, element: kAudioObjectPropertyElementMain, value: 0)
+        } else {
+            let restored = min(max(volumeBeforeSoftwareMute, 0), 1)
+            _ = writeScalar(
+                device: device, element: kAudioObjectPropertyElementMain, value: restored
+            )
+            DispatchQueue.main.async { [weak self] in
+                self?.volume = restored
+                self?.softwareMuted = false
+            }
         }
     }
 
     /// Toggles mute, with the reference's software fallback for devices that
     /// expose no mute property at all: remember the level, write zero, and
     /// restore it on the way back.
+    /// Toggles mute. Published state flips at once; the device write lands on
+    /// `audioQueue`, for the same reason as `setVolume`.
     func toggleMute() {
-        let device = currentDeviceID
-        guard device != kAudioObjectUnknown else {
-            performSoftwareMuteToggle()
-            return
-        }
-        guard AudioObjectHasProperty(device, &Self.muteAddress) else {
-            performSoftwareMuteToggle()
-            return
-        }
-
-        var muted: UInt32 = 0
-        var size = UInt32(MemoryLayout<UInt32>.size)
-        guard AudioObjectGetPropertyData(
-            device, &Self.muteAddress, 0, nil, &size, &muted
-        ) == noErr else {
-            performSoftwareMuteToggle()
-            return
-        }
-
-        var newValue: UInt32 = muted == 0 ? 1 : 0
-        guard AudioObjectSetPropertyData(
-            device, &Self.muteAddress, 0, nil, size, &newValue
-        ) == noErr else {
-            performSoftwareMuteToggle()
-            return
-        }
-        isMuted = newValue != 0
-    }
-
-    private func performSoftwareMuteToggle() {
         let device = currentDeviceID
         guard device != kAudioObjectUnknown else { return }
 
-        if softwareMuted {
-            let restored = min(max(volumeBeforeSoftwareMute, 0), 1)
-            _ = writeScalar(
-                device: device, element: kAudioObjectPropertyElementMain, value: restored
-            )
-            volume = restored
-            softwareMuted = false
-        } else {
-            let current = currentVolume()
-            if current > 0.001 { volumeBeforeSoftwareMute = current }
-            _ = writeScalar(device: device, element: kAudioObjectPropertyElementMain, value: 0)
+        let target = !isMuted
+        isMuted = target
+        if target {
+            // Remember where the level was, so unmuting can restore it even on
+            // devices that need the software fallback.
+            if volume > 0.001 { volumeBeforeSoftwareMute = volume }
             volume = 0
-            softwareMuted = true
+        } else if softwareMuted {
+            volume = min(max(volumeBeforeSoftwareMute, 0), 1)
         }
-        isMuted = softwareMuted
+
+        audioQueue.async { [weak self] in
+            self?.writeMute(device: device, muted: target)
+        }
     }
 
     /// The current output device's name, for the dashboard chip.
@@ -454,26 +535,33 @@ final class AudioOutputManager {
     /// separate device property, so both are set — otherwise switching to
     /// headphones left system sounds playing out of the speakers.
     func select(_ device: Device) {
-        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
-
-        var deviceID = device.id
-        let status = AudioObjectSetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &Self.defaultOutputAddress,
-            0, nil, size, &deviceID
-        )
-        guard status == noErr else { return }
-
-        var systemID = device.id
-        AudioObjectSetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &Self.systemOutputAddress,
-            0, nil, size, &systemID
-        )
-
+        // Publish first so the list marks the new device at once, then write.
         currentDeviceID = device.id
-        attachVolumeListener()
-        readVolume()
+
+        audioQueue.async { [weak self] in
+            guard let self else { return }
+            let size = UInt32(MemoryLayout<AudioDeviceID>.size)
+
+            var deviceID = device.id
+            var outputAddress = Self.defaultOutputAddress
+            let status = AudioObjectSetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject),
+                &outputAddress,
+                0, nil, size, &deviceID
+            )
+            guard status == noErr else { return }
+
+            var systemID = device.id
+            var systemAddress = Self.systemOutputAddress
+            AudioObjectSetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject),
+                &systemAddress,
+                0, nil, size, &systemID
+            )
+
+            self.attachVolumeListener()
+            self.readVolume(device: device.id)
+        }
     }
 
     // MARK: - CoreAudio queries

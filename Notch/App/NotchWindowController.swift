@@ -20,10 +20,14 @@ final class NotchWindowController: NSWindowController {
         let geometry = NotchGeometry(screen: screen)
         state.notchSize = geometry.notchSize
 
-        // Size the window dynamically to what is actually needed for the active mode
-        let window = NotchSizing.windowSize
-        let width = max(window.width, geometry.notchSize.width)
-        let height = window.height + geometry.notchSize.height
+        // Open at the closed notch's size. `syncWindowSize()` below keeps it
+        // matched to whatever is being drawn from then on — the window used to
+        // be built once at the largest slab the sliders allow and never
+        // resized, which left a screen-wide interactive window sitting above
+        // everything else. See `syncWindowSize`.
+        let region = NotchInteractiveRegion.size(for: state)
+        let width = max(region.width + NotchSizing.shadowPadding * 2, geometry.notchSize.width)
+        let height = region.height + NotchSizing.shadowPadding * 2
 
         let frame = NSRect(
             x: screen.frame.midX - width / 2,
@@ -45,6 +49,7 @@ final class NotchWindowController: NSWindowController {
         setupModeChangeObserver()
         setupSpaceObserver()
         setupMouseTracking()
+        syncWindowSize()
     }
 
     deinit {
@@ -52,6 +57,10 @@ final class NotchWindowController: NSWindowController {
     }
 
     func cleanup() {
+        // Release the state's hook on this controller. A replaced controller
+        // (a display change rebuilds one) otherwise stays reachable through it
+        // until the next one happens to overwrite the same slot.
+        state.onModeChange = nil
         collapseResizeWork?.cancel()
         collapseResizeWork = nil
         if let spaceObserver {
@@ -82,8 +91,93 @@ final class NotchWindowController: NSWindowController {
                 } else {
                     self.updateIgnoreMouseEvents()
                 }
+                self.syncWindowSize()
+                self.syncCursorTracking()
             }
         }
+    }
+
+    // MARK: - Window sizing
+
+    /// Keeps the panel window only as large as the thing it is currently
+    /// drawing.
+    ///
+    /// This matters far more than it looks. `hitTest` returning nil does *not*
+    /// pass a click through to what is underneath — only `ignoresMouseEvents`
+    /// does. So for every moment the panel is not ignoring the mouse, its
+    /// whole window swallows clicks, and the window was built once at the
+    /// largest size the sliders allow: ~1492x578, which is 98% of the screen's
+    /// width and well over half its height. Any window that big, interactive,
+    /// and pinned above everything else is a dead zone over most of the upper
+    /// display — and `updateIgnoreMouseEvents` turns interactivity on whenever
+    /// a mouse button is held anywhere, which is every click and every drag.
+    ///
+    /// Sizing the window to the notch bounds the damage to the notch.
+    private func syncWindowSize() {
+        guard let screen = trackedScreen else { return }
+        let target = state.mode == .expanded
+            ? expandedWindowSize()
+            : collapsedWindowSize()
+        apply(windowSize: target, on: screen)
+    }
+
+    /// Applies a new window size, growing at once and shrinking only after the
+    /// close/resize animation has had time to finish — the slab animates
+    /// *inside* the window, so shrinking early clips it mid-flight.
+    private func apply(windowSize size: CGSize, on screen: NSScreen) {
+        guard let panel = window else { return }
+        collapseResizeWork?.cancel()
+        collapseResizeWork = nil
+
+        let grows = size.width > panel.frame.width || size.height > panel.frame.height
+        guard !grows else {
+            setWindowFrame(size, on: screen)
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, let screen = self.trackedScreen else { return }
+            // Re-derive: the mode may have changed again while waiting.
+            let current = self.state.mode == .expanded
+                ? self.expandedWindowSize()
+                : self.collapsedWindowSize()
+            self.setWindowFrame(current, on: screen)
+        }
+        collapseResizeWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55, execute: work)
+    }
+
+    private func setWindowFrame(_ size: CGSize, on screen: NSScreen) {
+        guard let panel = window else { return }
+        let frame = NSRect(
+            x: (screen.frame.midX - size.width / 2).rounded(),
+            y: (screen.frame.maxY - size.height).rounded(),
+            width: size.width.rounded(),
+            height: size.height.rounded()
+        )
+        guard panel.frame != frame else { return }
+        panel.setFrame(frame, display: true)
+    }
+
+    /// The open slab plus its shadow margin, capped to the screen.
+    private func expandedWindowSize() -> CGSize {
+        let width = min(
+            state.expandedSize.width + NotchSizing.shadowPadding * 2,
+            trackedScreen?.frame.width ?? state.expandedSize.width
+        )
+        return CGSize(
+            width: width,
+            height: state.expandedTotalHeight + NotchSizing.shadowPadding * 2
+        )
+    }
+
+    /// The closed pill, its hover probe, whatever activity is dropped beneath
+    /// it, and the slack the interactive region adds — plus the shadow margin.
+    private func collapsedWindowSize() -> CGSize {
+        let region = NotchInteractiveRegion.size(for: state)
+        return CGSize(
+            width: region.width + NotchSizing.shadowPadding * 2,
+            height: region.height + NotchSizing.shadowPadding * 2
+        )
     }
 
     private func setupSpaceObserver() {
@@ -98,14 +192,16 @@ final class NotchWindowController: NSWindowController {
 
     func reanchorToTrackedScreen() {
         guard let panel = window, let screen = trackedScreen else { return }
-        let window = NotchSizing.windowSize
-        let width = max(window.width, state.notchSize.width)
-        let height = window.height + state.notchSize.height
+        // Anchor against the window's *current* size — it is resized to match
+        // what the notch is drawing, so a fixed size would misplace it.
+        let size = panel.frame.size
         let newOrigin = NSPoint(
-            x: screen.frame.midX - width / 2,
-            y: screen.frame.maxY - height
+            x: (screen.frame.midX - size.width / 2).rounded(),
+            y: (screen.frame.maxY - size.height).rounded()
         )
-        guard abs(panel.frame.origin.x - newOrigin.x) > 0.5 || abs(panel.frame.origin.y - newOrigin.y) > 0.5 else { return }
+        guard abs(panel.frame.origin.x - newOrigin.x) > 0.5
+            || abs(panel.frame.origin.y - newOrigin.y) > 0.5
+        else { return }
         panel.setFrameOrigin(newOrigin)
     }
 
@@ -136,11 +232,27 @@ final class NotchWindowController: NSWindowController {
         // event stream. Keep the notch responsive by checking the cursor at a
         // low-cost cadence while it is collapsed; this also prevents a stale
         // `ignoresMouseEvents` value from making the hover probe unreachable.
-        cursorTrackingTimer?.invalidate()
-        // Poll at a tight cadence so a cursor flicking up under the notch is
-        // still sampled inside the probe — a fast crossing can clear the
-        // collapsed target between two slow polls. The work is a couple of
-        // rect checks per tick, so 20 Hz costs nothing.
+        syncCursorTracking()
+    }
+
+    /// The cursor poll exists only to catch the collapsed notch's hover when
+    /// AppKit does not deliver a move event. While the panel is open the
+    /// pointer is already inside it and SwiftUI owns hover, so the poll is
+    /// pure overhead — and it is not cheap overhead: every tick recomputes
+    /// `expandedSize`, which walks the whole per-tab sizing path. Run it while
+    /// collapsed, stop it while expanded.
+    private func syncCursorTracking() {
+        let wantsTracking = state.mode != .expanded
+        guard wantsTracking != (cursorTrackingTimer != nil) else { return }
+
+        guard wantsTracking else {
+            cursorTrackingTimer?.invalidate()
+            cursorTrackingTimer = nil
+            return
+        }
+        // A tight cadence so a cursor flicking up under the notch is still
+        // sampled inside the probe — a fast crossing can clear the collapsed
+        // target between two slow polls.
         cursorTrackingTimer = Timer.scheduledRepeating(every: 0.05) { [weak self] in
             self?.updateIgnoreMouseEvents()
         }
@@ -206,30 +318,13 @@ final class NotchWindowController: NSWindowController {
     }
 
     private func interactiveScreenRect(on screen: NSScreen) -> NSRect {
-        if state.mode == .expanded {
-            let width = state.expandedSize.width + NotchSizing.shadowPadding * 2
-            // The expanded total (which includes the band the volume/brightness
-            // HUD drops into) rather than the bare fitted size, so the dropped
-            // bar and its drag handle stay inside the interactive region.
-            let height = state.expandedTotalHeight + NotchSizing.shadowPadding
-            return NSRect(
-                x: screen.frame.midX - width / 2,
-                y: screen.frame.maxY - height,
-                width: width,
-                height: height
-            )
-        } else {
-            let probe = state.hoverProbeSize
-            let collapsed = state.collapsedSize
-            let width = max(probe.width, collapsed.width) + 24
-            let height = max(probe.height, collapsed.height) + 20
-            return NSRect(
-                x: screen.frame.midX - width / 2,
-                y: screen.frame.maxY - height,
-                width: width,
-                height: height
-            )
-        }
+        let size = NotchInteractiveRegion.size(for: state)
+        return NSRect(
+            x: screen.frame.midX - size.width / 2,
+            y: screen.frame.maxY - size.height,
+            width: size.width,
+            height: size.height
+        )
     }
 
     @available(*, unavailable)
@@ -237,12 +332,44 @@ final class NotchWindowController: NSWindowController {
         fatalError("NotchWindowController does not support NSCoding")
     }
 
+    /// Orders the panel in. `orderFrontRegardless` rather than `orderFront`
+    /// so it reappears after lock-screen transitions; the panel is
+    /// nonactivating, so this does not steal focus from the login UI.
     func showPanel() {
-        guard let panel = window else { return }
-        panel.orderFrontRegardless()
-        // Reassert visibility after lock-screen transitions. The panel is
-        // nonactivating, so this does not steal focus from the login UI.
-        panel.orderFrontRegardless()
+        window?.orderFrontRegardless()
+    }
+}
+
+/// The panel's interactive region — the area that takes the mouse instead of
+/// letting it through to whatever is underneath.
+///
+/// One definition, used both by `ignoresMouseEvents` (which decides whether
+/// the window accepts events at all) and by `NotchHostingView.hitTest` (which
+/// decides where inside the window they land). Keeping them in step is the
+/// whole point: a hitTest region larger than the ignore region is a band that
+/// can never be reached, and a smaller one is a dead strip inside a window
+/// that has already claimed the mouse.
+enum NotchInteractiveRegion {
+    /// Slack around the collapsed pill, so crossing into the notch is
+    /// forgiving without making the whole menu bar interactive.
+    private static let collapsedSlack = CGSize(width: 24, height: 20)
+
+    static func size(for state: NotchState) -> CGSize {
+        if state.mode == .expanded {
+            return CGSize(
+                width: state.expandedSize.width + NotchSizing.shadowPadding * 2,
+                // The expanded *total* (which includes the band the
+                // volume/brightness HUD drops into) rather than the bare fitted
+                // size, so the dropped bar and its drag handle stay inside.
+                height: state.expandedTotalHeight + NotchSizing.shadowPadding
+            )
+        }
+        let probe = state.hoverProbeSize
+        let collapsed = state.collapsedSize
+        return CGSize(
+            width: max(probe.width, collapsed.width) + collapsedSlack.width,
+            height: max(probe.height, collapsed.height) + collapsedSlack.height
+        )
     }
 }
 
@@ -280,16 +407,13 @@ final class NotchHostingView: NSHostingView<NotchContainerView> {
         let bounds = self.bounds
         guard bounds.width > 0, bounds.height > 0 else { return nil }
 
-        let width: CGFloat
-        let height: CGFloat
-
-        if state.mode == .expanded {
-            width = state.expandedSize.width + NotchSizing.shadowPadding * 2
-            height = state.expandedTotalHeight + NotchSizing.shadowPadding
-        } else {
-            width = max(state.hoverProbeSize.width, state.collapsedSize.width) + 28
-            height = max(state.hoverProbeSize.height, state.collapsedSize.height) + 20
-        }
+        // The same region the panel uses to decide whether to take the mouse
+        // at all. These were two separate expressions that disagreed by 4pt on
+        // the collapsed width, so the band between them accepted a hit the
+        // panel had already decided to ignore.
+        let size = NotchInteractiveRegion.size(for: state)
+        let width = size.width
+        let height = size.height
 
         let minX = bounds.midX - width / 2
         let maxX = bounds.midX + width / 2

@@ -38,36 +38,194 @@ extension NotchTheme {
         static let thumb: CGFloat = 10
     }
 
-    /// The spacing ladder. Screens use these rather than arbitrary numbers so
-    /// the rhythm carries from one panel to the next.
+    /// The spacing ladder, on a 4pt grid.
+    ///
+    /// Screens use these rather than arbitrary numbers so the rhythm carries
+    /// from one panel to the next — but the rungs themselves also have to sit
+    /// on the grid, and these used to be 5/9/13/17: every one of them `4n+1`,
+    /// a point off. Nothing laid out with them could align to anything laid
+    /// out with a plain 8 or 12, which is most of the app. macOS is built on
+    /// 4pt, so these are now 4pt multiples and the two systems agree.
     enum Space {
-        static let xs: CGFloat = 5
-        static let s: CGFloat = 9
-        static let m: CGFloat = 13
-        static let l: CGFloat = 17
+        /// Hairline gaps — a glyph to its label.
+        static let xxs: CGFloat = 2
+        static let xs: CGFloat = 4
+        static let s: CGFloat = 8
+        static let m: CGFloat = 12
+        static let l: CGFloat = 16
         static let xl: CGFloat = 24
+        /// Section breaks inside a screen.
+        static let xxl: CGFloat = 32
+    }
+
+    /// The surface system.
+    ///
+    /// A flat fill on black reads as paint; a real surface reads as a pane of
+    /// something. The difference is three cheap parts, and every premium dark
+    /// interface uses the same three:
+    ///
+    /// 1. a *gradient* fill rather than a flat one, lighter at the top, so the
+    ///    surface looks lit from above rather than self-luminous;
+    /// 2. a *specular* top edge — one brighter hairline along the top only,
+    ///    which is the highlight a real bevel would catch;
+    /// 3. a *hairline border* all the way round, dimmer than the specular, so
+    ///    the surface has an edge instead of dissolving into the panel.
+    ///
+    /// Kept as tokens rather than hand-rolled per screen, because the moment
+    /// two screens pick different opacities the whole thing stops reading as
+    /// one material.
+    enum Surface {
+        /// A card sitting on the slab.
+        static let fill = LinearGradient(
+            colors: [.white.opacity(0.085), .white.opacity(0.035)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+
+        /// A control or tile sitting *inside* a card — quieter, or the nesting
+        /// turns into a stack of competing panes.
+        static let nestedFill = LinearGradient(
+            colors: [.white.opacity(0.06), .white.opacity(0.025)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+
+        /// The lit top edge. Strong at the top, gone by a third of the way
+        /// down — a bevel catches light on its top face only.
+        static let specular = LinearGradient(
+            stops: [
+                .init(color: .white.opacity(0.28), location: 0),
+                .init(color: .white.opacity(0.06), location: 0.35),
+                .init(color: .clear, location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+
+        static let border = Color.white.opacity(0.09)
+        static let borderStrong = Color.white.opacity(0.16)
+
+        /// Elevation. Tight and dark rather than wide and grey: a wide soft
+        /// shadow on a near-black panel just fogs it.
+        static let shadow = Color.black.opacity(0.45)
+        static let shadowRadius: CGFloat = 12
+        static let shadowY: CGFloat = 4
     }
 }
 
 extension View {
-    /// The one card treatment: the glass surface, a hairline, and the shared
-    /// radius. Everything that used to hand-roll a `RoundedRectangle` fill
-    /// plus a stroke at whatever radius it felt like now says this instead.
+    /// The one card treatment: the surface, its lit top edge, a hairline, and
+    /// the shared radius.
+    ///
+    /// This used to draw *nothing at all* unless `isHighlighted` — the fill and
+    /// the stroke the doc comment described had been removed, so every screen
+    /// that said `.notchCard()` got an invisible card and the content sat
+    /// directly on flat black. That is most of why the panels read as cheap:
+    /// there was no material, only paint.
     func notchCard(
         radius: CGFloat = NotchTheme.Radius.card,
         isHighlighted: Bool = false,
+        tint: Color? = nil,
+        isElevated: Bool = true
+    ) -> some View {
+        modifier(NotchCardModifier(
+            radius: radius,
+            isHighlighted: isHighlighted,
+            tint: tint,
+            isElevated: isElevated
+        ))
+    }
+
+    /// A quieter surface for something nested inside a card — a tile, a row, a
+    /// control. Same material, dialled back so the nesting reads as depth
+    /// rather than as two cards fighting.
+    func notchTile(
+        radius: CGFloat = NotchTheme.Radius.tile,
+        isHighlighted: Bool = false,
         tint: Color? = nil
     ) -> some View {
-        background {
-            if isHighlighted {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill((tint ?? Color.accentColor).opacity(0.12))
+        modifier(NotchCardModifier(
+            radius: radius,
+            isHighlighted: isHighlighted,
+            tint: tint,
+            isElevated: false,
+            isNested: true
+        ))
+    }
+}
+
+/// The shared surface treatment behind `notchCard` / `notchTile`.
+private struct NotchCardModifier: ViewModifier {
+    let radius: CGFloat
+    var isHighlighted: Bool = false
+    var tint: Color? = nil
+    var isElevated: Bool = true
+    var isNested: Bool = false
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+    }
+
+    func body(content: Content) -> some View {
+        content.background {
+            ZStack {
+                // Base material. Reduce Transparency swaps the gradient for a
+                // solid so the surface stops depending on what is behind it.
+                if reduceTransparency {
+                    shape.fill(Color.white.opacity(isNested ? 0.10 : 0.13))
+                } else {
+                    shape.fill(isNested
+                        ? NotchTheme.Surface.nestedFill
+                        : NotchTheme.Surface.fill)
+                }
+
+                // Selection wash, over the material rather than instead of it,
+                // so a highlighted card is still made of the same stuff.
+                if isHighlighted {
+                    shape.fill((tint ?? Color.accentColor).opacity(0.16))
+                }
+
+                // The lit top edge, masked to the border so it reads as a
+                // bevel catching light rather than a glow inside the card.
+                shape
+                    .strokeBorder(NotchTheme.Surface.specular, lineWidth: 1)
+                    .blendMode(.plusLighter)
+                    .opacity(reduceTransparency ? 0 : 1)
+
+                shape.strokeBorder(
+                    isHighlighted
+                        ? (tint ?? Color.accentColor).opacity(0.45)
+                        : NotchTheme.Surface.border,
+                    lineWidth: 1
+                )
             }
+            .compositingGroup()
+            .shadow(
+                color: isElevated ? NotchTheme.Surface.shadow : .clear,
+                radius: NotchTheme.Surface.shadowRadius,
+                y: NotchTheme.Surface.shadowY
+            )
         }
     }
 }
 
 extension View {
+    /// A row's entrance in a list that has just appeared.
+    ///
+    /// The panel opens onto a finished list, which reads as a picture rather
+    /// than as something that arrived — so rows fade up in sequence instead of
+    /// all at once. The step is deliberately small: a stagger you *notice* is
+    /// a stagger that is too slow, and this list is seen many times a day.
+    ///
+    /// The total is capped, so a long clipboard history still finishes in a
+    /// beat rather than crawling down the panel. Reduce Motion keeps the fade
+    /// and drops the travel.
+    func notchRowEntrance(_ index: Int) -> some View {
+        modifier(RowEntranceModifier(index: index))
+    }
+
     /// Softens the hard edge where a scrolling list runs into the panel.
     ///
     /// A list that is cut off mid-row at the bottom of the slab reads as
@@ -264,5 +422,34 @@ struct ScreenTextButton: View {
         .onHover { hovering in
             withAnimation(NotchAnimations.content) { isHovering = hovering }
         }
+    }
+}
+
+
+/// Drives `notchRowEntrance`.
+private struct RowEntranceModifier: ViewModifier {
+    let index: Int
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+
+    /// 35ms between rows, and never more than 210ms of total lead-in.
+    private var delay: Double {
+        min(Double(index) * 0.035, 0.21)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown || reduceMotion ? 0 : 6)
+            .onAppear {
+                guard !shown else { return }
+                withAnimation(
+                    (reduceMotion ? NotchAnimations.reduced : NotchAnimations.content)
+                        .delay(delay)
+                ) {
+                    shown = true
+                }
+            }
     }
 }

@@ -44,9 +44,10 @@ final class EyeBreakManager {
         isOnBreak = false
         breakEndsAt = nil
         nextBreakAt = Date().addingTimeInterval(Self.workInterval)
-        timer = Timer.scheduledTimer(
-            withTimeInterval: Self.workInterval, repeats: false
-        ) { [weak self] _ in
+        // `.common`, like every other timer here: `Timer.scheduledTimer`
+        // registers in `.default` only, so a break falling due while a menu
+        // was open or a scroll was in flight fired late.
+        timer = Timer.scheduledOneShot(after: Self.workInterval) { [weak self] in
             self?.beginBreak()
         }
     }
@@ -58,10 +59,12 @@ final class EyeBreakManager {
         nextBreakAt = nil
         breakEndsAt = Date().addingTimeInterval(Self.breakDuration)
         onBreakChange?(true)
+        TimerManager.postNotification(
+            title: "Eye break",
+            body: "Look about 20 feet away for 20 seconds."
+        )
 
-        timer = Timer.scheduledTimer(
-            withTimeInterval: Self.breakDuration, repeats: false
-        ) { [weak self] _ in
+        timer = Timer.scheduledOneShot(after: Self.breakDuration) { [weak self] in
             self?.endBreak()
         }
     }
@@ -71,6 +74,10 @@ final class EyeBreakManager {
         isOnBreak = false
         breakEndsAt = nil
         onBreakChange?(false)
+        TimerManager.postNotification(
+            title: "Eye break over",
+            body: "Back to it."
+        )
         if isEnabled {
             scheduleNextBreak()
         }

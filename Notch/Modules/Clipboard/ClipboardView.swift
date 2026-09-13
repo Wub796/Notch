@@ -56,8 +56,9 @@ struct ClipboardView: View {
         } else {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: NotchTheme.Space.m) {
-                    ForEach(clipboard.entries) { entry in
+                    ForEach(Array(clipboard.entries.enumerated()), id: \.element.id) { index, entry in
                         ClipboardCard(entry: entry, clipboard: clipboard, state: state)
+                            .notchRowEntrance(index)
                     }
                 }
                 .padding(.horizontal, 2)
@@ -77,7 +78,7 @@ private struct ClipboardCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NotchTheme.Space.xs) {
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 if entry.isPinned {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 10, weight: .bold))

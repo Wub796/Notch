@@ -79,7 +79,12 @@ struct LyricsView: View {
                 )
             }
             .onChange(of: lyrics.currentIndex) { _, index in
-                guard isPlaying, let index else { return }
+                // "Auto-scroll lyrics" off leaves the list where the user put
+                // it; the current line still highlights, it just stops pulling
+                // the scroll position out from under a manual read-ahead.
+                guard NotchSettings.shared.autoScrollLyrics,
+                      isPlaying, let index
+                else { return }
                 withAnimation(.notchSpring) {
                     proxy.scrollTo(index, anchor: .center)
                 }

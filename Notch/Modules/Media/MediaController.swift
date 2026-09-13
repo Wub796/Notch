@@ -18,32 +18,6 @@ final class MediaController {
     private(set) var track: Track?
     private(set) var artwork: NSImage?
 
-    /// Normalized metadata consumed by clients that need one source-independent
-    /// media value. The legacy properties below remain the UI's source of truth.
-    var normalizedTrack: NotchMediaTrack? {
-        guard let track else { return nil }
-        return NotchMediaTrack(
-            title: track.title,
-            artist: track.artist,
-            album: track.album,
-            artwork: artwork,
-            duration: track.duration,
-            currentPosition: currentElapsed,
-            isPlaying: isPlaying,
-            mediaSource: normalizedSource
-        )
-    }
-
-    private var normalizedSource: NotchMediaSource {
-        switch sourceAppBundleID {
-        case MusicProvider.spotify.bundleID:
-            return .spotify
-        case "com.apple.Music":
-            return .appleMusic
-        default:
-            return .genericSystem
-        }
-    }
     private(set) var isPlaying = false {
         didSet {
             guard isPlaying != oldValue else { return }
@@ -79,12 +53,6 @@ final class MediaController {
 
     let lyrics = LyricsEngine()
 
-    /// Emits the same normalized value used by the UI whenever metadata or
-    /// playback position changes. Position ticks are local and never perform
-    /// IPC or disk work.
-    var onNormalizedTrackChange: ((NotchMediaTrack?) -> Void)?
-
-
     /// Fired when a genuinely new track replaces a previous one — drives the
     /// collapsed-notch sneak peek.
     var onTrackChange: ((Track) -> Void)?
@@ -104,11 +72,6 @@ final class MediaController {
     /// source-priority rule instead of independently guessing from app names.
     private(set) var isBrowserVideo = false
 
-    /// The adapter's mediaType for the current source ("...TypeMusic" vs
-    /// "...TypeAudio"), so callers can tell music from generic audio. Only
-    /// set on the perl-bridge path.
-    private(set) var sourceMediaType: String?
-
     var selectedProvider: MusicProvider {
         NotchSettings.shared.musicProvider
     }
@@ -126,17 +89,52 @@ final class MediaController {
     }
 
     /// True once MediaRemote has been found to answer every query with
-    /// nothing. macOS 15.4 gated the now-playing entry points for apps
-    /// without an entitlement Apple no longer issues; the symbols still
-    /// resolve and the calls still succeed, they just return empty (the
-    /// console logs "Operation not permitted"), so the only way to detect it
-    /// is to ask and notice the silence.
-    private(set) var isSystemNowPlayingRestricted = false
+    /// nothing. macOS 15.4 gated the now-playing entry points for apps without
+    /// an entitlement Apple no longer issues; the symbols still resolve and the
+    /// calls still succeed, they just return empty (the console logs
+    /// "Operation not permitted"), so the only way to detect it is to ask and
+    /// notice the silence.
+    private var isSystemNowPlayingRestricted = false
 
     /// Consecutive empty MediaRemote replies received while a player the
     /// Apple Events fallback can read was running.
     private var consecutiveEmptyReplies = 0
     private static let emptyRepliesBeforeDemotion = 3
+
+    /// Every `NSAppleScript` execution in this class runs here, and nowhere
+    /// else.
+    ///
+    /// `NSAppleScript` is not thread-safe, and these used to run on the global
+    /// *concurrent* queue — so two probes landing together (the 1s browser
+    /// tick and a transport read-back, say) executed scripts on two threads at
+    /// once. A serial queue gives Apple Events one consistent thread, and it
+    /// also stops a slow player from fanning out blocked threads: the work
+    /// queues instead of multiplying.
+    private static let scriptQueue = DispatchQueue(
+        label: "com.notch.applescript", qos: .userInitiated
+    )
+
+    /// The observable state a snapshot read depends on, captured on the main
+    /// thread before any of it is handed to `scriptQueue`.
+    ///
+    /// The snapshot functions used to read `sourceAppBundleID`,
+    /// `selectedProvider` and `isMusicConnectedOrActive` straight off `self`
+    /// while running on a background queue — reads of `@Observable` storage
+    /// racing the main thread's writes.
+    struct ScriptInputs {
+        var sourceBundleID: String?
+        var provider: MusicProvider
+        var musicOwnsSession: Bool
+    }
+
+    /// Captures the inputs above. Main thread only.
+    private func captureScriptInputs() -> ScriptInputs {
+        ScriptInputs(
+            sourceBundleID: sourceAppBundleID,
+            provider: selectedProvider,
+            musicOwnsSession: isMusicConnectedOrActive
+        )
+    }
 
     private let bridge = MediaRemoteBridge.shared
     /// The bundled perl-bridge adapter (see MediaRemoteAdapter) when present
@@ -163,11 +161,6 @@ final class MediaController {
 
     var hasTrack: Bool {
         track != nil
-    }
-
-    /// Transport controls are always enabled to send universal playback commands.
-    var canControlTransport: Bool {
-        true
     }
 
     /// Live position, extrapolated from the last anchor.
@@ -215,8 +208,9 @@ final class MediaController {
         // showed nothing until it was first opened: MediaRemote is push-based
         // and sends nothing until something changes, and where it is gated the
         // Apple Events path only ran while the notch was expanded.
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.probePlayersAtLaunch(attemptsLeft: 4)
+        let inputs = captureScriptInputs()
+        Self.scriptQueue.async { [weak self] in
+            self?.probePlayersAtLaunch(attemptsLeft: 4, inputs: inputs)
         }
     }
 
@@ -321,7 +315,7 @@ final class MediaController {
     /// probe also checks both known players, not only the fallback, so a
     /// Spotify track on a Mac where MediaRemote is gated is caught too.
     /// Retries stop as soon as any source has produced a track.
-    private func probePlayersAtLaunch(attemptsLeft: Int) {
+    private func probePlayersAtLaunch(attemptsLeft: Int, inputs: ScriptInputs) {
         guard attemptsLeft > 0 else { return }
 
         // Both players the Apple Events path can read, each with its own app
@@ -354,7 +348,9 @@ final class MediaController {
         // No player answered — check the browsers for web media (YouTube,
         // etc.). Consent-gated exactly like the players: a launch probe must
         // never be what raises the Automation dialog.
-        if let browserSnap = browserYouTubeSnapshot(avoidPrompt: true) {
+        if let browserSnap = browserYouTubeSnapshot(
+            avoidPrompt: true, musicOwnsSession: inputs.musicOwnsSession
+        ) {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.track == nil else { return }
                 self.apply(browserSnap)
@@ -367,16 +363,23 @@ final class MediaController {
         scheduleLaunchProbeRetry(attemptsLeft: attemptsLeft)
     }
 
+    /// Re-arms the launch probe.
+    ///
+    /// The "has anything turned up yet?" test has to happen on the main thread:
+    /// `track` and `isPlaying` are `@Observable` storage the main thread
+    /// writes, and this used to read both from a background queue. The next
+    /// attempt's inputs are captured in the same hop.
     private func scheduleLaunchProbeRetry(attemptsLeft: Int) {
         guard attemptsLeft > 1 else { return }
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(
-            deadline: .now() + 2
-        ) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             guard let self else { return }
             // Anything already picked up — by MediaRemote or an earlier
             // probe — ends the launch probe.
             guard self.track == nil, !self.isPlaying else { return }
-            self.probePlayersAtLaunch(attemptsLeft: attemptsLeft - 1)
+            let inputs = self.captureScriptInputs()
+            Self.scriptQueue.async { [weak self] in
+                self?.probePlayersAtLaunch(attemptsLeft: attemptsLeft - 1, inputs: inputs)
+            }
         }
     }
 
@@ -408,8 +411,15 @@ final class MediaController {
 
     // MARK: - Lifecycle
 
-    /// Called when the notch expands/collapses. All timers live inside this
-    /// window so the collapsed notch burns zero background CPU.
+    /// Called when the notch expands/collapses, starting and stopping the
+    /// timers that only make sense while the panel is open.
+    ///
+    /// Not *every* timer: the closed notch still shows the wings and the lyric
+    /// line, so where MediaRemote cannot push a track change (the Apple Events
+    /// path) a slow poll survives the collapse, and `updateLyricActivityTimer`
+    /// runs while closed by definition. What the collapse does buy is the end
+    /// of the 10Hz progress tick, the 1s browser probe, and the fast playback
+    /// reconcile — see `reconcilePlaybackIfStale`.
     func setActive(_ active: Bool) {
         isActive = active
         mediaRemoteRetryWork?.cancel()
@@ -527,8 +537,12 @@ final class MediaController {
             }
             return
         }
-        lyrics.updateCurrentLine(for: currentElapsed)
-        let line = lyrics.currentIndex.map { lyrics.lines[$0].text }
+        let elapsed = currentElapsed
+        lyrics.updateCurrentLine(for: elapsed)
+        // `standaloneLine`, not `currentIndex` — the closed notch shows one
+        // line with nothing around it, so it has to go away when nothing is
+        // being sung rather than holding the last line through the outro.
+        let line = lyrics.standaloneLine(at: elapsed)
         if line != collapsedLyricLine {
             collapsedLyricLine = line
         }
@@ -537,7 +551,6 @@ final class MediaController {
 
     private func tickProgress() {
         displayedElapsed = currentElapsed
-        onNormalizedTrackChange?(normalizedTrack)
         // Lyric highlighting must never advance while playback is paused.
         guard isPlaying, !isBrowserVideo else { return }
         // Use the live extrapolated clock, not the stored display copy, so
@@ -560,15 +573,23 @@ final class MediaController {
     /// frozen position) — it never goes through the full snapshot pipeline,
     /// so an unreadable player can never blank a track that is still shown.
     private func reconcilePlaybackIfStale() {
+        // Open, the scrubber and the lyric list are both on screen and a stale
+        // pause is obvious within a second or two. Closed, the only thing this
+        // corrects is the one-line lyric activity, so a far slower cadence is
+        // enough — at 2s it was an Apple Event round trip every two seconds
+        // for as long as anything was playing, notch shut, which is precisely
+        // the background cost this class claims not to have.
+        let interval: TimeInterval = isActive ? 2 : 15
         guard isPlaying, automationIsAllowed(),
               !isReadingAppleScript,
-              Date().timeIntervalSince(lastPlaybackReconcile) >= 2
+              Date().timeIntervalSince(lastPlaybackReconcile) >= interval
         else { return }
         lastPlaybackReconcile = Date()
         isReadingAppleScript = true
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let snapshot = self?.appleScriptSnapshot()
+        let inputs = captureScriptInputs()
+        Self.scriptQueue.async { [weak self] in
+            let snapshot = self?.appleScriptSnapshot(inputs)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.isReadingAppleScript = false
@@ -1189,8 +1210,9 @@ final class MediaController {
         let isRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
 
         let source = "tell application \"\(appName)\" to \(command)"
+        let inputs = captureScriptInputs()
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        Self.scriptQueue.async { [weak self] in
             var error: NSDictionary?
             NSAppleScript(source: source)?.executeAndReturnError(&error)
 
@@ -1208,7 +1230,7 @@ final class MediaController {
 
             // Players need a short beat (200ms) to settle into the new state before we read it back.
             usleep(200_000)
-            let snapshot = self?.appleScriptSnapshot()
+            let snapshot = self?.appleScriptSnapshot(inputs)
 
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
@@ -1345,7 +1367,6 @@ final class MediaController {
             isBrowserVideo = false
         }
 
-        sourceMediaType = info[MediaRemoteAdapter.Key.mediaType] as? String
         guard providerAllowsCurrentSource() else {
             apply([:])
             return
@@ -1441,7 +1462,6 @@ final class MediaController {
         }
 
         updateTrackIfChanged(newTrack)
-        onNormalizedTrackChange?(normalizedTrack)
     }
 
     /// An empty MediaRemote reply is ambiguous: either nothing is playing, or
@@ -1476,7 +1496,8 @@ final class MediaController {
     /// demotes the source on the spot instead of losing to a YouTube tab.
     private func probeBrowserForPlayingMedia(avoidPrompt: Bool) {
         if isMusicConnectedOrActive { return }
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        let inputs = captureScriptInputs()
+        Self.scriptQueue.async { [weak self] in
             guard let self else { return }
             // With avoidPrompt, consent is pre-checked before any script
             // runs, mirroring the launch probe's rule. With the notch open,
@@ -1484,10 +1505,15 @@ final class MediaController {
             // exactly how the Automation prompt gets raised.
             let snapshot: Snapshot?
             if avoidPrompt, !self.automationIsAllowed() {
-                snapshot = self.browserYouTubeSnapshot(avoidPrompt: true)
+                snapshot = self.browserYouTubeSnapshot(
+                    avoidPrompt: true, musicOwnsSession: inputs.musicOwnsSession
+                )
             } else {
-                snapshot = self.appleScriptSnapshot()
-                    ?? self.browserYouTubeSnapshot(avoidPrompt: avoidPrompt)
+                snapshot = self.appleScriptSnapshot(inputs)
+                    ?? self.browserYouTubeSnapshot(
+                        avoidPrompt: avoidPrompt,
+                        musicOwnsSession: inputs.musicOwnsSession
+                    )
             }
             guard let snapshot else { return }
             let isPlayer = snapshot.bundleID == self.fallbackBundleID
@@ -1530,8 +1556,11 @@ final class MediaController {
         if isMusicConnectedOrActive {
             return
         }
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let snapshot = self?.browserYouTubeSnapshot(avoidPrompt: false)
+        let inputs = captureScriptInputs()
+        Self.scriptQueue.async { [weak self] in
+            let snapshot = self?.browserYouTubeSnapshot(
+                avoidPrompt: false, musicOwnsSession: inputs.musicOwnsSession
+            )
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 if self.isMusicConnectedOrActive {
@@ -1580,7 +1609,6 @@ final class MediaController {
                 guard let self, self.isShowingBrowserSnapshot else { return }
                 self.setArtwork(image, data: data)
                 self.updateAccentIfNeeded(for: data)
-                self.onNormalizedTrackChange?(self.normalizedTrack)
             }
         }.resume()
     }
@@ -1621,8 +1649,11 @@ final class MediaController {
               automationIsAllowed()
         else { return }
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let snapshot = self?.appleScriptSnapshot(), snapshot.isPlaying else { return }
+        let inputs = captureScriptInputs()
+        Self.scriptQueue.async { [weak self] in
+            guard let snapshot = self?.appleScriptSnapshot(inputs),
+                  snapshot.isPlaying
+            else { return }
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.useMediaRemote else { return }
                 self.demoteToAppleEvents()
@@ -1711,8 +1742,7 @@ final class MediaController {
     private func updateTrackIfChanged(_ newTrack: Track) {
         let previous = track
         guard newTrack != previous else {
-            onNormalizedTrackChange?(normalizedTrack)
-            return
+                return
         }
         track = newTrack.title.isEmpty ? nil : newTrack
 
@@ -1738,7 +1768,6 @@ final class MediaController {
             accent = .white
             accentSourceHash = nil
         }
-        onNormalizedTrackChange?(normalizedTrack)
     }
 
     // MARK: - Apple Events fallback (the selected provider)
@@ -1883,8 +1912,10 @@ final class MediaController {
         return false
     }
 
-    private func browserYouTubeSnapshot(avoidPrompt: Bool) -> Snapshot? {
-        guard !isMusicConnectedOrActive else { return nil }
+    private func browserYouTubeSnapshot(
+        avoidPrompt: Bool, musicOwnsSession: Bool
+    ) -> Snapshot? {
+        guard !musicOwnsSession else { return nil }
 
         for browser in Self.browserTargets {
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else {
@@ -2045,7 +2076,11 @@ final class MediaController {
     /// Channel names for video IDs already looked up, so the periodic browser
     /// probe never re-fetches what it has already seen.
     private var channelCache: [String: String] = [:]
-    private static let channelCacheLock = NSLock()
+    /// Insertion order, so the cache can drop its oldest entry instead of
+    /// growing one row per video watched for the life of the process.
+    private var channelCacheOrder: [String] = []
+    private static let channelCacheCapacity = 128
+    private let channelCacheLock = NSLock()
 
     /// The channel name for a video, via YouTube's oEmbed endpoint (a small
     /// JSON document carrying `author_name`). Returns nil when the fetch fails
@@ -2054,9 +2089,9 @@ final class MediaController {
     /// miss, so it is only ever called off the main thread, and cached so the
     /// 2s probe never refetches.
     private func channelName(for videoID: String) -> String? {
-        Self.channelCacheLock.lock()
+        channelCacheLock.lock()
         let cached = channelCache[videoID]
-        Self.channelCacheLock.unlock()
+        channelCacheLock.unlock()
         if let cached { return cached }
 
         let watchURL = "https://www.youtube.com/watch?v=\(videoID)"
@@ -2087,15 +2122,18 @@ final class MediaController {
               !name.isEmpty
         else { return nil }
 
-        Self.channelCacheLock.lock()
-        channelCache[videoID] = name
-        Self.channelCacheLock.unlock()
+        channelCacheLock.lock()
+        if channelCache.updateValue(name, forKey: videoID) == nil {
+            channelCacheOrder.append(videoID)
+            if channelCacheOrder.count > Self.channelCacheCapacity {
+                channelCache.removeValue(forKey: channelCacheOrder.removeFirst())
+            }
+        }
+        channelCacheLock.unlock()
         return name
     }
 
-    /// One reading of the player's state, or nil when it has nothing to say.
-    /// Blocking, so it is only called from a background queue or from the
-    /// fallback timer, which already runs while the notch is open.
+    /// One reading of a player: what it is playing and where it has got to.
     private struct Snapshot {
         var track: Track
         var elapsed: TimeInterval
@@ -2109,9 +2147,11 @@ final class MediaController {
         var isBrowser = false
     }
 
-    private func appleScriptSnapshot() -> Snapshot? {
+    /// One reading of the player's state, or nil when it has nothing to say.
+    /// Blocking, so it is only ever called on `scriptQueue`.
+    private func appleScriptSnapshot(_ inputs: ScriptInputs) -> Snapshot? {
         var targets: [(appName: String, bundleID: String)] = []
-        if let bundle = sourceAppBundleID {
+        if let bundle = inputs.sourceBundleID {
             if bundle == MusicProvider.spotify.bundleID {
                 targets = [("Spotify", MusicProvider.spotify.bundleID), ("Music", "com.apple.Music")]
             } else if bundle == "com.apple.Music" {
@@ -2119,9 +2159,9 @@ final class MediaController {
             }
         }
         if targets.isEmpty {
-            if selectedProvider == .spotify {
+            if inputs.provider == .spotify {
                 targets = [("Spotify", MusicProvider.spotify.bundleID)]
-            } else if selectedProvider == .appleMusic {
+            } else if inputs.provider == .appleMusic {
                 targets = [("Music", "com.apple.Music")]
             } else {
                 targets = [("Spotify", MusicProvider.spotify.bundleID), ("Music", "com.apple.Music")]
@@ -2163,7 +2203,9 @@ final class MediaController {
         // above; the browser is only asked when it has nothing to say.
         // Consent-gated: a background probe must never be what raises the
         // Automation prompt.
-        if let browserSnap = browserYouTubeSnapshot(avoidPrompt: true) {
+        if let browserSnap = browserYouTubeSnapshot(
+            avoidPrompt: true, musicOwnsSession: inputs.musicOwnsSession
+        ) {
             return browserSnap
         }
 
@@ -2201,11 +2243,9 @@ final class MediaController {
         if acceptPlaybackReport(snapshot.isPlaying) {
             isPlaying = snapshot.isPlaying
         }
-        onNormalizedTrackChange?(normalizedTrack)
 
         let isNewTrack = snapshot.track != track
         updateTrackIfChanged(snapshot.track)
-        onNormalizedTrackChange?(normalizedTrack)
         updateLyricActivityTimer()
 
         if let bundleID = snapshot.bundleID {
@@ -2240,8 +2280,7 @@ final class MediaController {
                     else { return }
                     self.setArtwork(image, data: data)
                     self.updateAccentIfNeeded(for: data)
-                    self.onNormalizedTrackChange?(self.normalizedTrack)
-                }
+                    }
                 }
             }
         } else if isNewTrack {
@@ -2259,8 +2298,9 @@ final class MediaController {
         guard !isReadingAppleScript else { return }
         isReadingAppleScript = true
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let snapshot = self?.appleScriptSnapshot()
+        let inputs = captureScriptInputs()
+        Self.scriptQueue.async { [weak self] in
+            let snapshot = self?.appleScriptSnapshot(inputs)
 
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
@@ -2305,8 +2345,9 @@ final class MediaController {
             // inline here did. The nested closures capture the strong `self`
             // established by the guard above (they are transient, so holding
             // it strongly cannot create a cycle).
-            DispatchQueue.global(qos: .userInitiated).async {
-                let stillNothing = self.appleScriptSnapshot() == nil
+            let inputs = self.captureScriptInputs()
+            Self.scriptQueue.async {
+                let stillNothing = self.appleScriptSnapshot(inputs) == nil
                 DispatchQueue.main.async {
                     guard stillNothing else { return }
                     self.finishClearingTrack()
@@ -2324,7 +2365,6 @@ final class MediaController {
         setArtwork(nil, data: nil)
         isPlaying = false
         sourceAppBundleID = nil
-        sourceMediaType = nil
         updateTrackIfChanged(Track())
         updateLyricActivityTimer()
     }

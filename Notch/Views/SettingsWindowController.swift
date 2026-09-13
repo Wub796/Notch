@@ -40,7 +40,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.identifier = NSUserInterfaceItemIdentifier("NotchSettingsWindow")
-        window.appearance = NSAppearance(named: .darkAqua)
         window.collectionBehavior = [.managed, .participatesInCycle, .fullScreenAuxiliary]
         window.level = .normal
         window.hidesOnDeactivate = false
@@ -54,7 +53,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         fatalError("SettingsWindowController does not support NSCoding")
     }
 
-    /// Shows the window smoothly and gives it key focus so all controls respond immediately.
+    /// Shows the window and gives it key focus so all controls respond
+    /// immediately.
+    ///
+    /// The deferred second `makeKeyAndOrderFront` is deliberate and not a
+    /// duplicate: the activation policy change above only takes effect on the
+    /// next pass of the run loop, and without re-asserting afterwards the
+    /// window can come up behind the app it was opened from.
     func show() {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
@@ -63,11 +68,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             window?.center()
         }
         window?.makeKeyAndOrderFront(nil)
-        window?.orderFrontRegardless()
 
         DispatchQueue.main.async { [weak self] in
             self?.window?.makeKeyAndOrderFront(nil)
-            self?.window?.orderFrontRegardless()
         }
     }
 

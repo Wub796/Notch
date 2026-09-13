@@ -67,12 +67,40 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         locationManager.desiredAccuracy = kCLLocationAccuracyReduced
     }
 
-    /// Requests location authorization explicitly by making the app active
-    /// and issuing the authorization prompt.
-    func requestAuthorization() {
-        NSApp.activate(ignoringOtherApps: true)
+    /// Requests location authorization.
+    ///
+    /// `activating` is only true when the user asked for this themselves (the
+    /// Privacy pane's Grant button), because macOS shows the prompt attached
+    /// to the frontmost app. Left on for the automatic path it meant simply
+    /// opening the notch for the first time yanked focus out of whatever the
+    /// user was working in.
+    func requestAuthorization(activating: Bool = false) {
+        if activating {
+            NSApp.activate(ignoringOtherApps: true)
+        }
         locationManager.requestWhenInUseAuthorization()
         locationManager.requestLocation()
+    }
+
+    /// Whether a network location lookup is allowed right now. An explicit
+    /// denial is respected outright; otherwise it follows the user's setting.
+    private var mayUseApproximateLocation: Bool {
+        switch locationManager.authorizationStatus {
+        case .denied, .restricted: false
+        default: NotchSettings.shared.approximateLocationFallback
+        }
+    }
+
+    /// The message shown when there is no location to fetch for, phrased so it
+    /// says which switch to reach for rather than just failing.
+    private var noLocationMessage: String {
+        switch locationManager.authorizationStatus {
+        case .denied, .restricted:
+            "Location is off for Notch — turn it on in Privacy settings, or "
+                + "allow an approximate location from your network."
+        default:
+            "No location available"
+        }
     }
 
     /// Called when the notch expands; a no-op while the cache is fresh unless
@@ -105,8 +133,8 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
             // shortly, fall back to an approximate location.
             scheduleLocationFallback()
         case .restricted, .denied:
-            // Location is off for this app — approximate from the network
-            // instead of showing nothing at all.
+            // Location is off for this app. The network fallback is not a way
+            // around that — see `mayUseApproximateLocation`.
             resolveApproximateLocation()
         default:
             locationManager.requestLocation()
@@ -116,15 +144,14 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         guard !isFetching else { return }
+        guard NotchSettings.shared.showWeather else { return }
         switch manager.authorizationStatus {
         case .notDetermined:
             break
         case .restricted, .denied:
             resolveApproximateLocation()
         default:
-            if NotchSettings.shared.showWeather {
-                manager.requestLocation()
-            }
+            manager.requestLocation()
         }
     }
 
@@ -140,6 +167,11 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     /// Keyless IP geolocation, used whenever a precise fix isn't available.
     private func resolveApproximateLocation() {
         guard !isFetching else { return }
+        guard mayUseApproximateLocation else {
+            isLoading = false
+            failureMessage = noLocationMessage
+            return
+        }
 
         struct IPLocation: Decodable {
             let latitude: Double?
@@ -265,7 +297,14 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         isLoading = true
         lastCoordinate = location.coordinate
 
-        var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")!
+        guard var components = URLComponents(
+            string: "https://api.open-meteo.com/v1/forecast"
+        ) else {
+            isFetching = false
+            isLoading = false
+            failureMessage = "Couldn't reach the forecast"
+            return
+        }
         components.queryItems = [
             .init(name: "latitude", value: String(format: "%.2f", location.coordinate.latitude)),
             .init(name: "longitude", value: String(format: "%.2f", location.coordinate.longitude)),

@@ -13,9 +13,14 @@ struct NotchGeometry {
     }
 
     /// Exact hardware notch size: height from the safe area inset, width from
-    /// the gap between the two auxiliary menu bar areas plus a small bleed so
-    /// the drawn pill fully covers the camera housing. Displays without a
+    /// the gap between the two auxiliary menu bar areas. Displays without a
     /// notch simulate one at menu bar height.
+    ///
+    /// This is the *measurement* and carries no coverage margin of its own.
+    /// Everything drawn around the notch adds `NotchSizing.notchCoverageBleed`
+    /// via `NotchState.safeNotchSize`, which is the single place that margin
+    /// is decided — a second, undocumented `+ 4` here made the real bleed the
+    /// sum of two numbers written down in different files.
     var notchSize: CGSize {
         let topInset = screen.safeAreaInsets.top
         guard topInset > 0,
@@ -28,14 +33,17 @@ struct NotchGeometry {
                 height: menuBarHeight > 0 ? menuBarHeight : Self.fallbackSize.height
             )
         }
-        let width = screen.frame.width - leftArea.width - rightArea.width + 4
+        let width = screen.frame.width - leftArea.width - rightArea.width
         return CGSize(width: min(max(width, 120), screen.frame.width - 40), height: topInset)
     }
 
     /// The screen the panel should live on: prefer a display with a physical
     /// notch, otherwise the main display.
     static var preferredScreen: NSScreen? {
-        // An explicit choice wins, when that display is still attached.
+        // An explicit choice wins, when that display is still attached. Two
+        // identical monitors share a localizedName, so this can only ever pick
+        // the first of a matching pair — which is why the notched display is
+        // preferred ahead of `NSScreen.main` below rather than relying on it.
         let chosen = NotchSettings.shared.preferredScreenName
         if !chosen.isEmpty,
            let match = NSScreen.screens.first(where: { $0.localizedName == chosen }) {

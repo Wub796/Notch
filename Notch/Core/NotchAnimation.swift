@@ -93,8 +93,17 @@ enum NotchAnimations {
         return .spring(response: 0.24, dampingFraction: 0.78)
     }
 
-    /// The HUD bar's own settle, matching `DraggableProgressBar`.
-    static let hudBar = Animation.smooth(duration: 0.3)
+    /// The HUD bar's own settle, matching `DraggableProgressBar`. Computed,
+    /// not stored: a `let` could collapse under neither Reduce Motion nor the
+    /// Animation Style picker.
+    static var hudBar: Animation {
+        guard !prefersReducedMotion else { return reduced }
+        switch profile {
+        case .snappy: return .smooth(duration: 0.26)
+        case .bouncy: return .smooth(duration: 0.30)
+        case .calm: return .smooth(duration: 0.36)
+        }
+    }
 
     /// Charging popup: pops in beneath the notch with subtle physical spring,
     /// then dismisses cleanly.
@@ -102,27 +111,36 @@ enum NotchAnimations {
         if prefersReducedMotion {
             return .opacity
         }
+        // Arriving is the deliberate moment and gets the slower `activity`
+        // spring; leaving snaps out of the way on `content`. Both follow the
+        // user's Animation Style, which a hardcoded spring here did not.
         return .asymmetric(
             insertion: .scale(scale: 0.92, anchor: .top)
                 .combined(with: .opacity)
                 .combined(with: .offset(y: -4))
-                .animation(.spring(response: 0.34, dampingFraction: 0.78)),
+                .animation(activity),
             removal: .opacity
                 .combined(with: .scale(scale: 0.96, anchor: .top))
-                .animation(.spring(response: 0.24, dampingFraction: 0.92))
+                .animation(content)
         )
     }
 
     /// Closed-notch activity swap: a subtle scale-in (0.97) and scale-out (0.94),
     /// so one activity replacing another reads as an organic substitution.
     static var activitySwap: AnyTransition {
-        .asymmetric(
+        // Reduce Motion keeps the substitution readable and drops the scale:
+        // gentler, not absent. This used to scale regardless, the one
+        // transition in the app that ignored the preference.
+        if prefersReducedMotion {
+            return .opacity.animation(reduced)
+        }
+        return .asymmetric(
             insertion: .opacity
                 .combined(with: .scale(scale: 0.97, anchor: .center))
-                .animation(.spring(response: 0.28, dampingFraction: 0.85)),
+                .animation(activity),
             removal: .opacity
                 .combined(with: .scale(scale: 0.94, anchor: .center))
-                .animation(.spring(response: 0.22, dampingFraction: 0.95))
+                .animation(content)
         )
     }
 }

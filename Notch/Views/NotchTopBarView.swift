@@ -9,13 +9,22 @@ import SwiftUI
 struct NotchTopBarView: View {
     let state: NotchState
 
-    /// Every module the rail exposes, in order.
-    private static let modules: [(tab: NotchTab, symbol: String, name: String)] = [
+    /// Every module the rail exposes, in order. Tools is here rather than
+    /// reachable only through the Focus status glyph: a screen carrying quick
+    /// actions, the timer, eye breaks and shortcuts needs a labelled way in.
+    static let modules: [(tab: NotchTab, symbol: String, name: String)] = [
         (.shelf, "archivebox", "Shelf"),
         (.clipboard, "doc.on.clipboard", "Clipboard"),
         (.notes, "note.text", "Notes"),
+        (.tools, "wrench.and.screwdriver", "Tools"),
         (.telemetry, "gauge.with.dots.needle.50percent", "System Stats"),
+        (.camera, "video", "Camera"),
     ]
+
+    /// The rail's full control count: the Home button, Settings, and every
+    /// module above. `NotchSizing` floors the slab width against this, so it
+    /// is derived rather than written down twice.
+    static var railControlCount: Int { modules.count + 2 }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -102,7 +111,7 @@ struct NotchTopBarView: View {
     /// Three status controls, as in the reference: the battery pill, the
     /// active Focus, and keep-awake.
     private var trailingControls: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             if state.telemetry.hasBattery {
                 BatteryPill(
                     percent: Int((state.telemetry.batteryPercent * 100).rounded()),
@@ -114,7 +123,8 @@ struct NotchTopBarView: View {
             NotchIconButton(
                 systemImage: state.activeFocus?.symbolName ?? "theatermasks",
                 isActive: state.activeFocus != nil,
-                help: state.activeFocus.map { "Focus: \($0.name)" } ?? "No Focus active",
+                help: state.activeFocus.map { "Focus: \($0.name) — open Tools" }
+                    ?? "No Focus active — open Tools",
                 activeTint: .purple
             ) {
                 state.select(.tools)
@@ -231,9 +241,9 @@ struct DetailHeaderView<Trailing: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .topLeading) {
-            // The back control belongs beside the physical notch, not in the
-            // center of the left flank. Pin it to the header's outer side so
-            // it remains visible even when the module width changes.
+            // Pinned to the header's outer (leading) edge rather than centred
+            // in the left flank, so it stays put as the module width changes
+            // instead of drifting with the flank's midpoint.
             NotchBackButton {
                 state.select(.home)
             }
@@ -301,5 +311,6 @@ struct NotchIconButton: View {
         }
         .help(help)
         .accessibilityLabel(help)
+        .accessibilityAddTraits(isActive ? [.isSelected] : [])
     }
 }

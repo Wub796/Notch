@@ -98,7 +98,7 @@ final class NotchSettings {
     var brightnessHUDEnabled = true {
         didSet {
             save(brightnessHUDEnabled, "brightnessHUDEnabled")
-            onBrightnessHUDSettingChanged?(brightnessHUDEnabled)
+            notify(onBrightnessHUDSettingChanged, brightnessHUDEnabled)
         }
     }
     var onBrightnessHUDSettingChanged: ((Bool) -> Void)?
@@ -113,6 +113,18 @@ final class NotchSettings {
     /// Temperature display unit.
     var temperatureUnit: TemperatureUnit = .automatic {
         didSet { save(temperatureUnit.rawValue, "temperatureUnit") }
+    }
+
+    /// Whether weather may fall back to a coarse location looked up from the
+    /// network (`ipapi.co`) when CoreLocation has no fix to give.
+    ///
+    /// This leaves the Mac — it is the one thing in the app that hands a third
+    /// party anything — so it is a switch rather than a silent fallback, and
+    /// it is never used when the user has *explicitly denied* Location. A
+    /// denial is an answer, and answering it with an IP lookup is not an
+    /// approximation of consent.
+    var approximateLocationFallback = true {
+        didSet { save(approximateLocationFallback, "approximateLocationFallback") }
     }
 
     /// Shows the weather glyph and a bold temperature in the compact notch.
@@ -148,17 +160,42 @@ final class NotchSettings {
     /// Show the current synced lyric line under the closed notch while playing.
     var lyricActivityEnabled = true { didSet { save(lyricActivityEnabled, "lyricActivityEnabled") } }
 
-    /// Two-finger scroll over the notch opens/closes it.
+    /// Two-finger scroll over the closed notch opens it. (Only opens —
+    /// closing is hover-out, the hotkey, or a click outside.)
     var scrollToExpand = true { didSet { save(scrollToExpand, "scrollToExpand") } }
 
     /// Automatically collapse the notch when the cursor leaves.
     var autoCollapseOnMouseExit = true { didSet { save(autoCollapseOnMouseExit, "autoCollapseOnMouseExit") } }
 
+    /// Show finished downloads in the notch as they land.
+    var catchDownloads = true {
+        didSet {
+            save(catchDownloads, "catchDownloads")
+            notify(onFileCatcherSettingChanged, catchDownloads)
+        }
+    }
+
+    /// Show new screenshots in the notch as they are taken.
+    var catchScreenshots = true {
+        didSet {
+            save(catchScreenshots, "catchScreenshots")
+            notify(onFileCatcherSettingChanged, catchScreenshots)
+        }
+    }
+
+    /// Whether a caught file is also added to the shelf, so it is still
+    /// reachable after the notch has moved on.
+    var caughtFilesJoinShelf = true {
+        didSet { save(caughtFilesJoinShelf, "caughtFilesJoinShelf") }
+    }
+
+    var onFileCatcherSettingChanged: ((Bool) -> Void)?
+
     /// Clipboard history.
     var clipboardHistoryEnabled = true {
         didSet {
             save(clipboardHistoryEnabled, "clipboardHistoryEnabled")
-            onClipboardSettingChanged?(clipboardHistoryEnabled)
+            notify(onClipboardSettingChanged, clipboardHistoryEnabled)
         }
     }
     var onClipboardSettingChanged: ((Bool) -> Void)?
@@ -181,7 +218,7 @@ final class NotchSettings {
     var eyeBreakEnabled = false {
         didSet {
             save(eyeBreakEnabled, "eyeBreakEnabled")
-            onEyeBreakSettingChanged?(eyeBreakEnabled)
+            notify(onEyeBreakSettingChanged, eyeBreakEnabled)
         }
     }
     var onEyeBreakSettingChanged: ((Bool) -> Void)?
@@ -193,7 +230,7 @@ final class NotchSettings {
     var realtimeAudioMeter = false {
         didSet {
             save(realtimeAudioMeter, "realtimeAudioMeter")
-            onRealtimeAudioMeterChanged?(realtimeAudioMeter)
+            notify(onRealtimeAudioMeterChanged, realtimeAudioMeter)
         }
     }
     var onRealtimeAudioMeterChanged: ((Bool) -> Void)?
@@ -212,6 +249,7 @@ final class NotchSettings {
     var hotKey: String = HotKeyManager.Shortcut.optionCommandN.rawValue {
         didSet {
             save(hotKey, "hotKey")
+            guard !isLoading else { return }
             HotKeyManager.shared.apply(
                 HotKeyManager.Shortcut(rawValue: hotKey) ?? .disabled
             )
@@ -223,14 +261,11 @@ final class NotchSettings {
     var preferredScreenName = "" {
         didSet {
             save(preferredScreenName, "preferredScreenName")
+            guard !isLoading else { return }
             onScreenPreferenceChanged?()
         }
     }
     var onScreenPreferenceChanged: (() -> Void)?
-
-    /// The user's own Spotify app client ID. Notch cannot ship one: a public
-    /// client ID in an open repository gets rate-limited and revoked, and the
-    /// app registration belongs to whoever runs it.
 
     /// Percentage beside the volume / brightness HUD bar
     /// (`showClosedNotchHUDPercentage` in the references).
@@ -242,7 +277,7 @@ final class NotchSettings {
     var hudReplacement = true {
         didSet {
             save(hudReplacement, "hudReplacement")
-            onHUDReplacementChanged?(hudReplacement)
+            notify(onHUDReplacementChanged, hudReplacement)
         }
     }
 
@@ -261,8 +296,8 @@ final class NotchSettings {
     /// set up in advance.
     var pinnedAudioApps: [String] = [] {
         didSet {
-            UserDefaults.standard.set(pinnedAudioApps, forKey: "pinnedAudioApps")
-            onPinnedAudioAppsChanged?(pinnedAudioApps)
+            save(pinnedAudioApps, "pinnedAudioApps")
+            notify(onPinnedAudioAppsChanged, pinnedAudioApps)
         }
     }
     var onPinnedAudioAppsChanged: (([String]) -> Void)?
@@ -300,6 +335,7 @@ final class NotchSettings {
     func resetNotchDimensions() {
         notchWidthAdjustment = 0
         notchHeightAdjustment = 0
+        hoverTolerance = 12
         openNotchWidth = NotchSizing.defaultOpenWidth
         openNotchHeight = NotchSizing.defaultOpenHeight
         peekScale = 1.10
@@ -377,6 +413,9 @@ final class NotchSettings {
         if defaults.object(forKey: "showWeather") != nil {
             showWeather = defaults.bool(forKey: "showWeather")
         }
+        if defaults.object(forKey: "approximateLocationFallback") != nil {
+            approximateLocationFallback = defaults.bool(forKey: "approximateLocationFallback")
+        }
         if defaults.object(forKey: "showCompactWeather") != nil {
             showCompactWeather = defaults.bool(forKey: "showCompactWeather")
         }
@@ -400,6 +439,15 @@ final class NotchSettings {
         }
         if defaults.object(forKey: "autoCollapseOnMouseExit") != nil {
             autoCollapseOnMouseExit = defaults.bool(forKey: "autoCollapseOnMouseExit")
+        }
+        if defaults.object(forKey: "catchDownloads") != nil {
+            catchDownloads = defaults.bool(forKey: "catchDownloads")
+        }
+        if defaults.object(forKey: "catchScreenshots") != nil {
+            catchScreenshots = defaults.bool(forKey: "catchScreenshots")
+        }
+        if defaults.object(forKey: "caughtFilesJoinShelf") != nil {
+            caughtFilesJoinShelf = defaults.bool(forKey: "caughtFilesJoinShelf")
         }
         if defaults.object(forKey: "clipboardHistoryEnabled") != nil {
             clipboardHistoryEnabled = defaults.bool(forKey: "clipboardHistoryEnabled")
@@ -474,15 +522,49 @@ final class NotchSettings {
         lastTab = defaults.string(forKey: "lastTab") ?? ""
         hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
 
-        // Login-item state lives in the system, not in defaults.
+        // Login-item state lives in the system, not in defaults. The cheap
+        // half is read inline; the LaunchAgent check shells out to
+        // `launchctl print`, which is slow enough that running it here put a
+        // blocking subprocess on the main thread during app launch.
         isApplyingLoginItem = true
         launchAtLogin = SMAppService.mainApp.status == .enabled
-            || Self.launchAgentIsBootstrapped()
         isApplyingLoginItem = false
+
+        isLoading = false
+
+        if !launchAtLogin {
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard Self.launchAgentIsBootstrapped() else { return }
+                DispatchQueue.main.async {
+                    guard let self, !self.launchAtLogin else { return }
+                    self.isApplyingLoginItem = true
+                    self.launchAtLogin = true
+                    self.isApplyingLoginItem = false
+                }
+            }
+        }
     }
 
+    /// True while `init` is restoring values from UserDefaults.
+    ///
+    /// Every property here has a `didSet`, and Swift runs those for
+    /// assignments in an initializer's body once the type is fully
+    /// initialized — which it is, since they all have defaults. So loading
+    /// wrote all forty-odd values straight back to UserDefaults, and fired the
+    /// change callbacks as a side effect of construction. `hotKey`'s in
+    /// particular registered the global shortcut from inside settings
+    /// construction, which `AppDelegate.installHotKey()` then did again.
+    private var isLoading = true
+
     private func save(_ value: Any, _ key: String) {
+        guard !isLoading else { return }
         UserDefaults.standard.set(value, forKey: key)
+    }
+
+    /// Runs a change callback unless we are mid-load.
+    private func notify<T>(_ callback: ((T) -> Void)?, _ value: T) {
+        guard !isLoading else { return }
+        callback?(value)
     }
 
     private func applyLaunchAtLogin() {

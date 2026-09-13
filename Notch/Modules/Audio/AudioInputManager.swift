@@ -98,6 +98,28 @@ final class AudioInputManager {
         refreshOnAudioQueue()
     }
 
+    /// Releases the system listeners. `startListening` had no counterpart and
+    /// this class has no singleton excuse — it is owned by `NotchState`, so a
+    /// dangling listener block would outlive its owner.
+    func stopListening() {
+        guard isListening, let block = listenerBlock else { return }
+        isListening = false
+        pendingRefresh?.cancel()
+        pendingRefresh = nil
+
+        AudioObjectRemovePropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &Self.defaultInputAddress, audioQueue, block
+        )
+        AudioObjectRemovePropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &Self.deviceListAddress, audioQueue, block
+        )
+        listenerBlock = nil
+    }
+
+    deinit {
+        stopListening()
+    }
+
     private func refreshOnAudioQueue() {
         audioQueue.async { [weak self] in
             guard let self else { return }

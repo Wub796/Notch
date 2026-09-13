@@ -14,27 +14,51 @@ struct CollapsedNotchView: View {
 
     var body: some View {
         ZStack {
+            activityStrip
+                // One transition for every activity, keyed on the kind rather
+                // than the value: the wings, the lyric line, the dropped rows
+                // and the HUDs all used to cut hard between one another
+                // because only two of the thirteen cases carried a transition.
+                .id(state.collapsedActivity?.kind ?? "idle")
+                .transition(NotchAnimations.activitySwap)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var activityStrip: some View {
+        ZStack {
             switch state.collapsedActivity {
-            case .music:
-                musicWings
-                    .transition(NotchAnimations.activitySwap)
-            case let .lyrics(line):
+            // One branch, because they are one thing: the wings, plus a lyric
+            // row when there is a lyric. Split across two cases, every arriving
+            // and expiring line rebuilt the wings underneath it.
+            case .music, .lyrics:
                 VStack(spacing: 0) {
                     musicWings
                         .frame(height: state.adjustedNotchSize.height)
-                    Text(line)
-                        .font(.notchBody.weight(.bold))
-                        .foregroundStyle(state.media.accent)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .padding(.horizontal, 18)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 26)
-                        .contentTransition(.opacity)
-                        .animation(NotchAnimations.activity, value: line)
-                        .accessibilityLabel("Lyric")
-                        .accessibilityValue(line)
+
+                    if case let .lyrics(line) = state.collapsedActivity {
+                        Text(line)
+                            .font(.notchBody.weight(.bold))
+                            .foregroundStyle(state.media.accent)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .padding(.horizontal, 18)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 26)
+                            // Line-to-line is a crossfade in place; the row
+                            // arriving or leaving slides out of the notch.
+                            .contentTransition(.opacity)
+                            .animation(NotchAnimations.activity, value: line)
+                            .transition(
+                                .move(edge: .top)
+                                    .combined(with: .opacity)
+                            )
+                            .accessibilityLabel("Lyric")
+                            .accessibilityValue(line)
+                    }
                 }
+                .animation(NotchAnimations.activity, value: state.collapsedActivity)
             case let .trackChange(title, artist):
                 dropped {
                     droppedRow(
@@ -96,25 +120,25 @@ struct CollapsedNotchView: View {
                             .font(.notchBody.weight(.bold))
                             .foregroundStyle(low ? .red : NotchTheme.inkPrimary)
                             .fixedSize(),
-                    trailing: HStack(spacing: 5) {
-                        Text("\(percent)%")
-                            .font(.notchBody.weight(.bold)
-                                .monospacedDigit())
-                            .contentTransition(.numericText())
-                            // The transition above needs a value-bound animation
-                            // or the percent hard-cuts between readings.
-                            .animation(NotchAnimations.content, value: percent)
-                            .fixedSize()
-                        Image(systemName: low
-                              ? "battery.25percent"
-                              : "battery.75percent")
-                            .font(.system(size: 15, weight: .semibold))
-                    }
-                    .foregroundStyle(low ? .red : NotchTheme.battery)
-                )
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(low ? "Low battery" : "On battery")
-                .accessibilityValue("\(percent) percent")
+                        trailing: HStack(spacing: 4) {
+                            Text("\(percent)%")
+                                .font(.notchBody.weight(.bold).monospacedDigit())
+                                .contentTransition(.numericText())
+                                // The transition above needs a value-bound
+                                // animation or the percent hard-cuts between
+                                // readings.
+                                .animation(NotchAnimations.content, value: percent)
+                                .fixedSize()
+                            Image(systemName: low
+                                ? "battery.25percent"
+                                : "battery.75percent")
+                                .font(.system(size: 15, weight: .semibold))
+                        }
+                        .foregroundStyle(low ? .red : NotchTheme.battery)
+                    )
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(low ? "Low battery" : "On battery")
+                    .accessibilityValue("\(percent) percent")
                 }
             case let .screenLock(locked):
                 dropped {
@@ -154,6 +178,21 @@ struct CollapsedNotchView: View {
                         value: nil
                     )
                 }
+            case let .fileCaught(name, source):
+                dropped(height: 54) {
+                    CaughtFileRow(
+                        caught: state.fileCatcher.latest,
+                        name: name,
+                        source: source,
+                        onReveal: {
+                            if let url = state.fileCatcher.latest?.url {
+                                NSWorkspace.shared.activateFileViewerSelecting([url])
+                            }
+                            state.fileCatcher.dismiss()
+                        },
+                        onDismiss: { state.fileCatcher.dismiss() }
+                    )
+                }
             case let .desktopChange(index):
                 DesktopChangeActivityView(index: index, notchWidth: state.safeNotchSize.width)
             case let .accessoryBattery(name, symbol, percent):
@@ -178,14 +217,12 @@ struct CollapsedNotchView: View {
                 }
             case nil:
                 if state.settings.showCompactWeather {
-                    compactWeatherWing
-                        .transition(NotchAnimations.activitySwap)
+                    weatherFlank
                 } else {
                     Color.clear
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// "in 12m" / "now", for the meeting activity's trailing reading.
@@ -206,11 +243,17 @@ struct CollapsedNotchView: View {
             notchRowFlank
                 .frame(height: state.adjustedNotchSize.height)
 
+            // The band gets a surface rather than sitting on bare black. On a
+            // shape that is already black against a black notch, content with
+            // no pane under it reads as text floating in a void — the tile is
+            // what makes the drop look like part of the hardware.
             content()
                 .frame(maxWidth: .infinity)
-                .frame(height: height)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 6)
+                .frame(height: height - 8)
+                .padding(.horizontal, NotchTheme.Space.m)
+                .notchTile(radius: NotchTheme.Radius.tile)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 7)
         }
     }
 
@@ -271,17 +314,13 @@ struct CollapsedNotchView: View {
         }
     }
 
-    private var isAudioActive: Bool {
-        state.media.isPlaying || state.audioApps.isAnyAudioPlaying || (state.media.hasTrack && state.settings.showMediaWings)
-    }
-
     /// What flanks the hardware notch on its own row while an activity is
     /// dropped beneath it. Media owns the wings whenever something is
     /// playing — cover on the left, visualiser on the right, and the weather
     /// stays out of the way until playback stops.
     @ViewBuilder
     private var notchRowFlank: some View {
-        if isAudioActive {
+        if state.isAudioActive {
             musicWings
         } else if state.settings.showCompactWeather {
             weatherFlank
@@ -294,17 +333,10 @@ struct CollapsedNotchView: View {
         }
     }
 
-    /// The weather glyph and temperature either side of the notch, shared by
-    /// the idle pill and the dropped HUD.
+    /// The weather glyph and temperature either side of the notch — what the
+    /// idle pill wears, and what stays on the notch's own row while some other
+    /// activity is dropped beneath it.
     private var weatherFlank: some View {
-        ActivityWingLayout(
-            notchWidth: state.safeNotchSize.width,
-            leading: weatherIcon,
-            trailing: weatherTemperature
-        )
-    }
-
-    private var compactWeatherWing: some View {
         ActivityWingLayout(
             notchWidth: state.safeNotchSize.width,
             leading: weatherIcon,
@@ -415,6 +447,102 @@ struct CollapsedNotchView: View {
                         .font(.system(size: 10))
                         .foregroundStyle(NotchTheme.inkSecondary)
                 }
+        }
+    }
+}
+
+/// A file that just landed, shown under the closed notch.
+///
+/// The thumbnail is the drag source: the entire point is that a finished
+/// download or a fresh screenshot can go straight where it belongs without a
+/// trip through Finder. Clicking reveals it instead, and the row eases away on
+/// its own after a few seconds whether or not it was touched.
+private struct CaughtFileRow: View {
+    let caught: FileCatcher.Catch?
+    let name: String
+    let source: FileCatcher.Source
+    let onReveal: () -> Void
+    let onDismiss: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: NotchTheme.Space.s) {
+            thumbnail
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(source.label)
+                    .font(.notchEyebrow)
+                    .tracking(0.7)
+                    .foregroundStyle(NotchTheme.inkMuted)
+
+                Text(name)
+                    .font(.notchBody)
+                    .foregroundStyle(NotchTheme.inkPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: NotchTheme.Space.xs)
+
+            // Only on hover: at rest the row should read as the file, not as a
+            // pair of buttons.
+            if isHovering {
+                Button(action: onReveal) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(NotchTheme.inkSecondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(PressableButtonStyle())
+                .help("Reveal in Finder")
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(NotchTheme.inkSecondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(PressableButtonStyle())
+                .help("Dismiss")
+            }
+        }
+        .animation(NotchAnimations.content, value: isHovering)
+        .onHover { isHovering = $0 }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(source.label): \(name)")
+        .accessibilityHint("Drag to move the file, or click to reveal it in Finder")
+    }
+
+    @ViewBuilder
+    private var thumbnail: some View {
+        let tile = Group {
+            if let icon = caught?.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .padding(3)
+            } else {
+                Image(systemName: source.symbol)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(NotchTheme.inkSecondary)
+            }
+        }
+        .frame(width: 34, height: 34)
+        .background {
+            RoundedRectangle(cornerRadius: NotchTheme.Radius.thumb, style: .continuous)
+                .fill(.white.opacity(0.07))
+        }
+        .clipShape(RoundedRectangle(cornerRadius: NotchTheme.Radius.thumb, style: .continuous))
+
+        if let url = caught?.url {
+            tile
+                .onDrag { NSItemProvider(contentsOf: url) ?? NSItemProvider() }
+                .help("Drag to move this file")
+        } else {
+            tile
         }
     }
 }

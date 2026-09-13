@@ -18,6 +18,38 @@ enum LiveActivity: Equatable {
     case accessoryBattery(name: String, symbol: String, percent: Int)
     case volume(level: Float, muted: Bool)
     case brightness(level: Float)
+    /// A file just landed in Downloads or the screenshot folder.
+    case fileCaught(name: String, source: FileCatcher.Source)
+
+    /// Which *kind* of activity this is, ignoring its payload.
+    ///
+    /// The collapsed notch swaps its whole strip when the kind changes and
+    /// updates in place when only the payload moves — a volume level ticking
+    /// up must not re-run the substitution transition thirty times a second.
+    /// The charging popup is its own kind because it draws a different shape
+    /// from the plain battery row.
+    var kind: String {
+        switch self {
+        // Music and lyrics deliberately share an identity: both draw the same
+        // cover-and-visualiser wings, and the lyric line is a row that appears
+        // beneath them. Giving them separate identities tore the wings down
+        // and rebuilt them every time a line arrived or expired, so the album
+        // art flickered its way through the song.
+        case .music, .lyrics: "music"
+        case .timer: "timer"
+        case .trackChange: "trackChange"
+        case .meetingSoon: "meetingSoon"
+        case let .battery(_, charging, _): charging ? "battery.charging" : "battery"
+        case .screenLock: "screenLock"
+        case .focusMode: "focusMode"
+        case .eyeBreak: "eyeBreak"
+        case .desktopChange: "desktopChange"
+        case .accessoryBattery: "accessoryBattery"
+        case .volume: "volume"
+        case .brightness: "brightness"
+        case .fileCaught: "fileCaught"
+        }
+    }
 }
 
 /// Owns the transient activity sources (volume HUD, battery events). Both are
@@ -50,9 +82,12 @@ final class LiveActivityManager {
 
     private static let volumeHUDDuration: TimeInterval = 1.6
     private static let batteryEventDuration: TimeInterval = 4.0
-    private static let sneakPeekDuration: TimeInterval = 4.0
+    /// Floor for the sneak-peek duration. The length itself is the user's
+    /// `sneakPeekDuration` preference — this only keeps a slider dragged to
+    /// its minimum from making the announcement unreadably brief.
+    private static let minimumSneakPeekDuration: TimeInterval = 1.0
     private static let lockEventDuration: TimeInterval = 2.5
-    private static let lowBatteryThreshold = 10
+
 
     func start() {
         if NotchSettings.shared.volumeHUDEnabled {
@@ -69,7 +104,7 @@ final class LiveActivityManager {
         // is switched on.
         power = PowerMonitor.snapshot()
         lastPowerSnapshot = power
-        wasLowBattery = (power?.percent ?? 100) <= Self.lowBatteryThreshold
+        wasLowBattery = (power?.percent ?? 100) <= NotchSettings.shared.lowBatteryThreshold
         powerMonitor.onChange = { [weak self] snapshot in
             self?.power = snapshot
             guard NotchSettings.shared.liveActivitiesEnabled else { return }
@@ -126,7 +161,10 @@ final class LiveActivityManager {
     /// in the collapsed notch.
     func showTrackChange(title: String, artist: String) {
         guard NotchSettings.shared.sneakPeekEnabled, !title.isEmpty else { return }
-        show(.trackChange(title: title, artist: artist), for: Self.sneakPeekDuration)
+        show(
+            .trackChange(title: title, artist: artist),
+            for: max(NotchSettings.shared.sneakPeekDuration, Self.minimumSneakPeekDuration)
+        )
     }
 
     /// Focus mode changed (Do Not Disturb, Work, Sleep…).
@@ -148,7 +186,9 @@ final class LiveActivityManager {
 
     /// A newly connected accessory reporting its battery.
     func showAccessoryBattery(name: String, symbol: String, percent: Int) {
-        guard NotchSettings.shared.liveActivitiesEnabled else { return }
+        guard NotchSettings.shared.liveActivitiesEnabled,
+              NotchSettings.shared.showAccessoryBattery
+        else { return }
         show(
             .accessoryBattery(name: name, symbol: symbol, percent: percent),
             for: Self.batteryEventDuration
@@ -183,7 +223,8 @@ final class LiveActivityManager {
         guard NotchSettings.shared.liveActivitiesEnabled else { return }
         defer { lastPowerSnapshot = snapshot }
 
-        let isLow = snapshot.percent <= Self.lowBatteryThreshold && !snapshot.onACPower
+        let isLow = snapshot.percent <= NotchSettings.shared.lowBatteryThreshold
+            && !snapshot.onACPower
         let plugStateChanged = snapshot.onACPower != lastPowerSnapshot?.onACPower
         let becameLow = isLow && !wasLowBattery
         wasLowBattery = isLow

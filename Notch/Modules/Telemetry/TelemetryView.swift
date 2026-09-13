@@ -9,6 +9,10 @@ import SwiftUI
 struct TelemetryView: View {
     let telemetry: TelemetryController
 
+    /// The gauge visibility switches from Settings. Read here rather than
+    /// passed in: this screen is the only thing they govern.
+    private var settings: NotchSettings { NotchSettings.shared }
+
     var body: some View {
         VStack(alignment: .leading, spacing: NotchTheme.Space.m) {
             ScreenHeader("System", subtitle: subtitle)
@@ -25,8 +29,10 @@ struct TelemetryView: View {
     /// CPU, memory and battery at a glance, with the numbers that only make
     /// sense as text beside them.
     private var subtitle: String {
-        var parts = ["CPU \(percentString(telemetry.cpuUsage))",
-                     "Memory \(percentString(telemetry.memoryPressure))"]
+        var parts = ["CPU \(percentString(telemetry.cpuUsage))"]
+        if settings.showMemoryPressure {
+            parts.append("Memory \(percentString(telemetry.memoryPressure))")
+        }
         if telemetry.hasBattery {
             parts.append("Battery \(percentString(telemetry.batteryPercent))")
         }
@@ -44,19 +50,23 @@ struct TelemetryView: View {
                     systemImage: "cpu",
                     tint: NotchTheme.cpu
                 )
-                SparklineView(values: telemetry.cpuHistory, tint: NotchTheme.cpu)
-                    .frame(width: 64, height: 14)
+                if settings.showCPUSparkline {
+                    SparklineView(values: telemetry.cpuHistory, tint: NotchTheme.cpu)
+                        .frame(width: 64, height: 14)
+                }
             }
 
-            Spacer(minLength: NotchTheme.Space.m)
+            if settings.showMemoryPressure {
+                Spacer(minLength: NotchTheme.Space.m)
 
-            CircularGaugeView(
-                value: telemetry.memoryPressure,
-                title: "Memory",
-                detail: percentString(telemetry.memoryPressure),
-                systemImage: "memorychip",
-                tint: NotchTheme.memory
-            )
+                CircularGaugeView(
+                    value: telemetry.memoryPressure,
+                    title: "Memory",
+                    detail: percentString(telemetry.memoryPressure),
+                    systemImage: "memorychip",
+                    tint: NotchTheme.memory
+                )
+            }
 
             if telemetry.hasBattery {
                 Spacer(minLength: NotchTheme.Space.m)
@@ -71,42 +81,46 @@ struct TelemetryView: View {
                     tint: NotchTheme.battery
                 )
 
+                if settings.showBatteryHealth {
+                    Spacer(minLength: NotchTheme.Space.m)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        statTile(
+                            value: String(format: "%.1f W", abs(telemetry.batteryWatts)),
+                            label: telemetry.batteryWatts >= 0 ? "Charging power" : "Power draw",
+                            systemImage: "bolt.fill",
+                            tint: NotchTheme.battery
+                        )
+                        statTile(
+                            value: percentString(telemetry.batteryHealth),
+                            label: "Battery health",
+                            systemImage: "heart.fill",
+                            tint: NotchTheme.battery
+                        )
+                    }
+                    .frame(width: 130, alignment: .leading)
+                }
+            }
+
+            if settings.showNetworkSpeed {
                 Spacer(minLength: NotchTheme.Space.m)
 
                 VStack(alignment: .leading, spacing: 10) {
                     statTile(
-                        value: String(format: "%.1f W", abs(telemetry.batteryWatts)),
-                        label: telemetry.batteryWatts >= 0 ? "Charging power" : "Power draw",
-                        systemImage: "bolt.fill",
-                        tint: NotchTheme.battery
+                        value: Self.speedString(telemetry.downloadBytesPerSecond),
+                        label: "Download",
+                        systemImage: "arrow.down",
+                        tint: NotchTheme.network
                     )
                     statTile(
-                        value: percentString(telemetry.batteryHealth),
-                        label: "Battery health",
-                        systemImage: "heart.fill",
-                        tint: NotchTheme.battery
+                        value: Self.speedString(telemetry.uploadBytesPerSecond),
+                        label: "Upload",
+                        systemImage: "arrow.up",
+                        tint: NotchTheme.network
                     )
                 }
                 .frame(width: 130, alignment: .leading)
             }
-
-            Spacer(minLength: NotchTheme.Space.m)
-
-            VStack(alignment: .leading, spacing: 10) {
-                statTile(
-                    value: Self.speedString(telemetry.downloadBytesPerSecond),
-                    label: "Download",
-                    systemImage: "arrow.down",
-                    tint: NotchTheme.network
-                )
-                statTile(
-                    value: Self.speedString(telemetry.uploadBytesPerSecond),
-                    label: "Upload",
-                    systemImage: "arrow.up",
-                    tint: NotchTheme.network
-                )
-            }
-            .frame(width: 130, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

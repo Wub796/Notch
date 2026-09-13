@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import SwiftUI
 
 /// A single system-wide hotkey for toggling the notch.
 ///
@@ -47,6 +48,32 @@ final class HotKeyManager {
             case .controlOptionN: UInt32(controlKey | optionKey)
             case .commandShiftBackslash: UInt32(shiftKey | cmdKey)
             case .f13: 0
+            }
+        }
+
+        /// The same shortcut expressed for SwiftUI, so the menu bar item can
+        /// advertise whatever the user actually chose. The menu used to
+        /// hardcode ⌥⌘N and went on claiming it after the shortcut changed.
+        /// nil where the shortcut cannot be expressed as a menu equivalent:
+        /// Off, and F13, which `KeyEquivalent` has no case for. The menu item
+        /// then carries no keys, which is honest — better than advertising a
+        /// shortcut the menu cannot actually invoke.
+        var menuKey: KeyEquivalent? {
+            switch self {
+            case .disabled, .f13: nil
+            case .optionCommandN, .controlOptionN: "n"
+            case .commandShiftBackslash: "\\"
+            }
+        }
+
+        // Fully qualified: Carbon declares an `EventModifiers` of its own, and
+        // this file imports both.
+        var menuModifiers: SwiftUI.EventModifiers {
+            switch self {
+            case .disabled, .f13: []
+            case .optionCommandN: [.command, .option]
+            case .controlOptionN: [.control, .option]
+            case .commandShiftBackslash: [.command, .shift]
             }
         }
     }

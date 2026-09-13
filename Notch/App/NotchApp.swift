@@ -4,6 +4,12 @@ import SwiftUI
 struct NotchApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
+    /// The shortcut the user actually chose, so the menu advertises the same
+    /// keys the global hotkey is registered on.
+    private var toggleShortcut: HotKeyManager.Shortcut {
+        HotKeyManager.Shortcut(rawValue: appDelegate.state.settings.hotKey) ?? .disabled
+    }
+
     var body: some Scene {
         // The notch panel is managed entirely by AppDelegate/NotchWindowController,
         // and Settings by SettingsWindowController — SwiftUI's Settings scene
@@ -18,14 +24,16 @@ struct NotchApp: App {
                     appDelegate.state.expand()
                 }
             }
-            .keyboardShortcut("n", modifiers: [.command, .option])
+            .modifier(OptionalShortcut(
+                key: toggleShortcut.menuKey,
+                modifiers: toggleShortcut.menuModifiers
+            ))
 
             Divider()
 
             Button(appDelegate.state.media.isPlaying ? "Pause" : "Play") {
                 appDelegate.state.media.togglePlayPause()
             }
-            .keyboardShortcut("p", modifiers: [.command, .option])
             .disabled(!appDelegate.state.media.hasTrack)
 
             Button("Next Track") {
@@ -85,6 +93,23 @@ struct NotchApp: App {
                 NSApp.terminate(nil)
             }
             .keyboardShortcut("q")
+        }
+    }
+}
+
+
+/// Applies a keyboard shortcut only when there is one to apply — the toggle
+/// shortcut can be set to Off, and a menu item should then carry no keys at
+/// all rather than a stale default.
+private struct OptionalShortcut: ViewModifier {
+    let key: KeyEquivalent?
+    let modifiers: SwiftUI.EventModifiers
+
+    func body(content: Content) -> some View {
+        if let key {
+            content.keyboardShortcut(key, modifiers: modifiers)
+        } else {
+            content
         }
     }
 }

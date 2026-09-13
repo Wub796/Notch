@@ -37,9 +37,9 @@ final class QuickActions {
             end tell
         end tell
         """
-        run(script, describing: "change the appearance") { [weak self] in
+        run(script, describing: "change the appearance", completion: { [weak self] in
             self?.refresh()
-        }
+        })
     }
 
     // MARK: - Session
@@ -70,9 +70,11 @@ final class QuickActions {
     // MARK: - Trash
 
     func emptyTrash() {
-        run("tell application \"Finder\" to empty trash", describing: "empty the Trash") { [weak self] in
-            self?.refresh()
-        }
+        run(
+            "tell application \"Finder\" to empty trash",
+            describing: "empty the Trash",
+            completion: { [weak self] in self?.refresh() }
+        )
     }
 
     /// How many items are in the Trash.

@@ -308,7 +308,7 @@ struct AudioDevicesView: View {
         if state.audioApps.apps.isEmpty {
             emptyRow("No apps are using audio")
         } else {
-            ForEach(state.audioApps.apps) { app in
+            ForEach(Array(state.audioApps.apps.enumerated()), id: \.element.id) { index, app in
                 AudioRow(
                     icon: .image(app.icon),
                     title: app.name,
@@ -354,6 +354,7 @@ struct AudioDevicesView: View {
                         toggleAppMute(app)
                     }
                 }
+                .notchRowEntrance(index)
             }
 
             Text(state.audioApps.canObserveProcesses

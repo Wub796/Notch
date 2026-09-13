@@ -173,10 +173,11 @@ final class MediaKeyInterceptor {
             let current = volumeSource?() ?? 0
             let target = min(max(current + (key == .soundUp ? delta : -delta), 0), 1)
             setVolume?(target)
-            // Read back after writing so the HUD reflects the device's actual
-            // value, not a stale or rejected request.
-            let shown = volumeSource?() ?? target
-            onVolume?(shown, isMuted?() ?? false)
+            // Show the value we just set. Reading back used to mean a second
+            // blocking round trip to the device on the main thread — at key
+            // auto-repeat rate — and the device's property listener corrects
+            // the published value a moment later anyway if it disagreed.
+            onVolume?(target, target == 0)
 
         case .mute:
             toggleMute?()

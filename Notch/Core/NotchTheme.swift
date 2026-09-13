@@ -26,9 +26,7 @@ enum NotchTheme {
 
     // MARK: Surfaces
 
-    static let surface = Color.clear
     static let surfaceHover = Color.white.opacity(0.08)
-    static let hairline = Color.clear
 
     /// Whether the user has asked macOS to reduce on-screen transparency
     /// (Accessibility → Display → Reduce Transparency). The notch's own
@@ -62,6 +60,13 @@ enum NotchTheme {
 }
 
 extension NSImage {
+    /// Shared rendering context. Building a `CIContext` allocates GPU-backed
+    /// resources and costs milliseconds — doing it per artwork made every
+    /// track change pay for one.
+    private static let averageColorContext = CIContext(
+        options: [.workingColorSpace: NSNull()]
+    )
+
     /// Single-pass average color via CIAreaAverage.
     func averageColor() -> NSColor? {
         guard let tiff = tiffRepresentation,
@@ -74,8 +79,7 @@ extension NSImage {
         else { return nil }
 
         var bitmap = [UInt8](repeating: 0, count: 4)
-        let context = CIContext(options: [.workingColorSpace: NSNull()])
-        context.render(
+        Self.averageColorContext.render(
             output,
             toBitmap: &bitmap,
             rowBytes: 4,
@@ -94,13 +98,30 @@ extension NSImage {
 
 // MARK: - Micro-interactions
 
-/// Compresses subtly while pressed with instant tactile feedback for every tappable control.
+/// Compresses subtly while pressed with instant tactile feedback for every
+/// tappable control.
+///
+/// Asymmetric on purpose: the press is the user's own action and should land
+/// immediately, while the release is the control recovering and can settle.
+/// Symmetric timing made both halves feel equally deliberate, which reads as
+/// lag on the half the user is actually watching.
 struct PressableButtonStyle: ButtonStyle {
+    private static let press = Animation.spring(response: 0.12, dampingFraction: 0.9)
+    private static let release = Animation.spring(response: 0.26, dampingFraction: 0.7)
+
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+        // Reduce Motion keeps the feedback but drops the movement: the opacity
+        // dip still confirms the press.
+        let reduced = NotchAnimations.prefersReducedMotion
+        return configuration.label
+            .scaleEffect(configuration.isPressed && !reduced ? 0.96 : 1)
             .opacity(configuration.isPressed ? 0.88 : 1)
-            .animation(.spring(response: 0.16, dampingFraction: 0.85), value: configuration.isPressed)
+            .animation(
+                reduced
+                    ? NotchAnimations.reduced
+                    : (configuration.isPressed ? Self.press : Self.release),
+                value: configuration.isPressed
+            )
     }
 }
 
@@ -146,15 +167,30 @@ extension View {
 /// faint brightening so the tile reads as live under the cursor.
 struct TileHoverModifier: ViewModifier {
     @State private var hovering = false
+    @State private var pressed = false
 
     func body(content: Content) -> some View {
         content
             .brightness(hovering ? 0.07 : 0)
+            // A tap-through tile is a control, so it should answer a press the
+            // way every Button here does. Reduce Motion keeps the brightening
+            // and drops the movement.
+            .scaleEffect(scale)
             .animation(NotchAnimations.content, value: hovering)
+            .animation(.spring(response: 0.16, dampingFraction: 0.85), value: pressed)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in if !pressed { pressed = true } }
+                    .onEnded { _ in pressed = false }
+            )
             .onHover { entering in
+                // Balanced push/pop: SwiftUI can deliver `false` without a
+                // preceding `true` (on a view update, or when the window stops
+                // taking the mouse), and popping for a push this modifier never
+                // made corrupts the process-wide cursor stack. Transition on
+                // the stored state, never on the raw event.
+                guard entering != hovering else { return }
                 hovering = entering
-                // Balanced push/pop: the pop only ever runs for a push this
-                // modifier made, including the view vanishing mid-hover.
                 if entering {
                     NSCursor.pointingHand.push()
                 } else {
@@ -166,7 +202,15 @@ struct TileHoverModifier: ViewModifier {
                     NSCursor.pop()
                     hovering = false
                 }
+                // A tile removed mid-press must not come back pressed.
+                pressed = false
             }
+    }
+
+    private var scale: CGFloat {
+        guard !NotchAnimations.prefersReducedMotion else { return 1 }
+        if pressed { return 0.985 }
+        return hovering ? 1.012 : 1
     }
 }
 
@@ -174,25 +218,4 @@ extension View {
     func tileHover() -> some View { modifier(TileHoverModifier()) }
 }
 
-// MARK: - Transitions
 
-/// Frosted content transition: blur + fade + a short downward settle.
-struct GlassTransitionModifier: ViewModifier {
-    let blur: CGFloat
-    let opacity: Double
-    let offsetY: CGFloat
-
-    func body(content: Content) -> some View {
-        content
-            .blur(radius: blur)
-            .opacity(opacity)
-            .offset(y: offsetY)
-    }
-}
-
-extension AnyTransition {
-    static let glass = AnyTransition.modifier(
-        active: GlassTransitionModifier(blur: 3, opacity: 0, offsetY: 6),
-        identity: GlassTransitionModifier(blur: 0, opacity: 1, offsetY: 0)
-    )
-}

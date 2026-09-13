@@ -26,7 +26,26 @@ extension Timer {
         every interval: TimeInterval,
         _ body: @escaping () -> Void
     ) -> Timer {
-        let timer = Timer(timeInterval: interval, repeats: true) { _ in body() }
+        scheduled(interval: interval, repeats: true, body)
+    }
+
+    /// A one-shot timer registered in `RunLoop.Mode.common`, for the same
+    /// reason as `scheduledRepeating`: on `.default` a deadline falling while
+    /// a menu is open or a scroll is in flight does not fire until the
+    /// interaction ends.
+    static func scheduledOneShot(
+        after interval: TimeInterval,
+        _ body: @escaping () -> Void
+    ) -> Timer {
+        scheduled(interval: interval, repeats: false, body)
+    }
+
+    private static func scheduled(
+        interval: TimeInterval,
+        repeats: Bool,
+        _ body: @escaping () -> Void
+    ) -> Timer {
+        let timer = Timer(timeInterval: interval, repeats: repeats) { _ in body() }
         RunLoop.main.add(timer, forMode: .common)
         return timer
     }

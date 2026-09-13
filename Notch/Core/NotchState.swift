@@ -13,9 +13,8 @@ enum NotchMode: Equatable {
 enum NotchTab: String {
     /// Combined dashboard hosting music, weather, and calendar.
     case home
-    /// Full player opened from the Home media area.
-    case media
-    /// Audio devices and per-app volume controls.
+    /// The player, plus audio devices and per-app volume. Opened from the
+    /// Home media card; its "Now" section is the full-size player.
     case audio
     /// Full-screen weather detail with an hourly forecast.
     case weather
@@ -26,6 +25,8 @@ enum NotchTab: String {
     case tools
     case notes
     case telemetry
+    /// A live mirror for checking yourself before a call.
+    case camera
 }
 
 /// Root observable state for the notch UI. Owns every feature module and
@@ -76,11 +77,7 @@ final class NotchState {
         // band under it. The measured height is clamped to the budget the
         // tab already had — the panel may shrink to its content, never grow
         // past today's size — and the width stays on the tuned per-tab value.
-        if tab == .media {
-            let minimumPlayerHeight: CGFloat = mediaShowsFullLyrics ? 255 : 220
-            let playerContentHeight: CGFloat = mediaShowsFullLyrics ? 255 : 220
-            size.height = max(size.height, minimumPlayerHeight, CGFloat(playerContentHeight) + topBarHeight + 6 + NotchSizing.openContentInset)
-        } else if tab == .audio, devicesSection == .now {
+        if tab == .audio, devicesSection == .now {
             // Now is a short fixed column; the default Audio budget is sized
             // for Library and Audio, so it top-aligns and leaves a band of
             // empty panel beneath the heart/shuffle row. Hug the page instead
@@ -89,7 +86,7 @@ final class NotchState {
             // rounded bottom edge. The height is set outright, not bumped up
             // with max, so the slab can shrink down to Now rather than being
             // locked to the taller Audio budget.
-            let header = topBarHeight + 6 + NotchSizing.openContentInset
+            let header = topBarHeight + 6 + NotchSizing.contentBottomInset(for: tab)
             let moduleHeight = DevicesScreenMetrics.naturalNowHeight(
                 showsLyrics: mediaShowsFullLyrics
             ) + DevicesScreenMetrics.bottomSafePadding
@@ -194,6 +191,26 @@ final class NotchState {
     func updateMeasuredModuleHeight(_ height: CGFloat, for tab: NotchTab) {
         guard height > 0 else { return }
         let rounded = height.rounded()
+        #if DEBUG
+        // Home's slab height comes from `HomeDashboardMetrics`, a hand-written
+        // copy of the dashboard's own arithmetic, because the measurement
+        // below never reliably lands for that tab. Hand-written copies drift:
+        // change a padding in HomeDashboardView and the slab quietly regrows
+        // the black band the fitting exists to remove. When a measurement
+        // *does* arrive, check the constant against it and say so.
+        if tab == .home {
+            let declared = HomeDashboardMetrics.naturalHeight(
+                hasOtherAudioChips: !otherAudioApps.isEmpty
+            )
+            if abs(declared - rounded) > 4 {
+                print(
+                    "[Notch] HomeDashboardMetrics.naturalHeight is \(declared)pt "
+                    + "but the dashboard measured \(rounded)pt — update the "
+                    + "constants in HomeDashboardMetrics."
+                )
+            }
+        }
+        #endif
         guard abs((measuredHeights[tab] ?? 0) - rounded) >= 1 else { return }
         withAnimation(NotchAnimations.content) {
             measuredHeights[tab] = rounded
@@ -241,7 +258,10 @@ final class NotchState {
     /// what the fixed value was.
     var hoverExpansion: CGFloat {
         let scale = min(max(settings.peekScale, 1.0), 1.4)
-        return (scale - 1) * 60
+        // 1.0 -> 0pt, the 1.10 default -> 6pt, the 1.4 maximum -> 24pt. The
+        // ceiling keeps the widest setting from pushing the wings out past
+        // the menu bar items either side of the notch.
+        return min((scale - 1) * 60, 24)
     }
 
     /// Height of the icon strip that flanks the hardware notch.
@@ -254,6 +274,8 @@ final class NotchState {
     let calendar = CalendarController()
     let telemetry = TelemetryController()
     let shelf = ShelfController()
+    /// Downloads and screenshots as they land — see `FileCatcher`.
+    let fileCatcher = FileCatcher()
     let keepAwake = KeepAwakeController()
     let weather = WeatherService()
     let activities = LiveActivityManager()
@@ -268,6 +290,8 @@ final class NotchState {
     let bluetooth = BluetoothBatteryMonitor()
     let brightness = BrightnessController()
     let quickActions = QuickActions()
+    /// The webcam preview. Strictly bound to its screen being visible.
+    let camera = CameraController()
     let audioApps = AudioAppMonitor()
     let audioMeter = SystemAudioMeter()
 
@@ -399,6 +423,20 @@ final class NotchState {
             self?.activities.clearTransient()
         }
 
+        fileCatcher.onCatch = { [weak self] caught in
+            guard let self else { return }
+            // Also shelve it, so it is still reachable once the notch has
+            // moved on — the activity is a six-second window, the shelf is not.
+            if self.settings.caughtFilesJoinShelf {
+                self.shelf.add([caught.url])
+            }
+            self.onModeChange?(self.mode)
+        }
+        settings.onFileCatcherSettingChanged = { [weak self] _ in
+            self?.fileCatcher.syncWatchers()
+        }
+        fileCatcher.start()
+
         if settings.clipboardHistoryEnabled {
             clipboard.start()
         }
@@ -500,6 +538,11 @@ final class NotchState {
         if let transient = activities.transient {
             return transient
         }
+        // A file that just landed is a moment worth interrupting for — it is
+        // the one activity the user can act on by dragging it straight out.
+        if let caught = fileCatcher.latest {
+            return .fileCaught(name: caught.name, source: caught.source)
+        }
         // A running timer owns the notch until it finishes or is cancelled.
         if timer.isRunning {
             return .timer(remaining: timer.remaining, progress: timer.progress)
@@ -511,11 +554,31 @@ final class NotchState {
            let line = media.collapsedLyricLine {
             return .lyrics(line: line)
         }
-        // Any active music playback or app audio replaces the weather wings next to the notch
-        if media.isPlaying || audioApps.isAnyAudioPlaying || (media.hasTrack && settings.showMediaWings) {
+        // Any active music playback or app audio replaces the weather wings
+        // next to the notch.
+        if isAudioActive {
             return .music
         }
         return nil
+    }
+
+    /// Whether the closed notch should be wearing its music wings — the cover
+    /// on the left and the visualiser on the right.
+    ///
+    /// The single source of truth for that question: `collapsedActivity`
+    /// decides whether to *return* `.music`, and `CollapsedNotchView` decides
+    /// what to draw on the notch's own row while some other activity is
+    /// dropped beneath it. Those two used to carry separate copies of this
+    /// expression, and only one of them was ever updated.
+    ///
+    /// `showWingsForAnyAudio` gates the CoreAudio "something is making sound"
+    /// signal specifically: that reports an open stream rather than audible
+    /// sound, so an app that holds one keeps the wings up. Playback the notch
+    /// can actually see is never gated by it.
+    var isAudioActive: Bool {
+        if media.isPlaying { return true }
+        if media.hasTrack, settings.showMediaWings { return true }
+        return settings.showWingsForAnyAudio && audioApps.isAnyAudioPlaying
     }
 
     /// Extra width added around the hardware notch for the active activity —
@@ -536,7 +599,7 @@ final class NotchState {
         // the wings, so the wings only carry what stays on the notch's own
         // row — the weather glyph and its temperature.
         case .timer, .trackChange, .screenLock, .focusMode, .eyeBreak,
-             .accessoryBattery, .meetingSoon:
+             .accessoryBattery, .meetingSoon, .fileCaught:
             82
         // Volume and brightness should not make the closed notch narrower;
         // their HUD drops below it, but the notch keeps the normal music-pill
@@ -562,6 +625,9 @@ final class NotchState {
         // The charging popup drops beneath the notch, iOS-style.
         case .battery(_, true, _): 46
         case .timer: 42
+        // Taller than a plain row: this one carries a thumbnail and is a drag
+        // target, so it needs to be worth aiming at.
+        case .fileCaught: 54
         case .screenLock, .focusMode, .eyeBreak, .accessoryBattery, .meetingSoon: 36
         default: 0
         }
@@ -598,7 +664,9 @@ final class NotchState {
     /// the notch where the hover probe is not, so the two do not collide.
     var collapsedActivityIsInteractive: Bool {
         switch collapsedActivity {
-        case .volume, .brightness: true
+        // The HUD bars are draggable; a caught file is draggable *out*, which
+        // is the whole point of showing it.
+        case .volume, .brightness, .fileCaught: true
         default: false
         }
     }
@@ -697,7 +765,7 @@ final class NotchState {
             tab = newTab
             // Leaving the player resets its lyric visibility, so returning
             // to it does not reopen with a stale preference unexpectedly.
-            if newTab != .media { mediaShowsFullLyrics = false }
+            if newTab != .audio { mediaShowsFullLyrics = false }
         }
         settings.lastTab = newTab.rawValue
         onModeChange?(mode)
@@ -744,9 +812,16 @@ final class NotchState {
     func shutdown() {
         audioMeter.stop()
         audioApps.stopObserving()
+        audio.stopListening()
+        audioInput.stopListening()
         activities.stop()
+        focusMonitor.stop()
+        desktopMonitor.stop()
+        eyeBreak.setEnabled(false)
         MediaKeyInterceptor.shared.stop()
         clipboard.stop()
+        camera.stop()
+        fileCatcher.stop()
         timer.cancel()
         sleepModules()
     }
@@ -761,6 +836,7 @@ final class NotchState {
         weather.refresh()
         calendar.refresh()
         shortcuts.refresh()
+        fileCatcher.syncWatchers()
         syncAudioMeter()
         media.updateLyricActivityTimer()
         if mode == .expanded {
@@ -782,6 +858,9 @@ final class NotchState {
     }
 
     private func sleepModules() {
+        // Belt and braces with CameraView's own onDisappear: a collapse should
+        // never leave the capture device open and the hardware light on.
+        camera.stop()
         media.setActive(false)
         telemetry.stop()
         bluetooth.stop()

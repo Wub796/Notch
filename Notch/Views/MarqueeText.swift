@@ -67,11 +67,18 @@ struct MarqueeText: View {
         // → scroll) makes every track change start the marquee from its home
         // position, which is what the references do.
         .onChange(of: text) { _, _ in
-            guard shouldScroll else { return }
-            animate = false
-            // Let the reset land before restarting, so the new run is a
-            // fresh spring from offset 0 rather than a retarget mid-loop.
-            DispatchQueue.main.async { animate = true }
+            // Snap the offset home with no animation at all. Assigning `false`
+            // plainly let the `.repeatForever` linear curve pick the reset up,
+            // so every track change scrolled the old title slowly *backwards*
+            // before the new one started.
+            withAnimation(.none) { animate = false }
+            // Let the reset land before restarting, so the new run begins from
+            // offset 0 rather than retargeting mid-loop. Re-checked here
+            // because the new text may not need to scroll at all.
+            DispatchQueue.main.async {
+                guard shouldScroll else { return }
+                animate = true
+            }
         }
         .onChange(of: shouldScroll) { _, scrolling in
             animate = scrolling

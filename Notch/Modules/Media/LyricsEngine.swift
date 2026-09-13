@@ -82,6 +82,33 @@ final class LyricsEngine {
         isLoading = false
     }
 
+    /// The lyric to show on its own, with no surrounding context — what the
+    /// closed notch's single-line activity draws. Returns nil when nothing is
+    /// being sung right now.
+    ///
+    /// Deliberately not `currentLine`. In the scrolling list, keeping the last
+    /// sung line highlighted is correct: it marks where you are in the song.
+    /// Under the closed notch there is no list to mark a place in, so the same
+    /// rule left the final lyric of a track sitting there for the whole outro
+    /// — a notch that looks stuck.
+    ///
+    /// LRC carries no end time, and the blank separator lines that would imply
+    /// one are dropped at parse time because they have no text. So a line's
+    /// window is "until the next one", capped at `maxDwell` — long enough to
+    /// read a slow line, short enough that an instrumental break clears.
+    func standaloneLine(at time: TimeInterval, maxDwell: TimeInterval = 8) -> String? {
+        guard isSynced, !lines.isEmpty else { return nil }
+        guard let index = lines.lastIndex(where: { $0.time <= time }) else { return nil }
+
+        let line = lines[index]
+        let nextStart = index + 1 < lines.count ? lines[index + 1].time : nil
+        let window = min(nextStart.map { $0 - line.time } ?? maxDwell, maxDwell)
+        guard time - line.time <= window else { return nil }
+
+        let text = line.text.trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : text
+    }
+
     /// Called on each playback tick; moves the highlighted line to the last
     /// timestamp at or before the playhead.
     func updateCurrentLine(for time: TimeInterval) {

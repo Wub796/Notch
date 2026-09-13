@@ -137,8 +137,8 @@ Notch/
 └── Modules/
     ├── Home/                     The dashboard: music, weather, calendar
     ├── Media/                    MediaRemote bridge (info + seek), controller, accent,
-    │                             LRCLIB lyrics engine, player + lyrics views
-    ├── Weather/                  Open-Meteo current, hourly and daily; IP fallback
+    │                             LRCLIB lyrics engine, lyrics + scrubber views
+    ├── Weather/                  Open-Meteo current, hourly and daily; optional IP fallback
     ├── Calendar/                 EventKit next-24h timeline + meeting-link detection
     ├── Shelf/                    Drop delegate, shelf controller (AirDrop/copy/reveal), tray UI
     ├── Clipboard/                Opt-in history with pinning
@@ -272,19 +272,27 @@ ui-ux-pro-max design ruleset:
 - Actionable empty states: calendar-denied links straight to
   Privacy & Security → Calendars.
 
-### Zero-impact collapsed state
+### Collapsed-state cost
 
-All periodic work is gated on expansion:
+Most periodic work is gated on expansion, but not all of it — the closed notch
+still shows live activities, and some of those have to be asked for rather than
+pushed. What actually runs:
 
-| Module    | Collapsed               | Expanded                          |
-|-----------|-------------------------|-----------------------------------|
-| Media     | push notifications only | 0.5 s progress/lyrics tick        |
-| Lyrics    | idle                    | driven by media tick              |
-| Calendar  | idle                    | one EventKit query on open        |
-| Telemetry | idle                    | 1–5 s sampling timer (configurable) |
-| Shelf     | idle                    | resolves drops on demand          |
+| Module    | Collapsed                                   | Expanded                            |
+|-----------|---------------------------------------------|-------------------------------------|
+| Media     | MediaRemote push; a 4 s poll only on the Apple Events fallback | 0.1 s progress tick, 1 s browser probe |
+| Lyrics    | 0.1 s tick, only while the lyric activity is on and something is playing | driven by the media tick |
+| Playback reconcile | 15 s (catches a pause the notch was not told about) | 2 s |
+| Calendar  | idle                                        | one EventKit query on open          |
+| Telemetry | idle                                        | 1–5 s sampling timer (configurable) |
+| Shelf     | idle                                        | resolves drops on demand            |
+| Clipboard | 1 s pasteboard poll while history is on (macOS has no change notification) | same |
+| Hover probe | 20 Hz cursor sample                       | stopped — SwiftUI owns hover        |
+| Audio meter | 20 Hz, only while the real-time visualiser is on and audio is playing | same |
 
-`NotchState.wakeModules()` / `sleepModules()` are the single choke point.
+`NotchState.wakeModules()` / `sleepModules()` are the choke point for the
+expansion-gated half; `MediaController.setActive(_:)` is the choke point for
+the media timers.
 
 ## Permissions (Info.plist)
 

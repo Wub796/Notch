@@ -36,6 +36,39 @@ struct SettingsView: View {
             }
         }
 
+        /// What each pane actually contains, for the sidebar's search field.
+        /// Keep in step with the panes below when settings move.
+        var keywords: [String] {
+            switch self {
+            case .general:
+                ["launch", "login", "startup", "hotkey", "shortcut", "menu bar",
+                 "animation", "style", "motion", "display", "screen", "monitor"]
+            case .notch:
+                ["hover", "peek", "size", "width", "height", "corner", "radius",
+                 "tolerance", "delay", "open", "close", "scroll", "pin"]
+            case .media:
+                ["music", "spotify", "apple music", "lyrics", "player",
+                 "provider", "sneak peek", "artwork", "visualizer", "wings"]
+            case .weather:
+                ["forecast", "temperature", "celsius", "fahrenheit", "location",
+                 "city", "units"]
+            case .activities:
+                ["live activity", "battery", "volume", "brightness", "hud",
+                 "clipboard", "shelf", "airdrop", "desktop", "space", "timer",
+                 "eye break", "focus", "accessory", "download", "downloads",
+                 "screenshot", "screenshots", "catch", "file"]
+            case .system:
+                ["cpu", "memory", "network", "telemetry", "stats", "gauge",
+                 "sparkline", "battery health", "audio", "output", "input",
+                 "device"]
+            case .privacy:
+                ["permission", "accessibility", "calendar", "automation",
+                 "screen recording", "access"]
+            case .about:
+                ["version", "licence", "license", "credits", "acknowledgements"]
+            }
+        }
+
         var tint: Color {
             switch self {
             case .general: .gray
@@ -53,13 +86,18 @@ struct SettingsView: View {
     @State private var selection: Pane = .general
     @State private var search = ""
 
-    /// The sidebar filters as you type, which is what the reference's search
-    /// field is for.
+    /// The sidebar filters as you type.
+    ///
+    /// Matches each pane's own keywords as well as its title: searching
+    /// "lyrics" or "hover" used to return an empty sidebar, because only the
+    /// eight pane names were ever searched and none of them contain the words
+    /// anyone would actually look for.
     private var visiblePanes: [Pane] {
         let query = search.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return Pane.allCases }
-        return Pane.allCases.filter {
-            $0.title.localizedCaseInsensitiveContains(query)
+        return Pane.allCases.filter { pane in
+            pane.title.localizedCaseInsensitiveContains(query)
+                || pane.keywords.contains { $0.localizedCaseInsensitiveContains(query) }
         }
     }
 
@@ -67,10 +105,10 @@ struct SettingsView: View {
         HStack(spacing: 0) {
             sidebar
                 .frame(width: 210)
-                .background(Color.black.opacity(0.3))
+                .background(.quaternary.opacity(0.5))
 
             Rectangle()
-                .fill(Color.white.opacity(0.1))
+                .fill(.separator)
                 .frame(width: 1)
 
             VStack(alignment: .leading, spacing: 0) {
@@ -79,10 +117,10 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(selection.title)
                         .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(NotchTheme.inkPrimary)
+                        .foregroundStyle(.primary)
 
                     Rectangle()
-                        .fill(Color.white.opacity(0.08))
+                        .fill(.separator)
                         .frame(height: 1)
                 }
                 .padding(.horizontal, 24)
@@ -95,7 +133,6 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 780, idealWidth: 820, minHeight: 560, idealHeight: 620)
-        .preferredColorScheme(.dark)
     }
 
     private var sidebar: some View {
@@ -113,7 +150,7 @@ struct SettingsView: View {
             .padding(.vertical, 6)
             .background {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(0.08))
+                    .fill(.quaternary.opacity(0.6))
             }
             .padding(12)
 
@@ -137,7 +174,7 @@ struct SettingsView: View {
                                     }
                                 Text(pane.title)
                                     .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                                    .foregroundStyle(isSelected ? .white : NotchTheme.inkPrimary)
+                                    .foregroundStyle(isSelected ? .white : .primary)
                                 Spacer()
                             }
                             .padding(.horizontal, 10)
@@ -240,10 +277,15 @@ private struct WeatherSettingsPane: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
+
+                Toggle(
+                    "Use an approximate location from my network",
+                    isOn: $settings.approximateLocationFallback
+                )
             } header: {
                 Text("Location")
             } footer: {
-                Text("Weather works without location access. The notch falls back to an approximate position from your network connection. Granting access makes it accurate to your city.")
+                Text("Granting location access makes the forecast accurate to your city. Without it, Notch can ask ipapi.co to estimate your rough position from your network — the one request this app makes to anyone but the forecast service. If you have explicitly denied location access, that estimate is never requested.")
             }
         }
         .formStyle(.grouped)
@@ -485,7 +527,8 @@ private struct DimensionSliders: View {
             )
         } header: {
             Label("Closed Notch", systemImage: "ruler")
-        } footer: {                Text("Width and height trim the notch the app measured from your display. Use them if the drawn pill doesn't quite cover the hardware.")
+        } footer: {
+            Text("Width and height trim the notch the app measured from your display. Use them if the drawn pill doesn't quite cover the hardware.")
         }
 
         Section {
@@ -512,7 +555,7 @@ private struct DimensionSliders: View {
         } header: {
             Label("Open Panel", systemImage: "square.on.circle")
         } footer: {
-            Text("Every screen opens to this one panel, so switching tabs never resizes the notch, and the width is capped to your display. Hovering is detected over the hardware notch itself, never over the wings beside it.")
+            Text("These scale every screen together — each one keeps its own shape, so switching tabs does move the panel, but always between sizes you chose here. The width is capped to your display. Hovering is detected over the hardware notch itself, never over the wings beside it.")
         }
     }
 
@@ -972,6 +1015,12 @@ private struct ActivitiesSettingsPane: View {
                         .frame(width: 110)
                     }
                 }
+                toggleRow("arrow.down.circle.fill", .teal, "Catch Finished Downloads",
+                          $settings.catchDownloads)
+                toggleRow("camera.viewfinder", .pink, "Catch New Screenshots",
+                          $settings.catchScreenshots)
+                toggleRow("tray.and.arrow.down.fill", .indigo, "Caught Files Join the Shelf",
+                          $settings.caughtFilesJoinShelf)
                 toggleRow("airplane.circle.fill", .blue, "AirDrop Dropped Files Immediately",
                           $settings.instantAirDrop)
                 SettingsRow(
@@ -1239,7 +1288,7 @@ private struct AboutSettingsPane: View {
                 .font(.system(size: 44, weight: .light))
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [.white, .white.opacity(0.5)],
+                        colors: [.primary, .primary.opacity(0.5)],
                         startPoint: .top,
                         endPoint: .bottom
                     )

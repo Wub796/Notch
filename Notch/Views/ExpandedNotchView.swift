@@ -23,10 +23,6 @@ struct ExpandedNotchView: View {
     @ViewBuilder
     private var header: some View {
         switch state.tab {
-        case .media:
-            DetailHeaderView(state: state) { width in
-                sourcePill(maxWidth: width)
-            }
         case .weather:
             DetailHeaderView(state: state) { width in
                 weatherHeaderTrailing(maxWidth: width)
@@ -45,36 +41,6 @@ struct ExpandedNotchView: View {
     }
 
     // MARK: - Detail headers
-
-    /// The media header's right-hand pill: source app icon + name, standing in
-    /// for the reference's play-count pill. The label truncates rather than
-    /// overflowing, so the pill always stays inside its flank and never under
-    /// the hardware notch.
-    private func sourcePill(maxWidth: CGFloat) -> some View {
-        HStack(spacing: 6) {
-            if let icon = state.media.sourceAppIcon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .frame(width: 14, height: 14)
-                    .clipShape(Circle())
-            } else {
-                Image(systemName: state.media.isPlaying ? "play.fill" : "music.note")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(NotchTheme.inkPrimary)
-            }
-            Text(state.media.sourceAppName ?? "Not Playing")
-                .font(.notchFootnote.weight(.semibold))
-                .foregroundStyle(NotchTheme.inkPrimary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Capsule().fill(.white.opacity(0.12)))
-        .frame(maxWidth: maxWidth, alignment: .trailing)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Source: \(state.media.sourceAppName ?? "none")")
-    }
 
     private func weatherHeaderTrailing(maxWidth: CGFloat) -> some View {
         HStack(spacing: 8) {

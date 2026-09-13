@@ -6,12 +6,14 @@ import SwiftUI
 /// measurement (which never reliably landed, leaving a black band under the
 /// dashboard). Keep these in step with the layout below.
 enum HomeDashboardMetrics {
-    /// The full music column: a single artwork/text row. The 88pt artwork
-    /// tile is the tallest element — the title/artist/transport block sits
-    /// beside it, not beneath it — so the row is 88pt and no transport row
-    /// is stacked below (counting one made the slab ~42pt taller than its
-    /// content, leaving the black strip under the transport).
-    static let musicColumnHeight: CGFloat = 88
+    /// The full music column: a single artwork/text row inside its surface.
+    /// The 88pt artwork tile is the tallest element — the title/artist/
+    /// transport block sits beside it, not beneath it — so the row is 88pt,
+    /// plus the card's own vertical padding above and below it.
+    ///
+    /// Counting a stacked transport row here made the slab ~42pt taller than
+    /// its content, which is the black strip this measurement exists to avoid.
+    static let musicColumnHeight: CGFloat = 88 + NotchTheme.Space.s * 2
     /// A row of other-audio chips beneath the music row: the 4pt VStack gap
     /// plus the chip row itself (14pt glyph + 3pt padding above and below).
     static let otherAudioChipsHeight: CGFloat = 24
@@ -43,22 +45,27 @@ struct HomeDashboardView: View {
         // keeps their content from floating with an empty strip beneath it.
         // The slab's per-tab gutter supplies the ~5mm side margin, so the
         // columns themselves sit flush to the content area.
-        HStack(alignment: .bottom, spacing: 0) {
+        // Hero on the left, two surfaces on the right. The columns used to
+        // stretch to the card height and bottom-align, which is right when
+        // they are bare content on black — but they are panes now, and a pane
+        // stretched past its content is a pane with a dead strip in it. They
+        // hug instead, and the row centres them against the hero.
+        HStack(alignment: .center, spacing: NotchTheme.Space.s) {
             musicSection
+                .padding(.horizontal, NotchTheme.Space.s)
+                .padding(.vertical, NotchTheme.Space.s)
+                .notchTile(radius: NotchTheme.Radius.card)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer(minLength: 12)
-            // The weather block is shorter than the music column, so stretch
-            // its column to the card height and center the content — the
-            // remaining margin is symmetric breathing room instead of a
-            // dead strip at the bottom.
+
+            // Equal heights: the three columns are panes now, and panes of
+            // three different heights centred against each other read as
+            // unaligned. They stretch to the tallest (the music column, set by
+            // its 88pt artwork) and centre their own content inside.
             weatherSection
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            Spacer(minLength: 12)
-            // The calendar column stretches too and is right-anchored, so its
-            // date strip hugs the same gutter as the header's trailing icons
-            // and they read as one aligned right edge.
+                .frame(maxHeight: .infinity)
+
             calendarSection
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .frame(maxHeight: .infinity)
         }
         // No vertical filler. The module is height-fitted to its content, and
         // a flexible maxHeight frame here would let the fit measure the full
@@ -134,7 +141,7 @@ struct HomeDashboardView: View {
                         .truncationMode(.tail)
                         .frame(maxWidth: 220, alignment: .leading)
 
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         Text(displayArtist)
                             .font(.system(size: 13.5, weight: .medium, design: .rounded))
                             .foregroundStyle(NotchTheme.inkSecondary)
@@ -146,7 +153,7 @@ struct HomeDashboardView: View {
 
                     // Transport sits centred under the text block rather than
                     // flush left, which is what makes the column read as one unit.
-                    HStack(spacing: 18) {
+                    HStack(spacing: 16) {
                         transportButton("backward.fill", size: 15, label: "Previous track") {
                             state.media.previousTrack()
                         }
@@ -183,12 +190,12 @@ struct HomeDashboardView: View {
     /// sources fit without ever overflowing the section; clicking one brings
     /// that app to the front.
     private var otherAudioAppsRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             ForEach(otherAudioApps) { app in
                 Button {
                     app.activate()
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         Group {
                             if let icon = app.icon {
                                 Image(nsImage: icon)
@@ -232,6 +239,13 @@ struct HomeDashboardView: View {
         }
         .frame(width: 88, height: 88)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        // A rim, or a dark cover has no edge at all against the black slab —
+        // the artwork simply disappears and the column looks like text with a
+        // hole in it. Bright covers barely notice it; dark ones need it.
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .strokeBorder(NotchTheme.Surface.borderStrong, lineWidth: 1)
+        }
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: state.media.accent.opacity(0.38), radius: 12, y: 4)
         .animation(NotchAnimations.content, value: state.media.artworkVersion)
@@ -293,8 +307,6 @@ struct HomeDashboardView: View {
         }
         .buttonStyle(PressableButtonStyle())
         .modifier(HoverIconModifier())
-        .disabled(!state.media.canControlTransport)
-        .opacity(state.media.canControlTransport ? 1 : 0.4)
         .contentTransition(.symbolEffect(.replace))
         .accessibilityLabel(label)
     }
@@ -304,7 +316,7 @@ struct HomeDashboardView: View {
     @ViewBuilder
     private var weatherSection: some View {
         if let weather = state.weather.snapshot {
-            HStack(alignment: .center, spacing: 14) {
+            HStack(alignment: .center, spacing: 12) {
                 Image(systemName: WeatherService.symbol(
                     for: weather.weatherCode,
                     isDay: weather.isDay
@@ -336,12 +348,16 @@ struct HomeDashboardView: View {
                         .frame(maxWidth: 120, alignment: .leading)
                 }
 
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 4) {
                     metric("wind", WeatherService.windString(kmh: weather.windKmh))
                     metric("drop.fill", "\(weather.precipitationChancePercent)%")
                     metric("humidity.fill", "\(weather.humidityPercent)%")
                 }
             }
+            .padding(.horizontal, NotchTheme.Space.s)
+            .padding(.vertical, NotchTheme.Space.s)
+            .frame(maxHeight: .infinity)
+            .notchTile(radius: NotchTheme.Radius.card)
             .contentShape(Rectangle())
             .tileHover()
             .onTapGesture { state.select(.weather) }
@@ -387,6 +403,10 @@ struct HomeDashboardView: View {
                 }
             }
         }
+        .padding(.horizontal, NotchTheme.Space.s)
+        .padding(.vertical, NotchTheme.Space.s)
+        .frame(maxHeight: .infinity)
+        .notchTile(radius: NotchTheme.Radius.card)
         .contentShape(Rectangle())
         .tileHover()
         .onTapGesture { state.select(.weather) }
@@ -418,15 +438,15 @@ struct HomeDashboardView: View {
         // Trailing-aligned so the whole block — the date strip *and* the
         // event line under it — shares the right gutter, giving the calendar
         // the same side spacing as the cover art on the left.
-        return VStack(alignment: .trailing, spacing: 6) {
-            HStack(alignment: .center, spacing: 10) {
+        return VStack(alignment: .trailing, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
                 Text(today.formatted(.dateTime.month(.abbreviated)))
                     .font(.system(size: 27, weight: .heavy, design: .rounded))
                     .fixedSize()
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .accessibilityHidden(true)
 
-                HStack(alignment: .center, spacing: 6) {
+                HStack(alignment: .center, spacing: 8) {
                     ForEach(Array(strip.enumerated()), id: \.offset) { _, day in
                         dayCell(day)
                     }
@@ -443,10 +463,10 @@ struct HomeDashboardView: View {
             nextEventLine(next)
                 .fixedSize(horizontal: true, vertical: false)
         }
-        // Float the block a touch off the slab's right edge: the rest of the
-        // dashboard hugs the gutter, but the calendar reads better with a
-        // small inward offset instead of touching the rounded corner.
-        .padding(.trailing, 30)
+        .padding(.horizontal, NotchTheme.Space.s)
+        .padding(.vertical, NotchTheme.Space.s)
+        .frame(maxHeight: .infinity)
+        .notchTile(radius: NotchTheme.Radius.card)
         .contentShape(Rectangle())
         .tileHover()
         .onTapGesture { state.select(.calendar) }

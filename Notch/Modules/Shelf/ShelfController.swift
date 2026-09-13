@@ -106,24 +106,35 @@ final class ShelfController {
 
     /// Upgrades an item's generic file icon to a real Quick Look thumbnail.
     private func loadThumbnail(for item: Item) {
+        Self.thumbnail(for: item.url, size: 80) { [weak self] image in
+            guard let self, let image,
+                  let index = self.items.firstIndex(where: { $0.id == item.id })
+            else { return }
+            self.items[index].icon = image
+        }
+    }
+
+    /// Generates a Quick Look thumbnail, calling back on the main queue with
+    /// nil when the file has no representation. Shared with `FileCatcher`,
+    /// which shows arrivals the same way the shelf shows drops.
+    static func thumbnail(
+        for url: URL,
+        size: CGFloat,
+        completion: @escaping (NSImage?) -> Void
+    ) {
         let request = QLThumbnailGenerator.Request(
-            fileAt: item.url,
-            size: CGSize(width: 80, height: 80),
+            fileAt: url,
+            size: CGSize(width: size, height: size),
             scale: 2,
             representationTypes: .thumbnail
         )
-        QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, _ in
-            guard let representation else { return }
-            let image = NSImage(
-                cgImage: representation.cgImage,
-                size: NSSize(width: 40, height: 40)
-            )
-            DispatchQueue.main.async { [weak self] in
-                guard let self,
-                      let index = self.items.firstIndex(where: { $0.id == item.id })
-                else { return }
-                self.items[index].icon = image
+        QLThumbnailGenerator.shared.generateBestRepresentation(
+            for: request
+        ) { representation, _ in
+            let image = representation.map {
+                NSImage(cgImage: $0.cgImage, size: NSSize(width: size / 2, height: size / 2))
             }
+            DispatchQueue.main.async { completion(image) }
         }
     }
 
@@ -149,6 +160,15 @@ final class ShelfController {
 
     func remove(_ item: Item) {
         items.removeAll { $0.id == item.id }
+    }
+
+    /// Called when an item has been dragged out of the shelf and accepted by
+    /// something else. Honours "Clear the Shelf After Dragging Out": the shelf
+    /// is a staging area, and for people who use it that way the item having
+    /// landed somewhere is what makes it finished with.
+    func handleDragOut(_ item: Item) {
+        guard NotchSettings.shared.autoClearShelf else { return }
+        remove(item)
     }
 
     func clear() {
