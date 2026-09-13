@@ -103,7 +103,8 @@ final class NotchState {
             let natural: CGFloat
             if tab == .home {
                 natural = HomeDashboardMetrics.naturalHeight(
-                    hasOtherAudioChips: !otherAudioApps.isEmpty
+                    hasOtherAudioChips: settings.dashboardWidgets.contains(.music)
+                    && !otherAudioApps.isEmpty
                 )
             } else if let measured = measuredModuleHeight {
                 natural = measured
@@ -200,7 +201,8 @@ final class NotchState {
         // *does* arrive, check the constant against it and say so.
         if tab == .home {
             let declared = HomeDashboardMetrics.naturalHeight(
-                hasOtherAudioChips: !otherAudioApps.isEmpty
+                hasOtherAudioChips: settings.dashboardWidgets.contains(.music)
+                    && !otherAudioApps.isEmpty
             )
             if abs(declared - rounded) > 4 {
                 print(

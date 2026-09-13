@@ -57,6 +57,59 @@ enum MusicProvider: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// A pane the Home dashboard can show. The user picks up to
+/// `maximumVisible` of these, in order, left to right.
+enum DashboardWidget: String, CaseIterable, Identifiable, Sendable {
+    case music
+    case weather
+    case calendar
+    case system
+    case battery
+    case timer
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .music: "Now Playing"
+        case .weather: "Weather"
+        case .calendar: "Calendar"
+        case .system: "System"
+        case .battery: "Batteries"
+        case .timer: "Timer"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .music: "music.note"
+        case .weather: "cloud.sun.fill"
+        case .calendar: "calendar"
+        case .system: "gauge.with.dots.needle.50percent"
+        case .battery: "battery.75percent"
+        case .timer: "timer"
+        }
+    }
+
+    /// Three is what fits beside each other in the open panel. The picker in
+    /// Settings enforces it openly rather than the dashboard quietly dropping
+    /// a fourth.
+    static let maximumVisible = 3
+
+    /// The layout the dashboard shipped with, so nobody's panel changes until
+    /// they change it.
+    static let defaults: [DashboardWidget] = [.music, .weather, .calendar]
+
+    /// Known widgets only, no duplicates, no more than fit, and never empty —
+    /// an empty dashboard is a broken panel, not a preference.
+    static func sanitized(_ widgets: [DashboardWidget]) -> [DashboardWidget] {
+        var seen = Set<DashboardWidget>()
+        let unique = widgets.filter { seen.insert($0).inserted }
+        let capped = Array(unique.prefix(maximumVisible))
+        return capped.isEmpty ? defaults : capped
+    }
+}
+
 /// User preferences, persisted to UserDefaults, plus the launch-at-login
 /// registration through SMAppService.
 @Observable
@@ -283,6 +336,17 @@ final class NotchSettings {
 
     /// Quick action row on the Tools screen.
     var showQuickActions = true { didSet { save(showQuickActions, "showQuickActions") } }
+
+    /// The Home dashboard's widgets, left to right. Sanitized on every write,
+    /// so no code path — a stale default, a bad import, a buggy picker — can
+    /// leave the dashboard empty, duplicated, or wider than the panel.
+    var dashboardWidgets: [DashboardWidget] = DashboardWidget.defaults {
+        didSet {
+            let clean = DashboardWidget.sanitized(dashboardWidgets)
+            if clean != dashboardWidgets { dashboardWidgets = clean }
+            save(dashboardWidgets.map(\.rawValue), "dashboardWidgets")
+        }
+    }
 
     /// When a new output device connects (a headset pairing, a USB DAC),
     /// switch the system default to it automatically. Off by default: many
@@ -519,6 +583,11 @@ final class NotchSettings {
             autoSwitchOutputOnConnect = defaults.bool(forKey: "autoSwitchOutputOnConnect")
         }
         pinnedAudioApps = defaults.stringArray(forKey: "pinnedAudioApps") ?? []
+        if let stored = defaults.stringArray(forKey: "dashboardWidgets") {
+            dashboardWidgets = DashboardWidget.sanitized(
+                stored.compactMap(DashboardWidget.init(rawValue:))
+            )
+        }
         lastTab = defaults.string(forKey: "lastTab") ?? ""
         hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
 

@@ -49,9 +49,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        if CommandLine.arguments.contains("--debug-timer") {
+            // Puts a countdown on screen so the timer widget's running state
+            // can be looked at without clicking a preset.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.state.timer.start(minutes: 15)
+            }
+        }
         if CommandLine.arguments.contains("--debug-settings") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 SettingsWindowController.shared.show()
+                // Full height, so a whole pane fits in one screenshot without
+                // needing to scroll it.
+                if let window = SettingsWindowController.shared.window,
+                   let screen = window.screen ?? NSScreen.main {
+                    let visible = screen.visibleFrame
+                    window.setFrame(
+                        NSRect(x: visible.midX - 410, y: visible.minY,
+                               width: 820, height: visible.height),
+                        display: true
+                    )
+                }
             }
         }
         if let index = CommandLine.arguments.firstIndex(of: "--debug-tab"),

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The home dashboard's fixed column heights, shared with NotchState so the
+/// The home dashboard's fixed row height, shared with NotchState so the
 /// slab can size itself to the content without waiting on a runtime
 /// measurement (which never reliably landed, leaving a black band under the
 /// dashboard). Keep these in step with the layout below.
@@ -18,6 +18,11 @@ enum HomeDashboardMetrics {
     /// plus the chip row itself (14pt glyph + 3pt padding above and below).
     static let otherAudioChipsHeight: CGFloat = 24
 
+    /// The dashboard row's height. Every pane is given exactly this, so the
+    /// row no longer depends on which widgets are showing — it used to fall out
+    /// of the music column, which was fine only while music was always there.
+    /// The chips row lives inside the music pane, so it counts only when the
+    /// music pane is on the dashboard.
     static func naturalHeight(hasOtherAudioChips: Bool) -> CGFloat {
         hasOtherAudioChips
             ? musicColumnHeight + otherAudioChipsHeight
@@ -25,53 +30,70 @@ enum HomeDashboardMetrics {
     }
 }
 
-/// The home dashboard, laid out to match the Sapphire reference: artwork and
-/// player on the left, weather in the middle with its metric column, calendar
-/// on the right over a single "what's next" line.
+/// The home dashboard: a row of up to three widgets, chosen and ordered in
+/// Settings. By default the player, weather and calendar, as in the Sapphire
+/// reference.
 ///
-/// Budget: `NotchState.moduleContentSize`, about 838 x 122 at the default
-/// panel size, and it has to be respected: the three columns are `fixedSize`,
-/// so asking for more than the panel has does not clip, it *compresses* — and
-/// a Text squeezed below its natural width wraps, which is what stacked the
-/// calendar's day numbers one digit above another.
+/// Budget: `NotchState.moduleContentSize`, and it has to be respected — pane
+/// content is `fixedSize`, so asking for more than the panel has does not
+/// clip, it *compresses*, and a Text squeezed below its natural width wraps.
 struct HomeDashboardView: View {
     let state: NotchState
     let namespace: Namespace.ID
 
+    /// The widgets the user chose, left to right.
+    private var widgets: [DashboardWidget] {
+        state.settings.dashboardWidgets
+    }
+
+    /// One height for every pane, whichever widgets are showing. NotchState
+    /// sizes the slab from the same value, so the two cannot disagree.
+    private var rowHeight: CGFloat {
+        HomeDashboardMetrics.naturalHeight(
+            hasOtherAudioChips: widgets.contains(.music) && !otherAudioApps.isEmpty
+        )
+    }
+
     var body: some View {
-        // Columns anchor to the card's bottom edge so the dashboard reads as
-        // one flush unit: the music column is the tallest and already runs
-        // full height, and bottom-aligning the weather and calendar columns
-        // keeps their content from floating with an empty strip beneath it.
-        // The slab's per-tab gutter supplies the ~5mm side margin, so the
-        // columns themselves sit flush to the content area.
-        // Hero on the left, two surfaces on the right. The columns used to
-        // stretch to the card height and bottom-align, which is right when
-        // they are bare content on black — but they are panes now, and a pane
-        // stretched past its content is a pane with a dead strip in it. They
-        // hug instead, and the row centres them against the hero.
+        // Panes of one height on a shared baseline, divided by a uniform gap.
+        // Music, when present, takes the spare width — it has the most to say
+        // (artwork, title, transport) — and the rest keep their natural size.
+        // Without it, the panes share the row evenly.
         HStack(alignment: .center, spacing: NotchTheme.Space.s) {
+            ForEach(widgets) { widget in
+                pane(for: widget)
+                    .frame(height: rowHeight)
+                    .layoutPriority(widget == .music ? 1 : 0)
+                    .transition(.opacity)
+            }
+        }
+        .animation(NotchAnimations.content, value: widgets)
+        // No vertical filler. The module is height-fitted to its content, and
+        // a flexible maxHeight frame here would let the fit measure the full
+        // budget instead of the row's real height.
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func pane(for widget: DashboardWidget) -> some View {
+        switch widget {
+        case .music:
             musicSection
                 .padding(.horizontal, NotchTheme.Space.s)
                 .padding(.vertical, NotchTheme.Space.s)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .notchTile(radius: NotchTheme.Radius.card)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            // Equal heights: the three columns are panes now, and panes of
-            // three different heights centred against each other read as
-            // unaligned. They stretch to the tallest (the music column, set by
-            // its 88pt artwork) and centre their own content inside.
+        case .weather:
             weatherSection
-                .frame(maxHeight: .infinity)
-
+        case .calendar:
             calendarSection
-                .frame(maxHeight: .infinity)
+        case .system:
+            SystemWidget(state: state)
+        case .battery:
+            BatteryWidget(state: state)
+        case .timer:
+            TimerWidget(state: state)
         }
-        // No vertical filler. The module is height-fitted to its content, and
-        // a flexible maxHeight frame here would let the fit measure the full
-        // budget instead of the columns' real height — the black band under
-        // the dashboard this fitting exists to remove.
-        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Music
@@ -354,14 +376,7 @@ struct HomeDashboardView: View {
                     metric("humidity.fill", "\(weather.humidityPercent)%")
                 }
             }
-            .padding(.horizontal, NotchTheme.Space.s)
-            .padding(.vertical, NotchTheme.Space.s)
-            .frame(maxHeight: .infinity)
-            .notchTile(radius: NotchTheme.Radius.card)
-            .contentShape(Rectangle())
-            .tileHover()
-            .onTapGesture { state.select(.weather) }
-            .help("Open the weather detail")
+            .dashboardPane(opens: .weather, in: state, help: "Open the weather detail")
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Weather")
             .accessibilityValue(
@@ -403,14 +418,7 @@ struct HomeDashboardView: View {
                 }
             }
         }
-        .padding(.horizontal, NotchTheme.Space.s)
-        .padding(.vertical, NotchTheme.Space.s)
-        .frame(maxHeight: .infinity)
-        .notchTile(radius: NotchTheme.Radius.card)
-        .contentShape(Rectangle())
-        .tileHover()
-        .onTapGesture { state.select(.weather) }
-        .help("Open the weather detail")
+        .dashboardPane(opens: .weather, in: state, help: "Open the weather detail")
     }
 
     private var weatherPlaceholderIcon: String {
@@ -463,14 +471,7 @@ struct HomeDashboardView: View {
             nextEventLine(next)
                 .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(.horizontal, NotchTheme.Space.s)
-        .padding(.vertical, NotchTheme.Space.s)
-        .frame(maxHeight: .infinity)
-        .notchTile(radius: NotchTheme.Radius.card)
-        .contentShape(Rectangle())
-        .tileHover()
-        .onTapGesture { state.select(.calendar) }
-        .help("Open the calendar")
+        .dashboardPane(opens: .calendar, in: state, help: "Open the calendar")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Calendar")
         .accessibilityValue(next?.title ?? "Nothing left today")

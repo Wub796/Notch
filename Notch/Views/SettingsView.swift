@@ -45,7 +45,8 @@ struct SettingsView: View {
                  "animation", "style", "motion", "display", "screen", "monitor"]
             case .notch:
                 ["hover", "peek", "size", "width", "height", "corner", "radius",
-                 "tolerance", "delay", "open", "close", "scroll", "pin"]
+                 "tolerance", "delay", "open", "close", "scroll", "pin",
+                 "widget", "widgets", "dashboard", "home"]
             case .media:
                 ["music", "spotify", "apple music", "lyrics", "player",
                  "provider", "sneak peek", "artwork", "visualizer", "wings"]
@@ -83,7 +84,21 @@ struct SettingsView: View {
         }
     }
 
-    @State private var selection: Pane = .general
+    @State private var selection: Pane = Self.initialPane
+
+    /// The pane Settings opens on. Always General in release; a debug launch
+    /// flag can pick another, which is the only way to put a specific pane in
+    /// front of a screenshot without driving the UI.
+    private static var initialPane: Pane {
+        #if DEBUG
+        let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--debug-pane"), i + 1 < args.count,
+           let pane = Pane(rawValue: args[i + 1]) {
+            return pane
+        }
+        #endif
+        return .general
+    }
     @State private var search = ""
 
     /// The sidebar filters as you type.
@@ -467,9 +482,86 @@ private struct NotchSettingsPane: View {
                 Text("The shortcut works system-wide without Accessibility access. Automatic picks the display with a real notch, falling back to the main display.")
             }
 
+            Section {
+                ForEach(widgetRows) { widget in
+                    widgetRow(widget)
+                }
+            } header: {
+                Label("Home Dashboard", systemImage: "rectangle.3.group")
+            } footer: {
+                Text("Choose up to \(DashboardWidget.maximumVisible) widgets for the Home screen. They appear left to right in this order.")
+            }
+
             DimensionSliders()
         }
         .formStyle(.grouped)
+    }
+
+    /// Enabled widgets first, in dashboard order, then the rest — so the list
+    /// reads top to bottom the way the dashboard reads left to right.
+    private var widgetRows: [DashboardWidget] {
+        let enabled = settings.dashboardWidgets
+        return enabled + DashboardWidget.allCases.filter { !enabled.contains($0) }
+    }
+
+    private func widgetRow(_ widget: DashboardWidget) -> some View {
+        let enabled = settings.dashboardWidgets
+        let index = enabled.firstIndex(of: widget)
+        let isOn = index != nil
+        // A fourth won't fit, and removing the last would leave an empty panel.
+        let canToggle = isOn
+            ? enabled.count > 1
+            : enabled.count < DashboardWidget.maximumVisible
+
+        return LabeledContent {
+            HStack(spacing: 8) {
+                if let index {
+                    Button { move(widget, by: -1) } label: {
+                        Image(systemName: "chevron.up")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(index == 0)
+                    .help("Move \(widget.title) left")
+                    .accessibilityLabel("Move \(widget.title) left")
+
+                    Button { move(widget, by: 1) } label: {
+                        Image(systemName: "chevron.down")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(index == enabled.count - 1)
+                    .help("Move \(widget.title) right")
+                    .accessibilityLabel("Move \(widget.title) right")
+                }
+
+                Toggle("", isOn: Binding(
+                    get: { isOn },
+                    set: { on in
+                        withAnimation {
+                            if on {
+                                settings.dashboardWidgets.append(widget)
+                            } else {
+                                settings.dashboardWidgets.removeAll { $0 == widget }
+                            }
+                        }
+                    }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .disabled(!canToggle)
+                .accessibilityLabel("Show \(widget.title)")
+            }
+        } label: {
+            Label(widget.title, systemImage: widget.symbol)
+        }
+    }
+
+    private func move(_ widget: DashboardWidget, by offset: Int) {
+        var list = settings.dashboardWidgets
+        guard let from = list.firstIndex(of: widget) else { return }
+        let to = from + offset
+        guard list.indices.contains(to) else { return }
+        list.swapAt(from, to)
+        withAnimation { settings.dashboardWidgets = list }
     }
 
     private func sliderRow(
