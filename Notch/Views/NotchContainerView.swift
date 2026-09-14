@@ -76,11 +76,7 @@ struct NotchContainerView: View {
         .frame(width: NotchSizing.expandedHUDWidth)
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.black.opacity(0.5))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(.white.opacity(0.08), lineWidth: 1)
-                )
+                .fill(.white.opacity(0.07))
         }
         // The capsule is vertically centered in the drop band the slab grew by
         // (and horizontally, by the VStack), so it floats in the panel rather

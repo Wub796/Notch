@@ -56,10 +56,6 @@ struct ChargingPopupView: View {
                         : AnyShapeStyle(.ultraThinMaterial)
                 )
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
-        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Charging")
         .accessibilityValue("\(percent) percent")

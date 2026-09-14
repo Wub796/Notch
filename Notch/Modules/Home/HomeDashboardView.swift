@@ -261,13 +261,6 @@ struct HomeDashboardView: View {
         }
         .frame(width: 88, height: 88)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        // A rim, or a dark cover has no edge at all against the black slab —
-        // the artwork simply disappears and the column looks like text with a
-        // hole in it. Bright covers barely notice it; dark ones need it.
-        .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .strokeBorder(NotchTheme.Surface.borderStrong, lineWidth: 1)
-        }
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: state.media.accent.opacity(0.38), radius: 12, y: 4)
         .animation(NotchAnimations.content, value: state.media.artworkVersion)

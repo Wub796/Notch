@@ -61,15 +61,10 @@ extension NotchTheme {
     /// The surface system.
     ///
     /// A flat fill on black reads as paint; a real surface reads as a pane of
-    /// something. The difference is three cheap parts, and every premium dark
-    /// interface uses the same three:
-    ///
-    /// 1. a *gradient* fill rather than a flat one, lighter at the top, so the
-    ///    surface looks lit from above rather than self-luminous;
-    /// 2. a *specular* top edge — one brighter hairline along the top only,
-    ///    which is the highlight a real bevel would catch;
-    /// 3. a *hairline border* all the way round, dimmer than the specular, so
-    ///    the surface has an edge instead of dissolving into the panel.
+    /// something. Surfaces here are defined by tone alone — a *gradient* fill,
+    /// lighter at the top so it looks lit from above, and a tight shadow.
+    /// There are deliberately no strokes: outlines around every card made the
+    /// panel look like a wireframe of itself.
     ///
     /// Kept as tokens rather than hand-rolled per screen, because the moment
     /// two screens pick different opacities the whole thing stops reading as
@@ -90,21 +85,6 @@ extension NotchTheme {
             endPoint: .bottom
         )
 
-        /// The lit top edge. Strong at the top, gone by a third of the way
-        /// down — a bevel catches light on its top face only.
-        static let specular = LinearGradient(
-            stops: [
-                .init(color: .white.opacity(0.28), location: 0),
-                .init(color: .white.opacity(0.06), location: 0.35),
-                .init(color: .clear, location: 1),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-
-        static let border = Color.white.opacity(0.09)
-        static let borderStrong = Color.white.opacity(0.16)
-
         /// Elevation. Tight and dark rather than wide and grey: a wide soft
         /// shadow on a near-black panel just fogs it.
         static let shadow = Color.black.opacity(0.45)
@@ -114,8 +94,7 @@ extension NotchTheme {
 }
 
 extension View {
-    /// The one card treatment: the surface, its lit top edge, a hairline, and
-    /// the shared radius.
+    /// The one card treatment: the surface, its shadow, and the shared radius.
     ///
     /// This used to draw *nothing at all* unless `isHighlighted` — the fill and
     /// the stroke the doc comment described had been removed, so every screen
@@ -183,23 +162,11 @@ private struct NotchCardModifier: ViewModifier {
 
                 // Selection wash, over the material rather than instead of it,
                 // so a highlighted card is still made of the same stuff.
+                // No stroke: the surface is defined by its fill alone, so a
+                // selected card carries a slightly stronger wash instead.
                 if isHighlighted {
-                    shape.fill((tint ?? Color.accentColor).opacity(0.16))
+                    shape.fill((tint ?? Color.accentColor).opacity(0.22))
                 }
-
-                // The lit top edge, masked to the border so it reads as a
-                // bevel catching light rather than a glow inside the card.
-                shape
-                    .strokeBorder(NotchTheme.Surface.specular, lineWidth: 1)
-                    .blendMode(.plusLighter)
-                    .opacity(reduceTransparency ? 0 : 1)
-
-                shape.strokeBorder(
-                    isHighlighted
-                        ? (tint ?? Color.accentColor).opacity(0.45)
-                        : NotchTheme.Surface.border,
-                    lineWidth: 1
-                )
             }
             .compositingGroup()
             .shadow(

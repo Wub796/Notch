@@ -49,6 +49,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        if CommandLine.arguments.contains("--debug-cycle") {
+            // Opens and closes the panel on a loop so the expand and collapse
+            // motion can be screen-recorded and inspected frame by frame.
+            // Never onto the camera screen: expanding there turns the camera on.
+            for step in 0 ..< 8 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3 + 1.5 * Double(step)) { [weak self] in
+                    guard let self else { return }
+                    if self.state.tab == .camera { self.state.select(.home) }
+                    if step.isMultiple(of: 2) { self.state.expand() } else { self.state.collapse() }
+                }
+            }
+        }
         if CommandLine.arguments.contains("--debug-timer") {
             // Puts a countdown on screen so the timer widget's running state
             // can be looked at without clicking a preset.

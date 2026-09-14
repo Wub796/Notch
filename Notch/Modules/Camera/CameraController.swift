@@ -47,6 +47,13 @@ final class CameraController {
     /// at. Every publish is gated on this.
     private var isWanted = false
 
+    /// Set while a session is being opened on `queue`. Without it a second
+    /// `start()` inside that window — SwiftUI can deliver `onAppear` twice
+    /// across a transition, and a quick stop-then-start does the same — opened
+    /// a second session, published it over the first, and left the first one
+    /// running with nothing holding it: the camera light stayed on until quit.
+    private var isOpening = false
+
     var authorization: AVAuthorizationStatus {
         AVCaptureDevice.authorizationStatus(for: .video)
     }
@@ -113,7 +120,8 @@ final class CameraController {
     // MARK: - Session
 
     private func openSession() {
-        guard session == nil, isWanted else { return }
+        guard session == nil, !isOpening, isWanted else { return }
+        isOpening = true
 
         queue.async { [weak self] in
             guard let self else { return }
@@ -127,6 +135,7 @@ final class CameraController {
                   session.canAddInput(input)
             else {
                 DispatchQueue.main.async {
+                    self.isOpening = false
                     guard self.isWanted else { return }
                     self.status = .unavailable
                 }
@@ -137,6 +146,7 @@ final class CameraController {
             session.startRunning()
 
             DispatchQueue.main.async {
+                self.isOpening = false
                 // The screen may have gone away while the device warmed up.
                 // If so this session is already unwanted: shut it down rather
                 // than publishing it, or the light stays on for nothing.

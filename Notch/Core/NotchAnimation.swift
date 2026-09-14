@@ -145,6 +145,61 @@ enum NotchAnimations {
     }
 }
 
+extension NotchAnimations {
+    /// The open panel's content — its header and module — arriving and
+    /// leaving with the slab.
+    ///
+    /// Timed against the slab's spring rather than riding it. Riding it, the
+    /// content sat at full size from the first frame and the growing slab
+    /// uncovered it like a curtain; on the way down the shrinking slab cropped
+    /// straight through a panel that was still fully opaque. Now it arrives a
+    /// beat after the slab starts to open, resolving out of a slight blur and
+    /// scale as the panel unfolds, and on close it clears out before the slab
+    /// has closed over it.
+    static var panelContent: AnyTransition {
+        if prefersReducedMotion {
+            return .opacity.animation(reduced)
+        }
+        let effect = AnyTransition.modifier(
+            active: PanelContentEffect(isPresented: false),
+            identity: PanelContentEffect(isPresented: true)
+        )
+        return .asymmetric(
+            insertion: effect.animation(open.delay(0.05)),
+            removal: effect.animation(.easeOut(duration: 0.12))
+        )
+    }
+
+    /// The closed strip — the wings and anything dropped beneath the notch —
+    /// trading places with the open panel. It gets out of the way almost at
+    /// once when the notch opens, and on close waits until the slab has mostly
+    /// shrunk back before it returns, so the two never cross-fade over each
+    /// other.
+    static var closedStrip: AnyTransition {
+        if prefersReducedMotion {
+            return .opacity.animation(reduced)
+        }
+        return .asymmetric(
+            insertion: .opacity.animation(.easeOut(duration: 0.2).delay(0.16)),
+            removal: .opacity.animation(.easeOut(duration: 0.08))
+        )
+    }
+}
+
+/// The blur, fade and slight scale the open panel's content arrives from.
+/// Anchored to the top, so it settles down out of the notch rather than
+/// swelling from its own middle.
+private struct PanelContentEffect: ViewModifier {
+    let isPresented: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isPresented ? 1 : 0.96, anchor: .top)
+            .blur(radius: isPresented ? 0 : 6)
+            .opacity(isPresented ? 1 : 0)
+    }
+}
+
 extension Animation {
     /// Shared micro-interaction curve used across module views.
     static var notchSpring: Animation {

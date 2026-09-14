@@ -14,21 +14,6 @@ struct NotchLayoutView: View {
     let namespace: Namespace.ID
     let isHovering: Bool
 
-    /// The open module unfolds from the top edge.
-    ///
-    /// Deliberately carries no `.animation` of its own. The references pin
-    /// theirs to 0.35s, which matches their 0.42s spring; against the much
-    /// longer spring here it meant the content had finished arriving while the
-    /// shape was still a third of the way open — the content snapping into a
-    /// notch-sized window is the flash before the expansion. Without an
-    /// animation the transition inherits the spring and the two move as one.
-    ///
-    /// The references' scale is gone with it. Over a curve this long the
-    /// module growing while the panel is also growing is two motions doing the
-    /// same job, and the pair reads as busier than either alone. The panel's
-    /// own geometry carries the movement; the content only fades in.
-    private static let moduleTransition = AnyTransition.opacity
-
     var body: some View {
         ZStack(alignment: .bottom) {
             VStack(alignment: .center, spacing: 6) {
@@ -36,7 +21,7 @@ struct NotchLayoutView: View {
 
                 if state.mode == .expanded {
                     sizedModule
-                        .transition(Self.moduleTransition)
+                        .transition(NotchAnimations.panelContent)
                         .allowsHitTesting(true)
                         .zIndex(1)
                 }
@@ -70,7 +55,7 @@ struct NotchLayoutView: View {
                 .frame(width: state.moduleContentSize.width, height: state.topBarHeight)
                 // Swapping the two strips with no transition is a hard cut in
                 // the middle of a slow expansion, which reads as a flash.
-                .transition(.opacity)
+                .transition(NotchAnimations.panelContent)
                 .zIndex(2)
         } else {
             CollapsedNotchView(state: state, isHovering: isHovering)
@@ -82,7 +67,7 @@ struct NotchLayoutView: View {
                 // default, so every setting above 1.083x behaved identically
                 // and the slider looked broken.
                 .padding(.horizontal, isHovering ? state.hoverExpansion : 0)
-                .transition(.opacity)
+                .transition(NotchAnimations.closedStrip)
                 .zIndex(2)
         }
     }
@@ -219,9 +204,9 @@ private struct NotchToastView: View {
         .padding(.horizontal, 13)
         .padding(.vertical, 7)
         .background {
+            // Opaque and lifted off the black by tone alone — no outline.
             Capsule()
-                .fill(.black.opacity(0.88))
-                .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
+                .fill(Color(white: 0.16))
         }
         .shadow(color: .black.opacity(0.45), radius: 10, y: 4)
         .accessibilityElement(children: .ignore)

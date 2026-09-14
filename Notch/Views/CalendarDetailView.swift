@@ -343,18 +343,14 @@ private struct MonthDayCell: View {
                     // The reference marks the selected day with a circle, not
                     // a rounded rectangle as the week strip does.
                     Circle()
-                        .fill(isSelected ? Color.blue : (isHovering ? NotchTheme.surfaceHover : Color.clear))
+                        // Today is a soft disc of the selection colour rather
+                        // than a ring, so the grid carries no outlines.
+                        .fill(isSelected
+                            ? Color.blue
+                            : (isToday
+                                ? Color.blue.opacity(isHovering ? 0.32 : 0.22)
+                                : (isHovering ? NotchTheme.surfaceHover : Color.clear)))
                         .frame(width: 32, height: 32)
-                }
-                .overlay {
-                    if isToday && !isSelected {
-                        // Sized, not stretched: a Circle filling a cell that is
-                        // wider than it is tall draws as an ellipse.
-                        Circle()
-                            .strokeBorder(Color.blue, lineWidth: 1.5)
-                            .frame(width: 32, height: 32)
-                            .padding(1)
-                    }
                 }
                 .contentShape(Rectangle())
         }

@@ -42,6 +42,10 @@ final class NotchWindowController: NSWindowController {
             state: state
         )
         hostingView.autoresizingMask = [.width, .height]
+        // The window is sized by hand, to the slab; the hosting view must not
+        // also push its content's intrinsic size back onto the window
+        // mid-animation.
+        hostingView.sizingOptions = []
         panel.contentView = hostingView
 
         super.init(window: panel)
@@ -61,6 +65,7 @@ final class NotchWindowController: NSWindowController {
         // (a display change rebuilds one) otherwise stays reachable through it
         // until the next one happens to overwrite the same slot.
         state.onModeChange = nil
+        state.onWillExpand = nil
         collapseResizeWork?.cancel()
         collapseResizeWork = nil
         if let spaceObserver {
@@ -82,6 +87,22 @@ final class NotchWindowController: NSWindowController {
     // MARK: - Window Anchoring
 
     private func setupModeChangeObserver() {
+        // Grow first, synchronously, so the opening spring never draws into
+        // the closed notch's window. Never shrinks here: a window still large
+        // from a previous open is shrunk by `apply` once things settle.
+        state.onWillExpand = { [weak self] in
+            guard let self, let panel = self.window, let screen = self.trackedScreen else { return }
+            self.collapseResizeWork?.cancel()
+            self.collapseResizeWork = nil
+            let target = self.expandedWindowSize()
+            self.setWindowFrame(
+                CGSize(
+                    width: max(target.width, panel.frame.width),
+                    height: max(target.height, panel.frame.height)
+                ),
+                on: screen
+            )
+        }
         state.onModeChange = { [weak self] mode in
             DispatchQueue.main.async { [weak self] in
                 guard let self, let panel = self.window else { return }

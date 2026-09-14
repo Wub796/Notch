@@ -8,7 +8,8 @@ import Observation
 @Observable
 final class QuickActions {
     private(set) var isDarkMode = true
-    private(set) var trashItemCount = 0
+    /// How many items are in the Trash, or nil when that cannot be read.
+    private(set) var trashItemCount: Int?
 
     /// Why the last action didn't work, if it didn't. These all go through
     /// AppleScript, which fails silently when the one-time Automation consent
@@ -16,8 +17,26 @@ final class QuickActions {
     /// than one that explains itself.
     private(set) var lastError: String?
 
+    @ObservationIgnored private var themeObserver: NSObjectProtocol?
+
     init() {
         refresh()
+        // Keeps the appearance button honest when the theme changes anywhere
+        // else — Control Center, System Settings, an automatic schedule. It
+        // used to notice only the next time the Tools screen appeared.
+        themeObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refresh()
+        }
+    }
+
+    deinit {
+        if let themeObserver {
+            DistributedNotificationCenter.default().removeObserver(themeObserver)
+        }
     }
 
     func refresh() {
@@ -77,14 +96,16 @@ final class QuickActions {
         )
     }
 
-    /// How many items are in the Trash.
+    /// How many items are in the Trash, or nil when it cannot be read.
     ///
     /// `url(for: .trashDirectory,)` throws with `appropriateFor: nil` on some
-    /// systems, and `try?` turned that into a silent zero — so the button read
-    /// "Trash Empty" and disabled itself no matter what was in there. The home
-    /// directory path is the fallback, and `.skipsHiddenFiles` keeps the
-    /// .DS_Store the Finder leaves behind from counting as an item.
-    private static func countTrashItems() -> Int {
+    /// systems, so the home directory path is the fallback, and
+    /// `.skipsHiddenFiles` keeps the Finder's .DS_Store from counting as an
+    /// item. Unreadable is not empty: without Full Disk Access both paths
+    /// throw, and reporting that as zero disabled the button as "Trash Empty"
+    /// however full the Trash was. Emptying goes through the Finder, which
+    /// needs no such access, so an unknown count keeps the button live.
+    private static func countTrashItems() -> Int? {
         let manager = FileManager.default
         let candidates = [
             try? manager.url(
@@ -101,7 +122,7 @@ final class QuickActions {
             ) else { continue }
             return contents.count
         }
-        return 0
+        return nil
     }
 
     // MARK: - Helpers

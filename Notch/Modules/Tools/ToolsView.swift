@@ -75,8 +75,10 @@ struct ToolsView: View {
         HStack(spacing: 8) {
             Button {
                 state.audio.toggleMute()
+                // `toggleMute` flips `isMuted` before returning, so this reads
+                // the state just entered; the labels were the wrong way round.
                 state.showToast(
-                    state.audio.isMuted ? "Unmuted" : "Muted",
+                    state.audio.isMuted ? "Muted" : "Unmuted",
                     symbol: state.audio.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill"
                 )
             } label: {
@@ -232,8 +234,10 @@ struct ToolsView: View {
                         withAnimation(NotchAnimations.content) {
                             state.timer.togglePause()
                         }
+                        // Read after the toggle, which is synchronous: this is
+                        // the state just entered. It announced the opposite.
                         state.showToast(
-                            state.timer.isPaused ? "Timer resumed" : "Timer paused",
+                            state.timer.isPaused ? "Timer paused" : "Timer resumed",
                             symbol: "timer"
                         )
                     } label: {
@@ -288,15 +292,26 @@ struct ToolsView: View {
         }
     }
 
+    private var eyeBreakStatus: String {
+        guard state.eyeBreak.isEnabled else { return "Eye breaks off" }
+        guard !state.eyeBreak.isOnBreak else { return "Look away…" }
+        // Rounded up and never zero: a fresh 20-minute cycle read "21 min".
+        let minutes = max(1, Int((state.eyeBreak.timeUntilBreak / 60).rounded(.up)))
+        return "Break in \(minutes) min"
+    }
+
     private var eyeBreakRow: some View {
         Button {
+            // Through the setting rather than the manager: flipping the manager
+            // directly left Settings showing the old value, and the choice was
+            // forgotten on relaunch. The setting's hook drives the manager.
+            // The toast is decided up front — it used to read the state back
+            // afterwards and announce the opposite of what had happened.
+            let enabling = !state.settings.eyeBreakEnabled
             withAnimation(NotchAnimations.content) {
-                state.eyeBreak.setEnabled(!state.eyeBreak.isEnabled)
+                state.settings.eyeBreakEnabled = enabling
             }
-            state.showToast(
-                state.eyeBreak.isEnabled ? "Eye breaks off" : "Eye breaks on",
-                symbol: "eye"
-            )
+            state.showToast(enabling ? "Eye breaks on" : "Eye breaks off", symbol: "eye")
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: state.eyeBreak.isEnabled ? "eye.fill" : "eye.slash")
@@ -304,13 +319,14 @@ struct ToolsView: View {
                     .foregroundStyle(
                         state.eyeBreak.isEnabled ? NotchTheme.battery : NotchTheme.inkMuted
                     )
-                Text(state.eyeBreak.isEnabled
-                    ? (state.eyeBreak.isOnBreak
-                        ? "Look away…"
-                        : "Break in \(Int(state.eyeBreak.timeUntilBreak / 60) + 1) min")
-                    : "Eye breaks off")
-                    .font(.notchCaption)
-                    .foregroundStyle(NotchTheme.inkSecondary)
+                // A timeline, because the countdown comes from the clock and
+                // nothing observable changes as it runs down — a plain Text
+                // kept whatever it read when the screen was first drawn.
+                TimelineView(.periodic(from: .now, by: 15)) { _ in
+                    Text(eyeBreakStatus)
+                        .font(.notchCaption)
+                        .foregroundStyle(NotchTheme.inkSecondary)
+                }
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
@@ -380,10 +396,8 @@ struct ToolsView: View {
 
                 actionButton(
                     "trash.fill",
-                    state.quickActions.trashItemCount > 0
-                        ? "Empty Trash (\(state.quickActions.trashItemCount))"
-                        : "Trash Empty",
-                    isEnabled: state.quickActions.trashItemCount > 0
+                    trashTitle,
+                    isEnabled: state.quickActions.trashItemCount != 0
                 ) {
                     state.quickActions.emptyTrash()
                     state.showToast("Trash emptied", symbol: "trash.fill")
@@ -402,6 +416,14 @@ struct ToolsView: View {
             }
         }
         .onAppear { state.quickActions.refresh() }
+    }
+
+    private var trashTitle: String {
+        switch state.quickActions.trashItemCount {
+        case nil: "Empty Trash"
+        case 0: "Trash Empty"
+        case let count?: "Empty Trash (\(count))"
+        }
     }
 
     private func actionButton(

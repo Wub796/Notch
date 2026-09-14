@@ -134,9 +134,6 @@ struct DropZoneView: View {
     let isResolving: Bool
     let instantAirDrop: Bool
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dashPhase: CGFloat = 0
-
     private var title: String {
         if isResolving {
             return instantAirDrop ? "Starting AirDrop…" : "Adding to Shelf…"
@@ -166,21 +163,10 @@ struct DropZoneView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
+            // A tinted well rather than a dashed outline: the glyph and the
+            // colour already say "drop here".
             RoundedRectangle(cornerRadius: NotchTheme.Radius.card, style: .continuous)
-                .strokeBorder(
-                    .blue.opacity(0.7),
-                    style: StrokeStyle(lineWidth: 1.5, dash: [7, 5], dashPhase: dashPhase)
-                )
-                .background {
-                    RoundedRectangle(cornerRadius: NotchTheme.Radius.card, style: .continuous)
-                        .fill(.blue.opacity(0.08))
-                }
-        }
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
-                dashPhase = -12
-            }
+                .fill(.blue.opacity(0.14))
         }
     }
 }

@@ -96,10 +96,6 @@ struct OnboardingView: View {
                     )
                 )
                 .frame(width: 72, height: 72)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(.white.opacity(0.12), lineWidth: 1)
-                }
 
             Image(systemName: "sparkles.rectangle.stack")
                 .font(.system(size: 30, weight: .light))

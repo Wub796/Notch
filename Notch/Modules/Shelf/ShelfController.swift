@@ -68,6 +68,20 @@ final class ShelfController {
                         append(url)
                     }
                 }
+            } else if let type = Self.fileContentType(of: provider) {
+                // An image, PDF or movie dragged out of something with no file
+                // to point at — a browser image, a preview. These used to fall
+                // through every branch and the drop did nothing. The provider
+                // deletes its copy as soon as the handler returns, so keep one.
+                let suggestedName = provider.suggestedName
+                group.enter()
+                _ = provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { url, _ in
+                    defer { group.leave() }
+                    guard let url,
+                          let kept = Self.keepCopy(of: url, suggestedName: suggestedName, type: type)
+                    else { return }
+                    append(kept)
+                }
             } else if provider.canLoadObject(ofClass: NSString.self) {
                 group.enter()
                 _ = provider.loadObject(ofClass: NSString.self) { object, _ in
@@ -203,15 +217,66 @@ final class ShelfController {
         )
     }
 
+    /// Where dropped content that is not already a file is kept.
+    private static var dropsFolder: URL {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Notch Drops", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    /// Writes to "Name.ext", then "Name 2.ext" and so on, until one did not
+    /// already exist. `write` must refuse to overwrite, which makes the name
+    /// check and the write one step even when several drops resolve at once.
+    ///
+    /// Text drops used to be named by the whole second, so two inside the
+    /// same second wrote the same file: the second overwrote the first, and
+    /// the shelf — which dedupes by URL — silently dropped it.
+    private static func writeUnique(
+        named base: String,
+        extension ext: String,
+        _ write: (URL) throws -> Void
+    ) -> URL? {
+        let folder = dropsFolder
+        for index in 1 ... 500 {
+            var url = folder.appendingPathComponent(index == 1 ? base : "\(base) \(index)")
+            if !ext.isEmpty { url.appendPathExtension(ext) }
+            do {
+                try write(url)
+                return url
+            } catch CocoaError.fileWriteFileExists {
+                continue
+            } catch {
+                return nil
+            }
+        }
+        return nil
+    }
+
     private static func writeTemporaryTextFile(_ text: String) -> URL? {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Notch Drop \(Int(Date().timeIntervalSince1970))")
-            .appendingPathExtension("txt")
-        do {
-            try text.write(to: url, atomically: true, encoding: .utf8)
-            return url
-        } catch {
-            return nil
+        writeUnique(named: "Dropped Text", extension: "txt") { url in
+            try Data(text.utf8).write(to: url, options: .withoutOverwriting)
+        }
+    }
+
+    /// The file-backed content type a non-file drop carries, if the shelf can
+    /// hold it as a file. Deliberately narrow: text drags carry data types too
+    /// (web archives, RTF), and those are better shelved as the plain text.
+    private static func fileContentType(of provider: NSItemProvider) -> UTType? {
+        provider.registeredTypeIdentifiers
+            .compactMap { UTType($0) }
+            .first { $0.conforms(to: .image) || $0.conforms(to: .pdf) || $0.conforms(to: .movie) }
+    }
+
+    /// Copies a provider's short-lived file into the drops folder.
+    private static func keepCopy(of url: URL, suggestedName: String?, type: UTType) -> URL? {
+        let name = suggestedName.map { ($0 as NSString).deletingPathExtension }
+            ?? url.deletingPathExtension().lastPathComponent
+        let ext = url.pathExtension.isEmpty
+            ? (type.preferredFilenameExtension ?? "")
+            : url.pathExtension
+        return writeUnique(named: name.isEmpty ? "Dropped File" : name, extension: ext) { destination in
+            try FileManager.default.copyItem(at: url, to: destination)
         }
     }
 }

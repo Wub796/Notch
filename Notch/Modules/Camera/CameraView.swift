@@ -56,10 +56,6 @@ struct CameraView: View {
                     .clipShape(
                         RoundedRectangle(cornerRadius: NotchTheme.Radius.card, style: .continuous)
                     )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: NotchTheme.Radius.card, style: .continuous)
-                            .strokeBorder(NotchTheme.Surface.borderStrong, lineWidth: 1)
-                    }
                     .transition(.opacity)
             }
 

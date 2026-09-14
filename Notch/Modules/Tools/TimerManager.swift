@@ -51,7 +51,10 @@ final class TimerManager {
             remaining = pausedRemaining
             scheduleTick()
         } else {
-            pausedRemaining = remaining
+            // From the deadline, not the last tick: `remaining` can be up to a
+            // quarter-second stale, and every pause would bank that drift.
+            pausedRemaining = max(deadline?.timeIntervalSinceNow ?? remaining, 0)
+            remaining = pausedRemaining
             isPaused = true
             tickTimer?.invalidate()
             tickTimer = nil

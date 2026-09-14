@@ -151,10 +151,6 @@ struct SettingsCallout: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(tint.opacity(0.14))
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(tint.opacity(0.3), lineWidth: 1)
-        }
     }
 }
 

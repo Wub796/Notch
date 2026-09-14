@@ -60,6 +60,10 @@ final class NotchState {
     /// reliably once the panel is key).
     var onModeChange: ((NotchMode) -> Void)?
 
+    /// Called synchronously just before the notch opens, so the window can
+    /// grow ahead of the first animation frame. See `expand()`.
+    var onWillExpand: (() -> Void)?
+
     /// Physical notch size, injected by NotchWindowController at launch.
     var notchSize: CGSize = NotchGeometry.fallbackSize
 
@@ -743,6 +747,13 @@ final class NotchState {
         pendingHoverWork?.cancel()
         // No withAnimation here: NotchContainerView drives the open/close
         // springs. Two animations on the same transition fight each other.
+        //
+        // The window is sized for the open slab *before* the flip renders.
+        // `onModeChange` resizes on the next turn of the run loop, which was
+        // late enough that the spring's first frames drew into a window still
+        // the size of the closed notch: a hard, flat cut-off edge that crossed
+        // the panel for the first ~100ms of every open.
+        onWillExpand?()
         mode = .expanded
         onModeChange?(mode)
         wakeModules()

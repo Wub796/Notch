@@ -228,10 +228,6 @@ struct DevicesScreenView: View {
         }
         .frame(width: 76, height: 76)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(NotchTheme.Surface.borderStrong, lineWidth: 1)
-        }
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: media.accent.opacity(0.38), radius: 14, y: 5)
         .animation(NotchAnimations.content, value: media.artworkVersion)
