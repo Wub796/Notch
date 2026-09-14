@@ -26,11 +26,16 @@ extension View {
     }
 
     /// A pane that is itself the way into a screen: tap anywhere on it.
+    ///
+    /// The tap is a *simultaneous* gesture. `tileHover()` tracks the press with
+    /// a zero-distance drag inside the tile, and an inner gesture beats a plain
+    /// `.onTapGesture` attached outside it — the tile shrank under the click
+    /// but never opened its screen.
     func dashboardPane(opens tab: NotchTab, in state: NotchState, help: String) -> some View {
         dashboardPane()
             .contentShape(Rectangle())
             .tileHover()
-            .onTapGesture { state.select(tab) }
+            .simultaneousGesture(TapGesture().onEnded { state.select(tab) })
             .help(help)
     }
 }

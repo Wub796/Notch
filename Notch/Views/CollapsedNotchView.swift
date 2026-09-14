@@ -43,7 +43,7 @@ struct CollapsedNotchView: View {
                             .foregroundStyle(state.media.accent)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .padding(.horizontal, 18)
+                            .padding(.horizontal, NotchSizing.closedWingInset)
                             .frame(maxWidth: .infinity)
                             .frame(height: 26)
                             // Line-to-line is a crossfade in place; the row
@@ -107,38 +107,24 @@ struct CollapsedNotchView: View {
                             .frame(height: state.adjustedNotchSize.height)
 
                         ChargingPopupView(level: CGFloat(percent) / 100)
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, NotchSizing.closedDropInset)
                             .padding(.bottom, 6)
                             .frame(maxWidth: .infinity)
                             .frame(height: 46)
                             .transition(NotchAnimations.chargePop)
                     }
                 } else {
-                    ActivityWingLayout(
-                        notchWidth: state.safeNotchSize.width,
-                        leading: Text(low ? "Low Battery" : "On Battery")
-                            .font(.notchBody.weight(.bold))
-                            .foregroundStyle(low ? .red : NotchTheme.inkPrimary)
-                            .fixedSize(),
-                        trailing: HStack(spacing: 4) {
-                            Text("\(percent)%")
-                                .font(.notchBody.weight(.bold).monospacedDigit())
-                                .contentTransition(.numericText())
-                                // The transition above needs a value-bound
-                                // animation or the percent hard-cuts between
-                                // readings.
-                                .animation(NotchAnimations.content, value: percent)
-                                .fixedSize()
-                            Image(systemName: low
-                                ? "battery.25percent"
-                                : "battery.75percent")
-                                .font(.system(size: 15, weight: .semibold))
-                        }
-                        .foregroundStyle(low ? .red : NotchTheme.battery)
-                    )
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(low ? "Low battery" : "On battery")
-                    .accessibilityValue("\(percent) percent")
+                    // Dropped like every other reading. In the wings, "Low
+                    // Battery" alone was wider than a wing, so the label ran
+                    // under the camera housing.
+                    dropped {
+                        droppedRow(
+                            symbol: low ? "battery.25percent" : "battery.75percent",
+                            tint: low ? .red : NotchTheme.battery,
+                            label: low ? "Low Battery" : "On Battery",
+                            value: "\(percent)%"
+                        )
+                    }
                 }
             case let .screenLock(locked):
                 dropped {
@@ -252,7 +238,7 @@ struct CollapsedNotchView: View {
                 .frame(height: height - 8)
                 .padding(.horizontal, NotchTheme.Space.m)
                 .notchTile(radius: NotchTheme.Radius.tile)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, NotchSizing.closedDropInset)
                 .padding(.bottom, 7)
         }
     }
@@ -308,7 +294,8 @@ struct CollapsedNotchView: View {
             DroppedHUDBar(
                 kind: kind,
                 value: value,
-                showsPercentage: state.settings.showHUDPercentage
+                showsPercentage: state.settings.showHUDPercentage,
+                horizontalInset: NotchSizing.closedDropInset
             )
             .frame(height: 34)
         }

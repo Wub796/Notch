@@ -192,6 +192,22 @@ enum NotchSizing {
     /// the drawn pill is unchanged.
     static let notchCoverageBleed: CGFloat = 30
 
+    /// How far the closed shape's visible body sits inside its layout frame.
+    /// Its top corners flare outward into the menu bar, so the black starts
+    /// this far in from each side of the frame.
+    static var closedFlareInset: CGFloat { cornerRadiusInsets.closed.top }
+
+    /// Closed-notch wing content, from the frame edge: the flare, then 12pt
+    /// of black. Content used to be padded 18pt from the *frame*, which left
+    /// it 2pt from the rounded outer edge and over 20pt from the camera.
+    static var closedWingInset: CGFloat { closedFlareInset + 12 }
+
+    /// Surfaces dropped beneath the closed notch — activity tiles, the HUD
+    /// bar, the charging popup — from the frame edge. They were inset less
+    /// than the flare, so their sides ran past the visible body and the
+    /// shape clipped them.
+    static var closedDropInset: CGFloat { closedFlareInset + 8 }
+
     /// Each screen's natural size at the default width.
     private static func baseSize(for tab: NotchTab) -> CGSize {
         switch tab {

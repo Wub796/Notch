@@ -61,6 +61,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        if CommandLine.arguments.contains("--debug-tap") {
+            // A real click on the closed notch, delivered to the panel itself,
+            // so opening goes through the SwiftUI tap gesture the way a user's
+            // click does rather than through a timer.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self, let panel = self.windowController?.window else { return }
+                if self.state.tab == .camera { self.state.select(.home) }
+                let point = NSPoint(x: panel.frame.width / 2, y: panel.frame.height - 12)
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    guard let event = NSEvent.mouseEvent(
+                        with: type, location: point, modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: panel.windowNumber, context: nil,
+                        eventNumber: 0, clickCount: 1,
+                        pressure: type == .leftMouseDown ? 1 : 0
+                    ) else { continue }
+                    panel.sendEvent(event)
+                }
+                // Held open so an unrelated click elsewhere cannot close it
+                // before it has been looked at.
+                self.state.isPinned = true
+            }
+        }
         if CommandLine.arguments.contains("--debug-timer") {
             // Puts a countdown on screen so the timer widget's running state
             // can be looked at without clicking a preset.

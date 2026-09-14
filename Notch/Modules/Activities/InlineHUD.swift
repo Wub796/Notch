@@ -101,6 +101,9 @@ struct DroppedHUDBar: View {
     @Binding var value: CGFloat
     var showsPercentage: Bool = true
     var onChange: ((CGFloat) -> Void)?
+    /// Side margin around the bar's tile. Under the closed notch this has to
+    /// clear the shape's flared corners; see `NotchSizing.closedDropInset`.
+    var horizontalInset: CGFloat = 10
 
     var body: some View {
         HStack(spacing: 8) {
@@ -128,7 +131,7 @@ struct DroppedHUDBar: View {
         .padding(.horizontal, NotchTheme.Space.m)
         .padding(.vertical, NotchTheme.Space.xs)
         .notchTile(radius: NotchTheme.Radius.tile)
-        .padding(.horizontal, 10)
+        .padding(.horizontal, horizontalInset)
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)

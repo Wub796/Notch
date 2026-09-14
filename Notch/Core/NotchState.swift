@@ -323,6 +323,9 @@ final class NotchState {
     private let desktopMonitor = DesktopChangeMonitor()
 
     private var pendingHoverWork: DispatchWorkItem?
+
+    /// An open scheduled by `expand()`; a collapse that lands first cancels it.
+    private var pendingExpandWork: DispatchWorkItem?
     private var hoverStartedAt: Date?
 
     /// Whether the pointer is over the notch. Read by the view for its hover
@@ -591,34 +594,37 @@ final class NotchState {
     /// split evenly into two wings, so each side must fit half of this.
     private var activityWingWidth: CGFloat {
         switch collapsedActivity {
-        // Keep the established 18pt outer padding, but shorten the closed
-        // music pill again. 96 gives each wing 48pt: enough for the 22pt
-        // cover/visualiser plus the inset without adding unnecessary width.
+        // Each side is `NotchSizing.closedWingInset` of margin, the content,
+        // and ~10pt clear of the camera housing, so a wing needs roughly its
+        // content's width plus 23pt. The cover and visualiser are 22pt.
         case .music: 96
         // The lyric line lives under the notch and wants room to read; the
         // wings only carry the cover and the visualiser.
         case .lyrics: 120
-        // The charging popup drops a band beneath the notch (like the volume
-        // HUD), so the wings only carry the notch's own row content.
-        case .battery(_, true, _): 82
-        // These all drop a bar beneath the notch rather than splitting across
-        // the wings, so the wings only carry what stays on the notch's own
-        // row — the weather glyph and its temperature.
-        case .timer, .trackChange, .screenLock, .focusMode, .eyeBreak,
+        // Volume and brightness should not make the closed notch narrower
+        // than the music pill while their bar is dropped beneath it.
+        case .volume, .brightness: max(flankWingWidth, 96)
+        // Everything else drops its reading beneath the notch, so the wings
+        // only carry what stays on the notch's own row.
+        case .battery, .timer, .trackChange, .screenLock, .focusMode, .eyeBreak,
              .accessoryBattery, .meetingSoon, .fileCaught:
-            82
-        // Volume and brightness should not make the closed notch narrower;
-        // their HUD drops below it, but the notch keeps the normal music-pill
-        // width while the indicator is visible.
-        case .volume, .brightness: 96
-        // Stays in the wings, so it needs room for the label and the readout.
-        case .battery: 136
-        case .desktopChange: 68
-        // Idle compact weather needs a little more room for the temperature
-        // and its 18pt inset than music does.
-        case nil: settings.showCompactWeather ? 108 : 0
+            flankWingWidth
+        // An 18pt glyph and a one- or two-digit number.
+        case .desktopChange: 82
+        case nil: settings.showCompactWeather ? Self.weatherWingWidth : 0
         }
     }
+
+    /// The wings `CollapsedNotchView.notchRowFlank` draws beside a dropped
+    /// activity: media while something is playing, otherwise the weather.
+    private var flankWingWidth: CGFloat {
+        if isAudioActive { return 96 }
+        return settings.showCompactWeather ? Self.weatherWingWidth : 82
+    }
+
+    /// The weather glyph is 23pt and the temperature up to ~38pt ("100°"), so
+    /// the temperature sets it. The old 82–108 left it touching the camera.
+    private static let weatherWingWidth: CGFloat = 124
 
     /// Extra height an activity adds beneath the hardware notch. The volume
     /// and brightness HUDs live here rather than in the wings: a level bar
@@ -630,6 +636,8 @@ final class NotchState {
         case .volume, .brightness: 34
         // The charging popup drops beneath the notch, iOS-style.
         case .battery(_, true, _): 46
+        // Unplugged: an ordinary dropped row.
+        case .battery: 36
         case .timer: 42
         // Taller than a plain row: this one carries a thumbnail and is a drag
         // target, so it needs to be worth aiming at.
@@ -743,23 +751,38 @@ final class NotchState {
     }
 
     func expand() {
-        guard mode != .expanded else { return }
+        guard mode != .expanded, pendingExpandWork == nil else { return }
         pendingHoverWork?.cancel()
-        // No withAnimation here: NotchContainerView drives the open/close
-        // springs. Two animations on the same transition fight each other.
-        //
-        // The window is sized for the open slab *before* the flip renders.
-        // `onModeChange` resizes on the next turn of the run loop, which was
-        // late enough that the spring's first frames drew into a window still
-        // the size of the closed notch: a hard, flat cut-off edge that crossed
-        // the panel for the first ~100ms of every open.
-        onWillExpand?()
-        mode = .expanded
-        onModeChange?(mode)
-        wakeModules()
+        // Opened on the next turn of the run loop, never inline. Opening
+        // resizes the panel window, and a click reaches here from inside
+        // SwiftUI's tap handling: resizing the hosting window there re-entered
+        // SwiftUI's update and corrupted its view graph, and the app crashed a
+        // moment later with EXC_BAD_ACCESS while building the Home dashboard.
+        // One turn later nothing is mid-update.
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingExpandWork = nil
+            guard self.mode != .expanded else { return }
+            // The window is sized for the open slab *before* the flip renders.
+            // Resizing from `onModeChange` let the spring's first frames draw
+            // into the closed notch's window: a hard, flat edge that crossed
+            // the panel for the first ~100ms of every open.
+            self.onWillExpand?()
+            // No withAnimation here: NotchContainerView drives the open/close
+            // springs. Two animations on the same transition fight each other.
+            self.mode = .expanded
+            self.onModeChange?(self.mode)
+            self.wakeModules()
+        }
+        pendingExpandWork = work
+        DispatchQueue.main.async(execute: work)
     }
 
     func collapse() {
+        // A close that arrives before a scheduled open has run cancels it,
+        // rather than the open landing afterwards.
+        pendingExpandWork?.cancel()
+        pendingExpandWork = nil
         guard mode == .expanded else { return }
         mode = .collapsed
         isDropTargeted = false

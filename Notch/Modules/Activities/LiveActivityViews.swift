@@ -56,12 +56,15 @@ struct ActivityWingLayout<Leading: View, Trailing: View>: View {
     var body: some View {
         HStack(spacing: 0) {
             leading
-                .padding(.leading, 18)
+                .padding(.leading, NotchSizing.closedWingInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            // The real cutout rather than the bleed-widened `notchWidth`: the
+            // bleed is black drawn past the camera housing, so it belongs to
+            // the visible wing and content may sit over it.
             Color.clear
-                .frame(width: notchWidth)
+                .frame(width: max(notchWidth - NotchSizing.notchCoverageBleed, 0))
             trailing
-                .padding(.trailing, 18)
+                .padding(.trailing, NotchSizing.closedWingInset)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

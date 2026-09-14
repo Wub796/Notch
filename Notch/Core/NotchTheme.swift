@@ -161,10 +161,15 @@ extension View {
 }
 
 /// Hover + cursor affordance for tap-through tiles — the dashboard's weather
-/// and calendar blocks select via `.onTapGesture`, so unlike Buttons they got
+/// and calendar blocks select via a tap gesture, so unlike Buttons they got
 /// neither the pointing-hand cursor nor any hover response. This restores
 /// both: the system pointing hand while the pointer is over the tile, and a
 /// faint brightening so the tile reads as live under the cursor.
+///
+/// The press is tracked with a zero-distance drag, which claims the click on
+/// mouse-down. Any tap that should act on the tile must be attached outside
+/// this modifier as a `.simultaneousGesture`; a plain `.onTapGesture` there
+/// never fires.
 struct TileHoverModifier: ViewModifier {
     @State private var hovering = false
     @State private var pressed = false
