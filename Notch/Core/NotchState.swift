@@ -687,21 +687,23 @@ final class NotchState {
         return size
     }
 
-    /// The closed notch's hover target. The probe is drawn to `safeNotchSize`
-    /// (which already includes the coverage bleed the pill is drawn with),
-    /// plus the Hover Side Tolerance slack on the sides only — the height
-    /// stays exactly the notch, so raising the tolerance can never make the
-    /// notch peek while the cursor merely rests beneath it; it only widens
-    /// the side catch for fast crossings. The wings and dropped activity
-    /// bars are deliberately not part of it. Fixed geometry, not derived
-    /// from the animating slab.
+    /// The closed notch's hover target: the live measured notch, plus the Hover
+    /// Side Tolerance on the sides only.
+    ///
+    /// The height stays exactly the notch, so raising the tolerance can never
+    /// make the notch peek while the cursor merely rests beneath it — it only
+    /// widens the side catch for fast crossings. The wings and any dropped
+    /// activity bar are deliberately not part of it, and the tolerance defaults
+    /// to 0, so out of the box this is exactly the notch and nothing more.
+    ///
+    /// Read fresh on every hit-test and every cursor sample rather than cached:
+    /// a display change or a notch-size trim has to land on the hit target at
+    /// once, not on the next rebuild of the panel.
     var hoverProbeSize: CGSize {
-        // The window controller adds the same tolerance to its own hover
-        // feed, keeping hover state and event routing in lockstep.
         let slack = min(max(settings.hoverTolerance, 0), 32)
         return CGSize(
-            width: safeNotchSize.width + slack * 2,
-            height: safeNotchSize.height
+            width: adjustedNotchSize.width + slack * 2,
+            height: adjustedNotchSize.height
         )
     }
 

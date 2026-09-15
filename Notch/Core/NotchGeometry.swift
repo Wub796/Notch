@@ -12,6 +12,17 @@ struct NotchGeometry {
         screen.safeAreaInsets.top > 0
     }
 
+    /// The horizontal centre of the hardware notch in screen coordinates.
+    /// Auxiliary areas are the authoritative anchors; the screen midpoint can
+    /// be wrong on displays whose menu bar/notch is not geometrically centred.
+    var notchCenterX: CGFloat {
+        guard let leftArea = screen.auxiliaryTopLeftArea,
+              let rightArea = screen.auxiliaryTopRightArea else {
+            return screen.frame.midX
+        }
+        return (leftArea.maxX + rightArea.minX) / 2
+    }
+
     /// Exact hardware notch size: height from the safe area inset, width from
     /// the gap between the two auxiliary menu bar areas. Displays without a
     /// notch simulate one at menu bar height.
@@ -33,7 +44,7 @@ struct NotchGeometry {
                 height: menuBarHeight > 0 ? menuBarHeight : Self.fallbackSize.height
             )
         }
-        let width = screen.frame.width - leftArea.width - rightArea.width
+        let width = rightArea.minX - leftArea.maxX
         return CGSize(width: min(max(width, 120), screen.frame.width - 40), height: topInset)
     }
 

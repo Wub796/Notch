@@ -1188,10 +1188,14 @@ final class MediaController {
             : nil
         let shuffleScript = "tell application \"\(appName)\" to return \(property) as text"
         let running = controlAppIsRunning
-        let allowed = IntegrationPermissions.isAutomationAllowed(controlBundleID)
+        let bundleID = controlBundleID
 
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard running, allowed else { return }
+            // Consent is read here rather than on the main thread even though
+            // the check no longer blocks: this runs on every track change, and
+            // the main thread is the one thing that must never be behind a
+            // permission lookup.
+            guard running, IntegrationPermissions.isAutomationAllowed(bundleID) else { return }
             let shuffle = Self.scriptString(shuffleScript) == "true"
             let loved = lovedScript.map { Self.scriptString($0) == "true" }
 

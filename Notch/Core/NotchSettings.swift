@@ -124,10 +124,9 @@ final class NotchSettings {
     /// hovering it. The probe's height stays exactly the notch — vertical
     /// slack made the notch peek whenever the cursor merely rested beneath
     /// the menu bar — so this knob only widens the sides, catching fast
-    /// crossings. Defaults to 12pt so the target is forgiving out of the
-    /// box; the closed pill already carries the 13pt coverage bleed, so the
-    /// effective side catch is ~25pt past the hardware cutout.
-    var hoverTolerance = 12.0 { didSet { save(hoverTolerance, "hoverTolerance") } }
+    /// crossings. Defaults to 0: the hover target is exactly the notch and
+    /// nothing beside it, which is what the panel is meant to occupy.
+    var hoverTolerance = 0.0 { didSet { save(hoverTolerance, "hoverTolerance") } }
     var closeDelay = 0.2 { didSet { save(closeDelay, "closeDelay") } }
 
     /// When on, dropped files go straight to AirDrop; when off they land on
@@ -410,7 +409,7 @@ final class NotchSettings {
     func resetNotchDimensions() {
         notchWidthAdjustment = 0
         notchHeightAdjustment = 0
-        hoverTolerance = 12
+        hoverTolerance = 0
         openNotchWidth = NotchSizing.defaultOpenWidth
         openNotchHeight = NotchSizing.defaultOpenHeight
         peekScale = 1.10

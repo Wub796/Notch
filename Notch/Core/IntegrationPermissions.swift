@@ -251,19 +251,33 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     /// Whether Apple Events to this app are already allowed, asked without
     /// raising the consent dialog. Used before any speculative script — a
     /// background probe at launch must never be what puts a prompt on screen.
+    ///
+    /// **Never blocks, and the answer is the last one looked up.** The call
+    /// behind it, `AEDeterminePermissionToAutomateTarget`, blocks until tccd
+    /// answers — and while an Automation prompt for this app is pending, tccd
+    /// does not answer at all. It used to be called straight from the main
+    /// thread (every track change, via `refreshShuffleAndFavorite`), which
+    /// froze the whole notch: no hover, no clicks, no timers, and no way back
+    /// short of answering a prompt that a background agent may never surface.
+    /// See `AutomationConsent`, which now owns the lookup.
     static func isAutomationAllowed(_ bundleID: String) -> Bool {
-        automationPermission(for: bundleID, askUser: false) == noErr
+        AutomationConsent.shared.isAllowed(bundleID)
     }
 
     /// Asks macOS whether this app may automate `bundleID`.
+    ///
+    /// `fileprivate` rather than `private`: `AutomationConsent` below is the
+    /// only caller left, and it must not live inside this type's cache.
     ///
     /// With `askUser` true this is also what *raises* the Automation prompt —
     /// it is the API designed for it. Sending a real Apple Event to provoke
     /// the prompt instead means waiting on the target app's own event loop,
     /// which is unreliable while it is launching.
     ///
-    /// Blocks. Never call it on the main thread.
-    private static func automationPermission(for bundleID: String, askUser: Bool) -> OSStatus {
+    /// Blocks. Never call it on the main thread, and never on a queue that
+    /// carries the user's scripting: a pending prompt holds it for as long as
+    /// that prompt is on screen.
+    fileprivate static func automationPermission(for bundleID: String, askUser: Bool) -> OSStatus {
         guard let data = bundleID.data(using: .utf8) else { return OSStatus(-50) }
 
         var target = AEAddressDesc()
@@ -527,5 +541,63 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         refresh()
+    }
+}
+
+/// The non-blocking half of the Apple Events consent check.
+///
+/// Consent is asked for once per target app, on a queue of its own, and the
+/// answer is cached; every caller reads the cache. Two properties matter and
+/// both are load-bearing:
+///
+/// - **No caller ever waits.** This is asked on the main thread, on the
+///   scripting queue, and from the media probe. The underlying call blocks
+///   while an Automation prompt is unanswered, so a synchronous version takes
+///   whichever of those asked down with it — on the main thread that is the
+///   entire notch.
+/// - **An unanswered target reads as "not allowed".** That is the safe
+///   answer: it is what stops a speculative Apple Event from being the thing
+///   that puts a prompt on screen. It costs at most the first moment after
+///   launch, and the real answer replaces it as soon as it lands.
+///
+/// A lookup that hangs is never retried: the in-flight marker stays set, so a
+/// stuck tccd costs one parked worker instead of one per caller.
+private final class AutomationConsent {
+    static let shared = AutomationConsent()
+
+    /// How long an answer is trusted before it is looked up again, so a grant
+    /// made in System Settings lands without a relaunch. A target whose lookup
+    /// is still in flight keeps its old answer regardless of age.
+    private static let ttl: TimeInterval = 30
+
+    private let lock = NSLock()
+    private var answers: [String: (allowed: Bool, checked: Date)] = [:]
+    private var lookupsInFlight: Set<String> = []
+
+    /// Deliberately not `com.notch.applescript`: one hung lookup on that serial
+    /// queue would take every script behind it with it.
+    private let queue = DispatchQueue(label: "com.notch.automation-consent", qos: .utility)
+
+    func isAllowed(_ bundleID: String) -> Bool {
+        lock.lock()
+        let answer = answers[bundleID]
+        let stale = answer.map { Date().timeIntervalSince($0.checked) >= Self.ttl } ?? true
+        let shouldLook = stale && !lookupsInFlight.contains(bundleID)
+        if shouldLook { lookupsInFlight.insert(bundleID) }
+        lock.unlock()
+
+        if shouldLook {
+            queue.async {
+                let allowed = IntegrationPermissions.automationPermission(
+                    for: bundleID, askUser: false
+                ) == noErr
+                self.lock.lock()
+                self.answers[bundleID] = (allowed, Date())
+                self.lookupsInFlight.remove(bundleID)
+                self.lock.unlock()
+            }
+        }
+
+        return answer?.allowed ?? false
     }
 }

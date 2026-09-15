@@ -287,7 +287,7 @@ pushed. What actually runs:
 | Telemetry | idle                                        | 1–5 s sampling timer (configurable) |
 | Shelf     | idle                                        | resolves drops on demand            |
 | Clipboard | 1 s pasteboard poll while history is on (macOS has no change notification) | same |
-| Hover probe | 20 Hz cursor sample                       | stopped — SwiftUI owns hover        |
+| Hover probe | 60 Hz cursor sample                       | stopped — SwiftUI owns hover        |
 | Audio meter | 20 Hz, only while the real-time visualiser is on and audio is playing | same |
 
 `NotchState.wakeModules()` / `sleepModules()` are the choke point for the
