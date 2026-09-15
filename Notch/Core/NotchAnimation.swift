@@ -170,6 +170,36 @@ extension NotchAnimations {
         )
     }
 
+    /// One screen of the open panel replacing another. Sequenced, not
+    /// crossfaded: the outgoing screen clears in a tenth of a second and the
+    /// incoming one arrives just after, settling up out of a small offset. A
+    /// crossfade drew two dense screens over each other at half opacity for
+    /// most of the swap — "Houston 28°" through "September" — while the panel
+    /// was resizing underneath both.
+    static var screenSwap: AnyTransition {
+        if prefersReducedMotion {
+            return .opacity.animation(reduced)
+        }
+        return .asymmetric(
+            insertion: .opacity
+                .combined(with: .offset(y: 6))
+                .animation(content.delay(0.09)),
+            removal: .opacity.animation(.easeOut(duration: 0.09))
+        )
+    }
+
+    /// The header strip's version of `screenSwap`: the same sequencing, with no
+    /// travel — a header sliding down out of the hardware notch looks broken.
+    static var headerSwap: AnyTransition {
+        if prefersReducedMotion {
+            return .opacity.animation(reduced)
+        }
+        return .asymmetric(
+            insertion: .opacity.animation(content.delay(0.09)),
+            removal: .opacity.animation(.easeOut(duration: 0.09))
+        )
+    }
+
     /// The closed strip — the wings and anything dropped beneath the notch —
     /// trading places with the open panel. It gets out of the way almost at
     /// once when the notch opens, and on close waits until the slab has mostly

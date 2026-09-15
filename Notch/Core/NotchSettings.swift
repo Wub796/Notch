@@ -213,6 +213,17 @@ final class NotchSettings {
     /// Show the current synced lyric line under the closed notch while playing.
     var lyricActivityEnabled = true { didSet { save(lyricActivityEnabled, "lyricActivityEnabled") } }
 
+    /// Play the Spotify Canvas (the looping video behind a track) in place of
+    /// the album art, when signed in. Off by default: it needs a Spotify
+    /// sign-in and reaches Spotify's private endpoints.
+    var spotifyCanvasEnabled = false {
+        didSet {
+            save(spotifyCanvasEnabled, "spotifyCanvasEnabled")
+            notify(onSpotifyCanvasSettingChanged, spotifyCanvasEnabled)
+        }
+    }
+    var onSpotifyCanvasSettingChanged: ((Bool) -> Void)?
+
     /// Two-finger scroll over the closed notch opens it. (Only opens —
     /// closing is hover-out, the hotkey, or a click outside.)
     var scrollToExpand = true { didSet { save(scrollToExpand, "scrollToExpand") } }
@@ -455,6 +466,9 @@ final class NotchSettings {
         }
         if defaults.object(forKey: "showMediaWings") != nil {
             showMediaWings = defaults.bool(forKey: "showMediaWings")
+        }
+        if defaults.object(forKey: "spotifyCanvasEnabled") != nil {
+            spotifyCanvasEnabled = defaults.bool(forKey: "spotifyCanvasEnabled")
         }
         if let providerString = defaults.string(forKey: "musicProvider"),
            let provider = MusicProvider(rawValue: providerString) {

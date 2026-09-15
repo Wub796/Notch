@@ -39,7 +39,19 @@ final class ShelfController {
     /// Resolves dropped providers into URLs, then either shelves them or
     /// AirDrops immediately, per settings. Calls `completion` with the number
     /// of items accepted.
-    func handleDrop(_ providers: [NSItemProvider], completion: @escaping (Int) -> Void) {
+    /// Where a drop should go. The notch as a whole follows the instant-AirDrop
+    /// setting; the shelf screen's two wells each name their own destination.
+    enum DropDestination {
+        case automatic
+        case shelf
+        case airDrop
+    }
+
+    func handleDrop(
+        _ providers: [NSItemProvider],
+        destination: DropDestination = .automatic,
+        completion: @escaping (Int) -> Void
+    ) {
         guard !providers.isEmpty else {
             completion(0)
             return
@@ -101,7 +113,9 @@ final class ShelfController {
                 completion(0)
                 return
             }
-            if NotchSettings.shared.instantAirDrop {
+            let sendsToAirDrop = destination == .airDrop
+                || (destination == .automatic && NotchSettings.shared.instantAirDrop)
+            if sendsToAirDrop {
                 Self.airDrop(urls)
             } else {
                 self.add(urls)

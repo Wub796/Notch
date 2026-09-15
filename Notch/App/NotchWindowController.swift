@@ -66,6 +66,7 @@ final class NotchWindowController: NSWindowController {
         // until the next one happens to overwrite the same slot.
         state.onModeChange = nil
         state.onWillExpand = nil
+        state.onWillShowTab = nil
         collapseResizeWork?.cancel()
         collapseResizeWork = nil
         if let spaceObserver {
@@ -91,17 +92,10 @@ final class NotchWindowController: NSWindowController {
         // the closed notch's window. Never shrinks here: a window still large
         // from a previous open is shrunk by `apply` once things settle.
         state.onWillExpand = { [weak self] in
-            guard let self, let panel = self.window, let screen = self.trackedScreen else { return }
-            self.collapseResizeWork?.cancel()
-            self.collapseResizeWork = nil
-            let target = self.expandedWindowSize()
-            self.setWindowFrame(
-                CGSize(
-                    width: max(target.width, panel.frame.width),
-                    height: max(target.height, panel.frame.height)
-                ),
-                on: screen
-            )
+            self?.growWindow(for: nil)
+        }
+        state.onWillShowTab = { [weak self] tab in
+            self?.growWindow(for: tab)
         }
         state.onModeChange = { [weak self] mode in
             DispatchQueue.main.async { [weak self] in
@@ -179,15 +173,35 @@ final class NotchWindowController: NSWindowController {
         panel.setFrame(frame, display: true)
     }
 
-    /// The open slab plus its shadow margin, capped to the screen.
-    private func expandedWindowSize() -> CGSize {
+    /// Grows the window, synchronously, to hold the open slab for `tab` (the
+    /// showing tab when nil). Never shrinks: a window still larger from an
+    /// earlier screen is shrunk by `apply` once things settle.
+    private func growWindow(for tab: NotchTab?) {
+        guard let panel = window, let screen = trackedScreen else { return }
+        collapseResizeWork?.cancel()
+        collapseResizeWork = nil
+        let target = expandedWindowSize(for: tab)
+        setWindowFrame(
+            CGSize(
+                width: max(target.width, panel.frame.width),
+                height: max(target.height, panel.frame.height)
+            ),
+            on: screen
+        )
+    }
+
+    /// The open slab plus its shadow margin, capped to the screen — for the
+    /// showing tab, or for one about to be shown.
+    private func expandedWindowSize(for tab: NotchTab? = nil) -> CGSize {
+        let tab = tab ?? state.tab
+        let slab = state.expandedSize(for: tab)
         let width = min(
-            state.expandedSize.width + NotchSizing.shadowPadding * 2,
-            trackedScreen?.frame.width ?? state.expandedSize.width
+            slab.width + NotchSizing.shadowPadding * 2,
+            trackedScreen?.frame.width ?? slab.width
         )
         return CGSize(
             width: width,
-            height: state.expandedTotalHeight + NotchSizing.shadowPadding * 2
+            height: state.expandedTotalHeight(for: tab) + NotchSizing.shadowPadding * 2
         )
     }
 

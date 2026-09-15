@@ -61,6 +61,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        if CommandLine.arguments.contains("--debug-tab-cycle") {
+            // Walks the open panel through Home, Weather and Calendar (and the
+            // month grid) so tab transitions can be recorded frame by frame.
+            let script: [(TimeInterval, (NotchState) -> Void)] = [
+                (2.0, { $0.select(.home); $0.expand(); $0.isPinned = true }),
+                (4.0, { $0.select(.weather) }),
+                (6.0, { $0.select(.home) }),
+                (8.0, { $0.select(.calendar) }),
+                (10.0, { $0.calendar.isMonthView = true }),
+                (12.0, { $0.calendar.isMonthView = false }),
+                (14.0, { $0.select(.weather) }),
+                (16.0, { $0.select(.calendar) }),
+                (18.0, { $0.select(.home) }),
+            ]
+            for (delay, step) in script {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self else { return }
+                    step(self.state)
+                }
+            }
+        }
+        if CommandLine.arguments.contains("--debug-clipboard") {
+            // Opens the clipboard window, which otherwise needs a click on the rail.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self else { return }
+                ClipboardWindowController.shared.show(clipboard: self.state.clipboard)
+            }
+        }
         if CommandLine.arguments.contains("--debug-tap") {
             // A real click on the closed notch, delivered to the panel itself,
             // so opening goes through the SwiftUI tap gesture the way a user's

@@ -53,7 +53,7 @@ enum NotchSizing {
     /// the slab wide enough to hold the whole rail beside the hardware notch.
     static func usesFullTopRail(for tab: NotchTab) -> Bool {
         switch tab {
-        case .home, .shelf, .clipboard, .notes, .tools, .telemetry, .camera: true
+        case .home, .shelf, .notes, .tools, .telemetry, .camera: true
         default: false
         }
     }
@@ -166,7 +166,7 @@ enum NotchSizing {
     /// budget is correct and fitting them would just clamp to it anyway.
     static func fitsHeight(for tab: NotchTab) -> Bool {
         switch tab {
-        case .home, .weather, .calendar, .shelf, .clipboard: true
+        case .home, .weather, .calendar, .shelf: true
         default: false
         }
     }
@@ -225,7 +225,6 @@ enum NotchSizing {
         case .weather: CGSize(width: 600, height: 320)
         case .calendar: CGSize(width: 620, height: 350)
         case .shelf: CGSize(width: 640, height: 240)
-        case .clipboard: CGSize(width: 660, height: 255)
         case .tools: CGSize(width: 880, height: 295)
         case .notes: CGSize(width: 580, height: 265)
         case .telemetry: CGSize(width: 800, height: 275)

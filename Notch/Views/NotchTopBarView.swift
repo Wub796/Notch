@@ -1,30 +1,32 @@
 import AppKit
 import SwiftUI
 
-/// The home top bar: the module rail on the left, system status icons on the
-/// right, and an exact dead zone between them for the camera housing. The
-/// dashboard's music/weather/calendar sections still drill into their own
-/// detail screens; the rail is how the modules that have no dashboard card
-/// — shelf, clipboard, notes, tools, stats — are reached at all.
+/// The open header: modules on the left, utilities and status on the right,
+/// and an exact dead zone between them for the camera housing.
+///
+/// Drawn after the reference: plain outline glyphs in a quiet grey, the
+/// selected one filled and white rather than tinted, the modules running out
+/// from the left edge and the utilities and battery packed to the right. The
+/// rail is how every screen without a dashboard card is reached.
 struct NotchTopBarView: View {
     let state: NotchState
 
-    /// Every module the rail exposes, in order. Tools is here rather than
-    /// reachable only through the Focus status glyph: a screen carrying quick
-    /// actions, the timer, eye breaks and shortcuts needs a labelled way in.
+    /// The modules, left to right after Home. Media is a control of its own
+    /// rather than only the dashboard's music card, so the player is one click
+    /// from any screen.
     static let modules: [(tab: NotchTab, symbol: String, name: String)] = [
-        (.shelf, "archivebox", "Shelf"),
-        (.clipboard, "doc.on.clipboard", "Clipboard"),
-        (.notes, "note.text", "Notes"),
-        (.tools, "wrench.and.screwdriver", "Tools"),
-        (.telemetry, "gauge.with.dots.needle.50percent", "System Stats"),
+        (.audio, "play.circle", "Media"),
+        (.shelf, "tray", "Shelf"),
+        (.tools, "timer", "Tools"),
+        (.telemetry, "chart.xyaxis.line", "System Stats"),
+        (.notes, "doc.text", "Notes"),
         (.camera, "video", "Camera"),
     ]
 
-    /// The rail's full control count: the Home button, Settings, and every
-    /// module above. `NotchSizing` floors the slab width against this, so it
-    /// is derived rather than written down twice.
-    static var railControlCount: Int { modules.count + 2 }
+    /// The left rail's control count: Home and every module. `NotchSizing`
+    /// floors the slab width against this, so it is derived rather than
+    /// written down twice.
+    static var railControlCount: Int { modules.count + 1 }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -60,42 +62,20 @@ struct NotchTopBarView: View {
     }
 
     private var leadingControls: some View {
-        // Keep the rail icons at their standard size; selected modules widen
-        // the slab rather than shrinking the controls.
-        HStack(spacing: railSpacing) {
-            // A dedicated Home rail icon: while it's a single click that is
-            // always there, the module icons also return home on a second tap.
-            NotchIconButton(
-                systemImage: state.tab == .home ? "house.fill" : "house",
-                isActive: state.tab == .home,
-                help: state.tab == .home ? "Home" : "Back to Home",
-                activeTint: .blue,
-                size: railIconSize
-            ) {
+        HStack(spacing: NotchSizing.topBarRailSpacing) {
+            RailButton(symbol: "house", isSelected: state.tab == .home, help: "Home") {
                 state.select(.home)
             }
 
-            NotchIconButton(
-                systemImage: "gearshape",
-                isActive: false,
-                help: "Settings",
-                size: railIconSize
-            ) {
-                // Settings is an ordinary window; leaving the panel expanded
-                // over it would float the notch on top of what you opened.
-                state.collapse()
-                SettingsWindowController.shared.show()
-            }
-
             ForEach(Self.modules, id: \.tab) { module in
-                NotchIconButton(
-                    systemImage: module.symbol,
-                    isActive: state.tab == module.tab,
-                    help: state.tab == module.tab ? "Back to Home" : module.name,
-                    activeTint: .blue,
-                    size: railIconSize
+                RailButton(
+                    symbol: module.symbol,
+                    isSelected: state.tab == module.tab,
+                    help: state.tab == module.tab ? "Back to Home" : module.name
                 ) {
-                    // Each rail icon toggles home ↔ module, so the icon you
+                    // The media control always lands on the player itself.
+                    if module.tab == .audio { state.devicesSection = .now }
+                    // Each module toggles home ↔ module, so the control you
                     // arrived by is also the way back.
                     state.select(state.tab == module.tab ? .home : module.tab)
                 }
@@ -103,99 +83,151 @@ struct NotchTopBarView: View {
         }
     }
 
-    /// Shared with `NotchState`'s slab-width floor (NotchSizing), so a rail
-    /// control can never be cropped against the hardware notch.
-    private let railIconSize: CGFloat = NotchSizing.topBarRailIconSize
-    private let railSpacing: CGFloat = NotchSizing.topBarRailSpacing
-
-    /// Three status controls, as in the reference: the battery pill, the
-    /// active Focus, and keep-awake.
     private var trailingControls: some View {
-        HStack(spacing: 12) {
-            if state.telemetry.hasBattery {
-                BatteryPill(
-                    percent: Int((state.telemetry.batteryPercent * 100).rounded()),
-                    isCharging: state.telemetry.isCharging,
-                    showsPercentage: state.settings.showBatteryPercentage
-                )
+        HStack(spacing: NotchSizing.topBarRailSpacing) {
+            // Only while a Focus is on: an idle mask glyph was one more grey
+            // icon that said nothing at a glance.
+            if let focus = state.activeFocus {
+                RailButton(
+                    symbol: focus.symbolName,
+                    isSelected: true,
+                    tint: .purple,
+                    help: "Focus: \(focus.name) — open Tools"
+                ) {
+                    state.select(.tools)
+                }
             }
 
-            NotchIconButton(
-                systemImage: state.activeFocus?.symbolName ?? "theatermasks",
-                isActive: state.activeFocus != nil,
-                help: state.activeFocus.map { "Focus: \($0.name) — open Tools" }
-                    ?? "No Focus active — open Tools",
-                activeTint: .purple
-            ) {
-                state.select(.tools)
+            RailButton(symbol: "list.clipboard", help: "Clipboard History") {
+                // A window of its own, like Settings; leaving the panel open
+                // over it would float the notch on top of what you opened.
+                state.collapse()
+                ClipboardWindowController.shared.show(clipboard: state.clipboard)
             }
 
-            NotchIconButton(
-                systemImage: state.keepAwake.isActive ? "cup.and.saucer.fill" : "cup.and.saucer",
-                isActive: state.keepAwake.isActive,
-                help: state.keepAwake.isActive ? "Allow sleep" : "Keep Mac awake",
-                activeTint: NotchTheme.battery
+            RailButton(
+                symbol: "cup.and.saucer",
+                isSelected: state.keepAwake.isActive,
+                tint: NotchTheme.battery,
+                help: state.keepAwake.isActive ? "Allow sleep" : "Keep Mac awake"
             ) {
                 withAnimation(NotchAnimations.content) {
                     state.keepAwake.toggle()
                 }
             }
+
+            RailButton(symbol: "gearshape", help: "Settings") {
+                state.collapse()
+                SettingsWindowController.shared.show()
+            }
+
+            if state.telemetry.hasBattery {
+                BatteryIndicator(
+                    percent: Int((state.telemetry.batteryPercent * 100).rounded()),
+                    isCharging: state.telemetry.isCharging,
+                    showsPercentage: state.settings.showBatteryPercentage
+                )
+                .padding(.leading, 2)
+            }
         }
     }
 }
 
-/// Battery drawn as an outlined pill with the level inside and a terminal
-/// nub, mirroring the system menu bar treatment in the reference.
-struct BatteryPill: View {
+/// A rail control: an outline glyph in quiet grey, filled and white while
+/// selected — or filled in `tint`, for a status that is switched on —
+/// brightening under the pointer. No chip, no background.
+struct RailButton: View {
+    let symbol: String
+    var isSelected: Bool = false
+    var tint: Color? = nil
+    let help: String
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .symbolVariant(isSelected ? .fill : .none)
+                .font(.system(size: 15.5, weight: .medium))
+                .foregroundStyle(foreground)
+                .frame(
+                    width: NotchSizing.topBarRailIconSize,
+                    height: NotchSizing.topBarRailIconSize
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .onHover { hovering in
+            withAnimation(NotchAnimations.content) {
+                isHovering = hovering
+            }
+        }
+        .help(help)
+        .accessibilityLabel(help)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
+    private var foreground: Color {
+        if isSelected { return tint ?? .white }
+        return .white.opacity(isHovering ? 0.92 : 0.58)
+    }
+}
+
+/// The battery as the reference draws it: the percentage, then a battery that
+/// fills green with a bolt while charging. The body is a filled track rather
+/// than an outline.
+struct BatteryIndicator: View {
     let percent: Int
     let isCharging: Bool
     let showsPercentage: Bool
 
-    private var fillColor: Color {
+    private var level: CGFloat {
+        CGFloat(min(max(percent, 0), 100)) / 100
+    }
+
+    private var fill: Color {
         if isCharging { return NotchTheme.battery }
         if percent <= 20 { return .red }
         return .white
     }
 
     var body: some View {
-        HStack(spacing: 1.5) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(.white.opacity(0.5), lineWidth: 1.2)
-
-                // Level fill, inset inside the outline.
-                GeometryReader { proxy in
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(fillColor.opacity(showsPercentage ? 0.3 : 0.85))
-                        .frame(width: max(proxy.size.width * CGFloat(percent) / 100, 2))
-                        .animation(NotchAnimations.content, value: percent)
-                }
-                .padding(1.8)
-
-                if showsPercentage {
-                    Text("\(percent)")
-                        .font(.system(size: 9.5, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(NotchTheme.inkPrimary)
-                        .contentTransition(.numericText())
-                } else if isCharging {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 7.5, weight: .black))
-                        .foregroundStyle(.black)
-                }
+        HStack(spacing: 5) {
+            if showsPercentage {
+                Text("\(percent)%")
+                    .font(.system(size: 12.5, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.9))
+                    .contentTransition(.numericText())
+                    .animation(NotchAnimations.content, value: percent)
+                    .fixedSize()
             }
-            .frame(width: 29, height: 15)
 
-            Capsule()
-                .fill(.white.opacity(0.5))
-                .frame(width: 2, height: 5.5)
-        }
-        .overlay(alignment: .leading) {
-            // Charging bolt rides outside the pill when the number is inside.
-            if isCharging, showsPercentage {
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 8, weight: .black))
-                    .foregroundStyle(NotchTheme.battery)
-                    .offset(x: -8)
+            HStack(spacing: 1.5) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(.white.opacity(0.22))
+
+                    GeometryReader { proxy in
+                        RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                            .fill(fill)
+                            .frame(width: max(proxy.size.width * level, 3))
+                            .animation(NotchAnimations.content, value: level)
+                    }
+                    .padding(1.5)
+
+                    if isCharging {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 8.5, weight: .black))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.35), radius: 1)
+                    }
+                }
+                .frame(width: 26, height: 13)
+
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(.white.opacity(0.4))
+                    .frame(width: 2, height: 5)
             }
         }
         .accessibilityElement(children: .ignore)

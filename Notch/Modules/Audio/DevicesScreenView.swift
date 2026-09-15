@@ -152,7 +152,16 @@ struct DevicesScreenView: View {
         HStack(alignment: .top, spacing: 12) {
             // LEFT: Album Art + Track Info + Subtitle
             HStack(alignment: .center, spacing: 12) {
-                artwork
+                // The cover opens the app the music is playing in.
+                Button {
+                    media.openSourceApp()
+                    state.collapse()
+                } label: {
+                    artwork
+                }
+                .buttonStyle(PressableButtonStyle())
+                .disabled(media.openableSourceName == nil)
+                .help(media.openableSourceName.map { "Open \($0)" } ?? "Nothing playing")
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
@@ -218,16 +227,24 @@ struct DevicesScreenView: View {
     // MARK: - Media Artwork & Info Subcomponents
 
     private var artwork: some View {
-        Group {
+        ZStack {
             // Keyed on `artworkVersion` so a track change crossfades the
             // cover instead of hard-cutting it; the stable outer container
             // keeps the open/close `matchedGeometryEffect` morph intact.
             artworkContent
                 .id(media.artworkVersion)
                 .transition(.opacity)
+
+            // The Spotify Canvas plays over the cover when there is one.
+            if let url = state.spotifyCanvas.canvasURL {
+                CanvasVideoView(url: url)
+                    .id(url)
+                    .transition(.opacity)
+            }
         }
         .frame(width: 76, height: 76)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .animation(NotchAnimations.content, value: state.spotifyCanvas.canvasURL)
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: media.accent.opacity(0.38), radius: 14, y: 5)
         .animation(NotchAnimations.content, value: media.artworkVersion)

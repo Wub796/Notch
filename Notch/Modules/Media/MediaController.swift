@@ -57,9 +57,9 @@ final class MediaController {
     /// collapsed-notch sneak peek.
     var onTrackChange: ((Track) -> Void)?
 
-    /// Current synced lyric line surfaced in the collapsed notch while
-    /// playing (Sapphire-style lyric live activity).
-    private(set) var collapsedLyricLine: String?
+    /// The synced lyric line surfaced in the collapsed notch while playing,
+    /// with the span it is sung over (Sapphire-style lyric live activity).
+    private(set) var collapsedLyric: LyricsEngine.LiveLine?
 
     /// The app the audio is coming from (Spotify, Music, Safari…).
     private(set) var sourceAppName: String?
@@ -149,6 +149,11 @@ final class MediaController {
     private var progressTimer: Timer?
     private var fallbackTimer: Timer?
     private var lyricActivityTimer: Timer?
+
+    /// How far ahead of the playhead the closed notch looks for its lyric. A
+    /// line shown exactly on its timestamp reads late: it still has to fade
+    /// in, and the eye lands on it a beat after the voice does.
+    private static let lyricLead: TimeInterval = 0.3
     private var pendingClearWork: DispatchWorkItem?
     private var browserProbeTimer: Timer?
     private var isActive = false
@@ -524,27 +529,27 @@ final class MediaController {
         } else {
             lyricActivityTimer?.invalidate()
             lyricActivityTimer = nil
-            if collapsedLyricLine != nil {
-                collapsedLyricLine = nil
+            if collapsedLyric != nil {
+                collapsedLyric = nil
             }
         }
     }
 
     private func tickCollapsedLyric() {
         guard isPlaying, !isBrowserVideo, lyrics.isSynced, !lyrics.lines.isEmpty else {
-            if collapsedLyricLine != nil {
-                collapsedLyricLine = nil
+            if collapsedLyric != nil {
+                collapsedLyric = nil
             }
             return
         }
         let elapsed = currentElapsed
         lyrics.updateCurrentLine(for: elapsed)
-        // `standaloneLine`, not `currentIndex` — the closed notch shows one
-        // line with nothing around it, so it has to go away when nothing is
-        // being sung rather than holding the last line through the outro.
-        let line = lyrics.standaloneLine(at: elapsed)
-        if line != collapsedLyricLine {
-            collapsedLyricLine = line
+        // `liveLine`, not `currentIndex` — the closed notch shows one line
+        // with nothing around it, so it has to go away when nothing is being
+        // sung rather than holding the last line through a break or the outro.
+        let line = lyrics.liveLine(at: elapsed + Self.lyricLead)
+        if line != collapsedLyric {
+            collapsedLyric = line
         }
         reconcilePlaybackIfStale()
     }
@@ -579,7 +584,9 @@ final class MediaController {
         // enough — at 2s it was an Apple Event round trip every two seconds
         // for as long as anything was playing, notch shut, which is precisely
         // the background cost this class claims not to have.
-        let interval: TimeInterval = isActive ? 2 : 15
+        // While a lyric is actually on the closed notch, a missed pause is
+        // visible — the words keep coming — so it is checked far sooner.
+        let interval: TimeInterval = isActive ? 2 : (collapsedLyric != nil ? 5 : 15)
         guard isPlaying, automationIsAllowed(),
               !isReadingAppleScript,
               Date().timeIntervalSince(lastPlaybackReconcile) >= interval
@@ -1102,6 +1109,27 @@ final class MediaController {
         controlBundleID == MusicProvider.spotify.bundleID ? "Spotify" : "Music"
     }
 
+    /// The name of the app `openSourceApp()` would bring forward, or nil when
+    /// there is nothing to open.
+    var openableSourceName: String? {
+        if let sourceAppName { return sourceAppName }
+        return hasTrack ? controlAppName : nil
+    }
+
+    /// Brings the app the music is coming from to the front — Spotify, Music,
+    /// or the browser playing a video — launching it if it has quit.
+    func openSourceApp() {
+        guard let bundleID = sourceAppBundleID ?? (hasTrack ? controlBundleID : nil) else {
+            return
+        }
+        if let running = NSRunningApplication
+            .runningApplications(withBundleIdentifier: bundleID).first {
+            running.activate()
+        } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        }
+    }
+
     private var controlAppIsRunning: Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: controlBundleID).isEmpty
     }
@@ -1361,7 +1389,7 @@ final class MediaController {
             isShowingBrowserSnapshot = true
             isBrowserVideo = true
             lyrics.clear()
-            collapsedLyricLine = nil
+            collapsedLyric = nil
         } else {
             isShowingBrowserSnapshot = false
             isBrowserVideo = false
@@ -2217,7 +2245,7 @@ final class MediaController {
         isBrowserVideo = snapshot.isBrowser
         if snapshot.isBrowser {
             lyrics.clear()
-            collapsedLyricLine = nil
+            collapsedLyric = nil
         }
         if !snapshot.isPlaying && isPlaying {
             elapsedAnchor = currentElapsed

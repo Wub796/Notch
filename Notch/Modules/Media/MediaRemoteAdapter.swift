@@ -325,14 +325,17 @@ final class MediaRemoteAdapter {
                   let date = Self.timestampDate(from: rawTimestamp) {
             info[MediaRemoteBridge.InfoKey.timestamp] = date
         }
-        if let value = state[Key.playbackRate] as? Double {
-            info[MediaRemoteBridge.InfoKey.playbackRate] = value
-        } else if let value = state[Key.playbackRate] as? Int {
-            info[MediaRemoteBridge.InfoKey.playbackRate] = Double(value)
-        } else if let playing = state[Key.playing] as? Bool {
-            // playbackRate is optional in the payload; the controller derives
-            // the transport state from it, so synthesize it from `playing`.
-            info[MediaRemoteBridge.InfoKey.playbackRate] = playing ? 1.0 : 0.0
+        // `playing` wins over `playbackRate`. It is the adapter's own answer to
+        // "is this app playing" and is kept current, while the rate is only
+        // sent when the player chooses to — so the merged state could hold a
+        // rate of 1 from before a pause long after `playing` went false. Every
+        // later diff then re-reported the track as playing, and the lyrics
+        // carried on through the pause.
+        let rate = (state[Key.playbackRate] as? NSNumber)?.doubleValue
+        if let playing = state[Key.playing] as? Bool {
+            info[MediaRemoteBridge.InfoKey.playbackRate] = playing ? max(rate ?? 1, 1) : 0.0
+        } else if let rate {
+            info[MediaRemoteBridge.InfoKey.playbackRate] = rate
         }
         if let base64 = state[Key.artworkData] as? String,
            let data = Data(base64Encoded: base64) {

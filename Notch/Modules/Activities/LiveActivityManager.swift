@@ -6,7 +6,9 @@ import Observation
 /// event, which outranks an imminent meeting, which outranks now-playing.
 enum LiveActivity: Equatable {
     case music
-    case lyrics(line: String)
+    /// A lyric line, and how long it is sung for — which paces the scroll of
+    /// a line too long for the row.
+    case lyrics(line: String, duration: TimeInterval)
     case timer(remaining: TimeInterval, progress: Double)
     case trackChange(title: String, artist: String)
     case meetingSoon(title: String, start: Date)

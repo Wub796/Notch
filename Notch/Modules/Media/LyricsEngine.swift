@@ -12,10 +12,23 @@ final class LyricsEngine {
         let text: String
     }
 
+    /// One line as the closed notch shows it: its text and the span it is
+    /// sung over.
+    struct LiveLine: Equatable {
+        let text: String
+        let start: TimeInterval
+        let end: TimeInterval
+    }
+
     private(set) var lines: [Line] = []
     private(set) var currentIndex: Int?
     private(set) var isSynced = false
     private(set) var isLoading = false
+
+    /// Where instrumental passages begin: the blank or non-vocal lines an LRC
+    /// file carries between verses. Not kept as lines — they would be empty
+    /// rows in the scrolling list — but each one ends whatever was sung before.
+    private(set) var breaks: [TimeInterval] = []
 
     var currentLine: Line? {
         guard let currentIndex, lines.indices.contains(currentIndex) else { return nil }
@@ -61,6 +74,7 @@ final class LyricsEngine {
             await MainActor.run { [weak self] in
                 guard let self, self.loadedTrackKey == key else { return }
                 self.lines = result.lines
+                self.breaks = result.breaks
                 self.isSynced = result.isSynced
                 self.currentIndex = nil
                 self.isLoading = false
@@ -77,36 +91,54 @@ final class LyricsEngine {
 
     private func clearContent() {
         lines = []
+        breaks = []
         currentIndex = nil
         isSynced = false
         isLoading = false
     }
 
-    /// The lyric to show on its own, with no surrounding context — what the
-    /// closed notch's single-line activity draws. Returns nil when nothing is
-    /// being sung right now.
+    /// The line being sung right now, and the span it is sung over — what the
+    /// closed notch's one-line activity draws. nil when nothing is being sung.
     ///
     /// Deliberately not `currentLine`. In the scrolling list, keeping the last
     /// sung line highlighted is correct: it marks where you are in the song.
-    /// Under the closed notch there is no list to mark a place in, so the same
-    /// rule left the final lyric of a track sitting there for the whole outro
-    /// — a notch that looks stuck.
+    /// Under the closed notch there is no list to mark a place in, so a line
+    /// has to go away once it has been sung.
     ///
-    /// LRC carries no end time, and the blank separator lines that would imply
-    /// one are dropped at parse time because they have no text. So a line's
-    /// window is "until the next one", capped at `maxDwell` — long enough to
-    /// read a slow line, short enough that an instrumental break clears.
-    func standaloneLine(at time: TimeInterval, maxDwell: TimeInterval = 8) -> String? {
+    /// LRC carries only start times, so a line's end is inferred: the next line
+    /// or instrumental marker, or — when the next line is a long way off —
+    /// about as long as the line takes to sing. The old rule held every line
+    /// until the next one (up to 8s) and threw the break markers away, so a
+    /// lyric sat on the notch through instrumental passages. Lines sung back to
+    /// back are bridged, so the row does not blink out between them.
+    func liveLine(at time: TimeInterval) -> LiveLine? {
         guard isSynced, !lines.isEmpty else { return nil }
         guard let index = lines.lastIndex(where: { $0.time <= time }) else { return nil }
 
         let line = lines[index]
-        let nextStart = index + 1 < lines.count ? lines[index + 1].time : nil
-        let window = min(nextStart.map { $0 - line.time } ?? maxDwell, maxDwell)
-        guard time - line.time <= window else { return nil }
+        let nextLine = index + 1 < lines.count ? lines[index + 1].time : .infinity
+        let nextBreak = breaks.first { $0 > line.time } ?? .infinity
 
-        let text = line.text.trimmingCharacters(in: .whitespaces)
-        return text.isEmpty ? nil : text
+        var end = line.time + Self.singingDuration(for: line.text)
+        if nextLine - end < Self.bridgeGap { end = nextLine }
+        end = min(end, nextLine, nextBreak)
+
+        guard time < end else { return nil }
+        return LiveLine(text: line.text, start: line.time, end: end)
+    }
+
+    /// A gap shorter than this between one line ending and the next starting
+    /// is a breath, not a pause in the singing.
+    private static let bridgeGap: TimeInterval = 1.5
+
+    /// Roughly how long a line takes to sing: about half a second a word, with
+    /// a floor so a one-word line can still be read and a ceiling so a long
+    /// outro cannot hold the last line on screen.
+    static func singingDuration(for text: String) -> TimeInterval {
+        let words = text.split(whereSeparator: \.isWhitespace).count
+        // Scripts written without spaces between words count by character.
+        let units = max(words, Int((Double(text.count) / 5).rounded()))
+        return min(max(1.2 + Double(units) * 0.45, 2.5), 7)
     }
 
     /// Called on each playback tick; moves the highlighted line to the last
@@ -144,14 +176,14 @@ final class LyricsEngine {
         artist: String,
         album: String,
         duration: TimeInterval
-    ) async -> (lines: [Line], isSynced: Bool) {
+    ) async -> (lines: [Line], breaks: [TimeInterval], isSynced: Bool) {
         let cleanTitle = cleaned(title)
         let cleanArtist = cleaned(artist)
 
         var payload = await get(title: title, artist: artist, album: album, duration: duration)
 
         if payload == nil, cleanTitle != title || cleanArtist != artist {
-            payload = await get(title: cleanTitle, artist: cleanArtist, album: "", duration: 0)
+            payload = await get(title: cleanTitle, artist: cleanArtist, album: "", duration: duration)
         }
 
         if payload == nil {
@@ -164,11 +196,11 @@ final class LyricsEngine {
             payload = await search(title: cleanTitle, artist: "", duration: duration)
         }
 
-        guard let payload else { return ([], false) }
+        guard let payload else { return ([], [], false) }
 
         let synced = parseLRC(payload.syncedLyrics ?? "")
-        if !synced.isEmpty { return (synced, true) }
-        return (plainLines(payload.plainLyrics ?? ""), false)
+        if !synced.lines.isEmpty { return (synced.lines, synced.breaks, true) }
+        return (plainLines(payload.plainLyrics ?? ""), [], false)
     }
 
     /// Exact lookup. Returns nil for anything that is not a usable hit — a
@@ -228,9 +260,12 @@ final class LyricsEngine {
 
         let synced = usable.filter { !($0.syncedLyrics ?? "").isEmpty }
         let pool = synced.isEmpty ? usable : synced
-        // Anything more than 15s off is a different recording, not this one.
+        // More than a few seconds off is a different edit of the song — a
+        // radio edit, a longer intro — whose timestamps would run early or late
+        // the whole way through. 15s let those through, and the lyrics never
+        // lined up with what was playing.
         let best = pool.min { distance($0) < distance($1) }
-        if let best, duration > 0, distance(best) > 15, distance(best) != 999 { return nil }
+        if let best, duration > 0, distance(best) > 4, distance(best) != 999 { return nil }
         return best
     }
 
@@ -273,10 +308,11 @@ final class LyricsEngine {
 
     // MARK: - LRC parsing
 
-    static func parseLRC(_ text: String) -> [Line] {
-        guard let regex = timestampRegex, !text.isEmpty else { return [] }
+    static func parseLRC(_ text: String) -> (lines: [Line], breaks: [TimeInterval]) {
+        guard let regex = timestampRegex, !text.isEmpty else { return ([], []) }
 
         var result: [(time: TimeInterval, text: String)] = []
+        var breaks: [TimeInterval] = []
         for rawLine in text.components(separatedBy: .newlines) {
             let nsLine = rawLine as NSString
             let fullRange = NSRange(location: 0, length: nsLine.length)
@@ -286,20 +322,39 @@ final class LyricsEngine {
             let content = nsLine
                 .substring(from: last.range.location + last.range.length)
                 .trimmingCharacters(in: .whitespaces)
-            guard !content.isEmpty else { continue }
+            // A timestamp with nothing sung after it marks where an
+            // instrumental passage starts. These used to be dropped for having
+            // no text, which left the previous line up through the whole break.
+            let isVocal = !content.isEmpty && !isNonVocal(content)
 
             // A line may carry several timestamps ("[00:12.3][01:04.9]lyric").
             for match in matches {
                 let minutes = Double(nsLine.substring(with: match.range(at: 1))) ?? 0
                 let seconds = Double(nsLine.substring(with: match.range(at: 2))) ?? 0
-                result.append((minutes * 60 + seconds, content))
+                let time = minutes * 60 + seconds
+                if isVocal {
+                    result.append((time, content))
+                } else {
+                    breaks.append(time)
+                }
             }
         }
 
-        return result
+        let lines = result
             .sorted { $0.time < $1.time }
             .enumerated()
             .map { Line(id: $0.offset, time: $0.element.time, text: $0.element.text) }
+        return (lines, breaks.sorted())
+    }
+
+    /// Placeholder lines that stand for no singing at all: music notes, and the
+    /// "(Instrumental)" / "[Music]" markers some catalog entries use.
+    static func isNonVocal(_ text: String) -> Bool {
+        let decoration = CharacterSet(charactersIn: "♪♫♬🎵🎶()[]*-–—….").union(.whitespaces)
+        let stripped = text.trimmingCharacters(in: decoration)
+        if stripped.isEmpty { return true }
+        return ["instrumental", "music", "interlude", "solo", "guitar solo", "intro", "outro"]
+            .contains(stripped.lowercased())
     }
 
     static func plainLines(_ text: String) -> [Line] {

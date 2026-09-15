@@ -24,6 +24,37 @@ final class SettingsHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
+/// Activation for the app's ordinary windows — Settings and Clipboard.
+///
+/// Notch runs as an accessory app with no Dock icon, so a real window needs the
+/// app to become a regular one while it is open, and to go back once the last
+/// such window closes. Each window flipping the policy on its own would hide
+/// the Dock icon — and push to the back — a window that was still open.
+enum AppWindows {
+    static func present(_ window: NSWindow?) {
+        guard let window else { return }
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        // Re-asserted a turn later: the policy change only takes effect on the
+        // next pass of the run loop, and without this the window can come up
+        // behind the app it was opened from.
+        DispatchQueue.main.async {
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    static func didClose(_ closing: NSWindow?) {
+        closing?.orderOut(nil)
+        let anotherOpen = NSApp.windows.contains { window in
+            window !== closing && window.isVisible && window.styleMask.contains(.titled)
+        }
+        if !anotherOpen {
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+}
+
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     static let shared = SettingsWindowController()
 
@@ -75,8 +106,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        window?.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
+        AppWindows.didClose(window)
     }
 
     func windowDidBecomeKey(_ notification: Notification) {

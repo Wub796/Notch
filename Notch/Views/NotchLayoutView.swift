@@ -82,45 +82,36 @@ struct NotchLayoutView: View {
     /// it actually needed. That lands in `NotchState.measuredModuleHeight`,
     /// which is what `expandedSize` hugs, so the slab shrinks to the content
     /// instead of carrying a black band beneath it.
-    @ViewBuilder
     private var sizedModule: some View {
-        if NotchSizing.fitsHeight(for: state.tab) {
-            moduleContent
-                .frame(width: state.moduleContentSize.width)
-                .fixedSize(horizontal: false, vertical: true)
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: ModuleNaturalHeightKey.self,
-                            value: proxy.size.height
-                        )
-                    }
-                }
-                .onPreferenceChange(ModuleNaturalHeightKey.self) { height in
-                    // Deferred off the layout pass: recording the height while
-                    // SwiftUI is mid-update can be dropped, which silently
-                    // leaves the slab on its full budget — the black band
-                    // under the module this mechanism exists to remove. The
-                    // tab is captured so a switch before the block runs can't
-                    // file the height under the wrong screen.
-                    let tab = state.tab
-                    DispatchQueue.main.async {
+        // One structure for both kinds of tab. This was an if/else on
+        // `fitsHeight`, so a switch between a fitted and a fixed tab replaced
+        // the whole module with a different view — a plain crossfade running
+        // around the screen transition instead of through it.
+        let fits = NotchSizing.fitsHeight(for: state.tab)
+        return moduleContent
+            .frame(
+                width: state.moduleContentSize.width,
+                height: fits ? nil : state.moduleContentSize.height,
+                alignment: .center
+            )
+            .fixedSize(horizontal: false, vertical: fits)
+            .onPreferenceChange(ModuleNaturalHeightKey.self) { heights in
+                // Deferred off the layout pass: recording a height while
+                // SwiftUI is mid-update can be dropped, which silently leaves
+                // the slab on its full budget.
+                DispatchQueue.main.async {
+                    for (tab, height) in heights where NotchSizing.fitsHeight(for: tab) {
                         state.updateMeasuredModuleHeight(height, for: tab)
                     }
                 }
-        } else {
-            moduleContent
-                .frame(
-                    width: state.moduleContentSize.width,
-                    height: state.moduleContentSize.height,
-                    alignment: .center
-                )
-        }
+            }
     }
 
     @ViewBuilder
     private var moduleContent: some View {
-        if state.isDropTargeted || state.shelf.isResolvingDrop {
+        // The shelf draws its own drop targets, so it stays in place while
+        // something is dragged over it instead of being swapped for this one.
+        if state.tab != .shelf, state.isDropTargeted || state.shelf.isResolvingDrop {
             DropZoneView(
                 isResolving: state.shelf.isResolvingDrop,
                 instantAirDrop: state.settings.instantAirDrop
@@ -130,22 +121,17 @@ struct NotchLayoutView: View {
         }
     }
 
-    /// The screen itself. Keyed on the tab so switching screens is a
-    /// substitution with a transition rather than a hard replacement — the
-    /// panel is already open here, and it resizes on the same `content`
-    /// animation, so the two move together instead of one cutting under the
-    /// other.
-    @ViewBuilder
+    /// The screen itself. Keyed on the tab so switching screens is a sequenced
+    /// substitution (see `NotchAnimations.screenSwap`) rather than a hard
+    /// replacement, and measured under its own tab so the outgoing screen's
+    /// height is never filed under the incoming one.
     private var tabContent: some View {
-        tabScreen
-            .id(state.tab)
-            .transition(
-                .asymmetric(
-                    insertion: .opacity.combined(with: .scale(scale: 0.985, anchor: .top)).combined(with: .offset(y: 4)),
-                    removal: .opacity
-                )
-            )
-            .animation(NotchAnimations.content, value: state.tab)
+        MeasuredScreen(tab: state.tab) {
+            tabScreen
+        }
+        .id(state.tab)
+        .transition(NotchAnimations.screenSwap)
+        .animation(NotchAnimations.content, value: state.tab)
     }
 
     @ViewBuilder
@@ -161,8 +147,6 @@ struct NotchLayoutView: View {
             CalendarDetailView(state: state)
         case .shelf:
             ShelfView(state: state)
-        case .clipboard:
-            ClipboardView(state: state)
         case .tools:
             ToolsView(state: state)
         case .notes:
@@ -175,14 +159,38 @@ struct NotchLayoutView: View {
     }
 }
 
-/// Carries the open module's natural height out of the size pass. Defaults to
-/// zero; NotchState ignores non-positive values, so the slab is unaffected
-/// until a real measurement arrives.
+/// Carries each screen's natural height out of the size pass, keyed by the tab
+/// that measured it. Keyed, because during a switch the outgoing and incoming
+/// screens are both laid out: a single number read off their container was the
+/// taller of the two, filed under the new tab — so its slab opened to the
+/// wrong height and then corrected itself in a second, separate animation.
 private struct ModuleNaturalHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
+    static let defaultValue: [NotchTab: CGFloat] = [:]
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    static func reduce(value: inout [NotchTab: CGFloat], nextValue: () -> [NotchTab: CGFloat]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+/// A screen that reports its own natural height, under its own tab.
+private struct MeasuredScreen<Content: View>: View {
+    let tab: NotchTab
+    let content: Content
+
+    init(tab: NotchTab, @ViewBuilder content: () -> Content) {
+        self.tab = tab
+        self.content = content()
+    }
+
+    var body: some View {
+        content.background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: ModuleNaturalHeightKey.self,
+                    value: [tab: proxy.size.height]
+                )
+            }
+        }
     }
 }
 

@@ -690,6 +690,7 @@ private struct MediaSettingsPane: View {
     var body: some View {
         SettingsPane {
             spotifyCard
+            canvasCard
             appleMusicCard
             preferredPlayerCard
             closedNotchCard
@@ -846,6 +847,55 @@ private struct MediaSettingsPane: View {
                         .foregroundStyle(.green)
                 }
                 action()
+            }
+        }
+    }
+
+    private var canvasSession = SpotifyCanvasSession.shared
+
+    private var canvasStatus: (title: String, subtitle: String) {
+        switch canvasSession.status {
+        case .signedOut:
+            return ("Not signed in", "Sign in to play the Canvas video behind a track.")
+        case .working:
+            return ("Signing in…", "Checking the sign-in with Spotify.")
+        case .signedIn:
+            return ("Signed in to Spotify", "Canvas plays in place of the album art.")
+        case .expired:
+            return ("Sign-in expired", "Spotify signed this session out. Sign in again.")
+        case let .error(message):
+            return ("Couldn’t sign in", message)
+        }
+    }
+
+    private var canvasCard: some View {
+        SettingsCard(title: "Spotify Canvas") {
+            SettingsRow(
+                systemImage: "play.rectangle.on.rectangle.fill",
+                tint: .green,
+                title: "Show Spotify Canvas",
+                subtitle: "Play the looping Canvas video in place of the album art. "
+                    + "Uses Spotify’s private endpoints, so it can break when Spotify changes them."
+            ) {
+                Toggle("", isOn: $settings.spotifyCanvasEnabled)
+                    .labelsHidden()
+                    .disabled(!canvasSession.hasCookie)
+            }
+
+            SettingsRow(
+                systemImage: "person.crop.circle.fill",
+                tint: .green,
+                title: canvasStatus.title,
+                subtitle: canvasStatus.subtitle,
+                showsDivider: false
+            ) {
+                if canvasSession.hasCookie {
+                    Button("Sign Out") { canvasSession.signOut() }
+                } else {
+                    Button("Sign in with Spotify") {
+                        SpotifyCanvasLoginWindowController.shared.present(session: canvasSession)
+                    }
+                }
             }
         }
     }

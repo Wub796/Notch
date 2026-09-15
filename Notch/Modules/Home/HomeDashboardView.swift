@@ -141,16 +141,14 @@ struct HomeDashboardView: View {
     private var musicSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center, spacing: 12) {
-                Button {
-                    state.select(.audio)
-                } label: {
+                Button(action: openSource) {
                     artwork
                 }
-                // The tile opens the full player, so it needs the same press
-                // feedback as every other control — `.plain` left the biggest
-                // tappable thing on the dashboard feeling dead under the finger.
+                // The cover opens the app the music is playing in; the full
+                // player is the rail's media control, and the title beside it.
                 .buttonStyle(PressableButtonStyle())
                 .contentShape(Rectangle())
+                .help(sourceHelp)
 
                 VStack(alignment: .leading, spacing: 2) {
                     // Uppercase and letterspaced, as in the reference: the title is
@@ -162,6 +160,8 @@ struct HomeDashboardView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: 220, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .onTapGesture { state.select(.audio) }
 
                     HStack(spacing: 4) {
                         Text(displayArtist)
@@ -211,6 +211,27 @@ struct HomeDashboardView: View {
     /// splits the row evenly and truncates its label, so any number of
     /// sources fit without ever overflowing the section; clicking one brings
     /// that app to the front.
+    /// Brings the music's app forward and gets the notch out of its way. With
+    /// no app to open — nothing playing at all — the cover opens the player.
+    private func openSource() {
+        if state.media.openableSourceName != nil {
+            state.media.openSourceApp()
+        } else if let app = activeAudioApp {
+            app.activate()
+        } else {
+            state.select(.audio)
+            return
+        }
+        state.collapse()
+    }
+
+    private var sourceHelp: String {
+        guard let name = state.media.openableSourceName ?? activeAudioApp?.name else {
+            return "Open the full player"
+        }
+        return "Open \(name)"
+    }
+
     private var otherAudioAppsRow: some View {
         HStack(spacing: 8) {
             ForEach(otherAudioApps) { app in
@@ -251,16 +272,24 @@ struct HomeDashboardView: View {
     }
 
     private var artwork: some View {
-        Group {
+        ZStack {
             // Keyed on `artworkVersion` so the cover crossfades on track
             // change; the stable container below keeps the open/close morph
             // and the source-app badge fixed while the image swaps.
             artworkContent
                 .id(state.media.artworkVersion)
                 .transition(.opacity)
+
+            // The Spotify Canvas plays over the cover when there is one.
+            if let url = state.spotifyCanvas.canvasURL {
+                CanvasVideoView(url: url)
+                    .id(url)
+                    .transition(.opacity)
+            }
         }
         .frame(width: 88, height: 88)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .animation(NotchAnimations.content, value: state.spotifyCanvas.canvasURL)
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: state.media.accent.opacity(0.38), radius: 12, y: 4)
         .animation(NotchAnimations.content, value: state.media.artworkVersion)

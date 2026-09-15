@@ -37,25 +37,31 @@ struct CollapsedNotchView: View {
                     musicWings
                         .frame(height: state.adjustedNotchSize.height)
 
-                    if case let .lyrics(line) = state.collapsedActivity {
-                        Text(line)
-                            .font(.notchBody.weight(.bold))
-                            .foregroundStyle(state.media.accent)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .padding(.horizontal, NotchSizing.closedWingInset)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 26)
-                            // Line-to-line is a crossfade in place; the row
-                            // arriving or leaving slides out of the notch.
-                            .contentTransition(.opacity)
-                            .animation(NotchAnimations.activity, value: line)
-                            .transition(
-                                .move(edge: .top)
-                                    .combined(with: .opacity)
+                    if case let .lyrics(line, duration) = state.collapsedActivity {
+                        ZStack {
+                            // Keyed on the line, so each one gets a fresh
+                            // ticker that scrolls from its own start, and one
+                            // line crossfades into the next in place.
+                            LyricTickerText(
+                                text: line,
+                                duration: duration,
+                                font: .notchBody.weight(.bold),
+                                width: max(
+                                    state.collapsedSize.width - NotchSizing.closedWingInset * 2,
+                                    0
+                                )
                             )
-                            .accessibilityLabel("Lyric")
-                            .accessibilityValue(line)
+                            .id(line)
+                            .transition(.opacity.animation(NotchAnimations.activity))
+                        }
+                        .foregroundStyle(state.media.accent)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 26)
+                        // The row arriving or leaving slides out of the notch.
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Lyric")
+                        .accessibilityValue(line)
                     }
                 }
                 .animation(NotchAnimations.activity, value: state.collapsedActivity)

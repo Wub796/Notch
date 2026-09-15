@@ -14,10 +14,19 @@ struct ExpandedNotchView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             // The rail and a detail screen's back button are different views,
             // so without this the strip cuts from one to the other in the
-            // middle of the panel's own resize.
-            .id(state.tab)
-            .transition(.opacity)
-            .animation(NotchAnimations.content, value: state.tab)
+            // middle of the panel's own resize. Keyed on what the header draws,
+            // not on the tab: keyed on the tab, the whole rail faded out and
+            // back in on every switch between two modules that share it.
+            .id(headerKind)
+            .transition(NotchAnimations.headerSwap)
+            .animation(NotchAnimations.content, value: headerKind)
+    }
+
+    private var headerKind: String {
+        switch state.tab {
+        case .weather, .calendar, .audio: state.tab.rawValue
+        default: "rail"
+        }
     }
 
     @ViewBuilder

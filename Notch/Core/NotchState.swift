@@ -21,7 +21,6 @@ enum NotchTab: String {
     /// Week-at-a-glance calendar detail.
     case calendar
     case shelf
-    case clipboard
     case tools
     case notes
     case telemetry
@@ -64,6 +63,10 @@ final class NotchState {
     /// grow ahead of the first animation frame. See `expand()`.
     var onWillExpand: (() -> Void)?
 
+    /// Called just before a tab switch lands, with the incoming tab, so the
+    /// window can grow for it first. See `select(_:)`.
+    var onWillShowTab: ((NotchTab) -> Void)?
+
     /// Physical notch size, injected by NotchWindowController at launch.
     var notchSize: CGSize = NotchGeometry.fallbackSize
 
@@ -72,6 +75,12 @@ final class NotchState {
     /// are genuinely different shapes, and forcing both into one box shrank
     /// each past legibility.
     var expandedSize: CGSize {
+        expandedSize(for: tab)
+    }
+
+    /// The open slab for a given tab — the one showing, or one about to be, so
+    /// the window can be grown for a screen before it arrives.
+    func expandedSize(for tab: NotchTab) -> CGSize {
         var size = NotchSizing.openNotchSize(for: tab, showsLyrics: mediaShowsFullLyrics)
         // The Now page reveals or hides its compact synced lyric line. Keep
         // the panel fitted to that state so the blank area below the bar is
@@ -110,7 +119,7 @@ final class NotchState {
                     hasOtherAudioChips: settings.dashboardWidgets.contains(.music)
                     && !otherAudioApps.isEmpty
                 )
-            } else if let measured = measuredModuleHeight {
+            } else if let measured = measuredHeights[tab] {
                 natural = measured
             } else {
                 natural = budget
@@ -153,7 +162,12 @@ final class NotchState {
     /// interactive region), so click and drag hit-testing always covers the
     /// whole panel including the dropped bar.
     var expandedTotalHeight: CGFloat {
-        expandedSize.height + (isShowingExpandedHUD ? NotchSizing.expandedHUDDropHeight : 0)
+        expandedTotalHeight(for: tab)
+    }
+
+    func expandedTotalHeight(for tab: NotchTab) -> CGFloat {
+        expandedSize(for: tab).height
+            + (isShowingExpandedHUD ? NotchSizing.expandedHUDDropHeight : 0)
     }
 
     /// Apps currently putting audio out besides the one the dashboard's
@@ -298,6 +312,10 @@ final class NotchState {
     let quickActions = QuickActions()
     /// The webcam preview. Strictly bound to its screen being visible.
     let camera = CameraController()
+    /// The Spotify sign-in behind the Canvas feature.
+    let spotifyCanvasSession = SpotifyCanvasSession.shared
+    /// The current track's Spotify Canvas video, when signed in and enabled.
+    let spotifyCanvas: SpotifyCanvasController
     let audioApps = AudioAppMonitor()
     let audioMeter = SystemAudioMeter()
 
@@ -326,6 +344,9 @@ final class NotchState {
 
     /// An open scheduled by `expand()`; a collapse that lands first cancels it.
     private var pendingExpandWork: DispatchWorkItem?
+
+    /// A tab switch scheduled by `select(_:)`; a newer one replaces it.
+    private var pendingSelectWork: DispatchWorkItem?
     private var hoverStartedAt: Date?
 
     /// Whether the pointer is over the notch. Read by the view for its hover
@@ -337,6 +358,10 @@ final class NotchState {
     private static let minimumDwellForClick: TimeInterval = 0.06
 
     init() {
+        spotifyCanvas = SpotifyCanvasController(
+            session: spotifyCanvasSession,
+            media: media
+        )
         // Personalization: reopen on the tab the user last used. Every tab is
         // reachable from the top bar, so any of them is a valid landing spot.
         if let restored = NotchTab(rawValue: settings.lastTab) {
@@ -377,7 +402,15 @@ final class NotchState {
         }
 
         media.onTrackChange = { [weak self] track in
-            self?.activities.showTrackChange(title: track.title, artist: track.artist)
+            guard let self else { return }
+            self.activities.showTrackChange(title: track.title, artist: track.artist)
+            self.spotifyCanvas.trackChanged()
+        }
+        settings.onSpotifyCanvasSettingChanged = { [weak self] _ in
+            self?.spotifyCanvas.refresh()
+        }
+        spotifyCanvasSession.onStatusChange = { [weak self] _ in
+            self?.spotifyCanvas.refresh()
         }
 
         // The visualizer is data-only and does not capture screen pixels.
@@ -560,8 +593,8 @@ final class NotchState {
             return .meetingSoon(title: event.title, start: event.start)
         }
         if settings.lyricActivityEnabled, media.isPlaying,
-           let line = media.collapsedLyricLine {
-            return .lyrics(line: line)
+           let lyric = media.collapsedLyric {
+            return .lyrics(line: lyric.text, duration: lyric.end - lyric.start)
         }
         // Any active music playback or app audio replaces the weather wings
         // next to the notch.
@@ -797,14 +830,28 @@ final class NotchState {
     }
 
     func select(_ newTab: NotchTab) {
-        withAnimation(NotchAnimations.content) {
-            tab = newTab
-            // Leaving the player resets its lyric visibility, so returning
-            // to it does not reopen with a stale preference unexpectedly.
-            if newTab != .audio { mediaShowsFullLyrics = false }
-        }
         settings.lastTab = newTab.rawValue
-        onModeChange?(mode)
+        pendingSelectWork?.cancel()
+        // Applied on the next turn of the run loop, like `expand()`. The window
+        // grows for the incoming screen before the switch renders — resizing
+        // only afterwards, from `onModeChange`, let a taller screen's first
+        // frames draw into the old window — and a tab button reaches here from
+        // inside SwiftUI's event handling, where resizing the hosting window
+        // re-enters SwiftUI's update.
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingSelectWork = nil
+            if self.mode == .expanded { self.onWillShowTab?(newTab) }
+            withAnimation(NotchAnimations.content) {
+                self.tab = newTab
+                // Leaving the player resets its lyric visibility, so returning
+                // to it does not reopen with a stale preference unexpectedly.
+                if newTab != .audio { self.mediaShowsFullLyrics = false }
+            }
+            self.onModeChange?(self.mode)
+        }
+        pendingSelectWork = work
+        DispatchQueue.main.async(execute: work)
     }
 
     // MARK: - Action feedback
