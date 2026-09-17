@@ -47,16 +47,32 @@ struct ActivityWingLayout<Leading: View, Trailing: View>: View {
     let leading: Leading
     let trailing: Trailing
 
-    init(notchWidth: CGFloat, leading: Leading, trailing: Trailing) {
+    /// How far each wing's content sits from the frame edge. Every wing keeps
+    /// the standard inset; the one exception is the closed cover, which is a
+    /// filled tile nested in the notch's own corner rather than a glyph paying
+    /// for clearance from it, and so sits nearer the edge (see
+    /// `NotchSizing.closedArtworkInset`).
+    var leadingInset: CGFloat = NotchSizing.closedWingInset
+    var trailingInset: CGFloat = NotchSizing.closedWingInset
+
+    init(
+        notchWidth: CGFloat,
+        leading: Leading,
+        leadingInset: CGFloat = NotchSizing.closedWingInset,
+        trailing: Trailing,
+        trailingInset: CGFloat = NotchSizing.closedWingInset
+    ) {
         self.notchWidth = notchWidth
         self.leading = leading
         self.trailing = trailing
+        self.leadingInset = leadingInset
+        self.trailingInset = trailingInset
     }
 
     var body: some View {
         HStack(spacing: 0) {
             leading
-                .padding(.leading, NotchSizing.closedWingInset)
+                .padding(.leading, leadingInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
             // The real cutout rather than the bleed-widened `notchWidth`: the
             // bleed is black drawn past the camera housing, so it belongs to
@@ -64,7 +80,7 @@ struct ActivityWingLayout<Leading: View, Trailing: View>: View {
             Color.clear
                 .frame(width: max(notchWidth - NotchSizing.notchCoverageBleed, 0))
             trailing
-                .padding(.trailing, NotchSizing.closedWingInset)
+                .padding(.trailing, trailingInset)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

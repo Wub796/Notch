@@ -21,7 +21,13 @@ struct CalendarDetailView: View {
             } else {
                 VStack(alignment: .leading, spacing: 12) {
                     calendarToolbar
-                    weekStrip
+                    // The strip carries its own 12pt of cell padding, so the
+                    // 12pt stack gap put the day pill's ink 15.5pt under the
+                    // year while the agenda sat 19 below the pill — the strip
+                    // read as hanging off the title rather than standing as
+                    // its own band. Five points here even that pair up (20.5
+                    // against 19), measured, not guessed.
+                    weekStrip.padding(.top, 5)
                     bodyContent
                 }
             }
@@ -174,6 +180,9 @@ struct CalendarDetailView: View {
                     }
                 }
 
+                // Same rung as the week view's strip: the letters stood 16.5pt
+                // under the year while the first day row sat 21 below them, so
+                // the grid looked pinned to the title. Five points evens it.
                 HStack(spacing: 4) {
                     ForEach(Array("MTWTFSS".enumerated()), id: \.offset) { _, letter in
                         Text(String(letter))
@@ -182,6 +191,7 @@ struct CalendarDetailView: View {
                             .frame(maxWidth: .infinity)
                     }
                 }
+                .padding(.top, 5)
 
                 LazyVGrid(
                     columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7),
@@ -250,7 +260,12 @@ struct CalendarDetailView: View {
                     }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 5)
-                        .padding(.horizontal, 10)
+                        // No side padding: the row's colour bar is the list's
+                        // leading edge, and 10pt of inset put it nine points
+                        // inside the month above it — the one place on this
+                        // page that did not sit on the text column. The row
+                        // carries no background or hover of its own, so the
+                        // inset bought nothing.
                     }
                 }
             }

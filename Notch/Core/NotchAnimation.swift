@@ -67,6 +67,23 @@ enum NotchAnimations {
         mode == .expanded ? open : close
     }
 
+    /// How long a close takes to be *finished* rather than merely started.
+    ///
+    /// A spring has no duration of its own, but two things need the same
+    /// answer to "has the notch finished closing yet?": the panel window, which
+    /// must not shrink until the slab has finished animating inside it (it would
+    /// clip the slab mid-flight), and the hover probe, which must not re-open the
+    /// notch while it is still on its way down. One number, so the two can never
+    /// disagree about when the motion is over.
+    static var closeSettle: TimeInterval {
+        guard !prefersReducedMotion else { return 0.2 }
+        switch profile {
+        case .snappy: return 0.55
+        case .bouncy: return 0.6
+        case .calm: return 0.65
+        }
+    }
+
     /// Tab switches, gauge fills, lyric moves.
     static var content: Animation {
         guard !prefersReducedMotion else { return reduced }

@@ -275,12 +275,16 @@ struct DetailHeaderView<Trailing: View>: View {
         .overlay(alignment: .topLeading) {
             // Pinned to the header's outer (leading) edge rather than centred
             // in the left flank, so it stays put as the module width changes
-            // instead of drifting with the flank's midpoint.
+            // instead of drifting with the flank's midpoint — and flush with
+            // that edge, because it *is* the page's leading edge: the header
+            // and the module share one, so the button lines up with the month
+            // on the calendar page and the hero on the weather page. It used
+            // to sit 18pt in, which read as a control floating beside the page
+            // rather than its first element.
             NotchBackButton {
                 state.select(.home)
             }
             .padding(.top, 2)
-            .padding(.leading, 18)
         }
     }
 }

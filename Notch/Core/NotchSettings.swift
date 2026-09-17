@@ -110,6 +110,62 @@ enum DashboardWidget: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// A "remind me this long before" option for calendar events.
+///
+/// The notch announces an event once per enabled lead — 30, 15 and 5 minutes
+/// before by default — rather than holding the event on the notch from the
+/// first window until well after it starts, which is what left the row sitting
+/// on "now" through the opening minutes of every meeting.
+enum CalendarReminderLead: Int, CaseIterable, Identifiable, Hashable, Sendable {
+    case hour = 60
+    case thirtyMinutes = 30
+    case fifteenMinutes = 15
+    case tenMinutes = 10
+    case fiveMinutes = 5
+    case oneMinute = 1
+    case atStart = 0
+
+    var id: Int { rawValue }
+
+    /// The chip's text. Minutes rather than "minutes" so seven of them fit on
+    /// one line.
+    var title: String {
+        switch self {
+        case .hour: "1h"
+        case .thirtyMinutes: "30m"
+        case .fifteenMinutes: "15m"
+        case .tenMinutes: "10m"
+        case .fiveMinutes: "5m"
+        case .oneMinute: "1m"
+        case .atStart: "Start"
+        }
+    }
+
+    /// Spelled out for the tooltip and the accessibility label.
+    var help: String {
+        switch self {
+        case .hour: "Once, an hour before"
+        case .thirtyMinutes: "Once, 30 minutes before"
+        case .fifteenMinutes: "Once, 15 minutes before"
+        case .tenMinutes: "Once, 10 minutes before"
+        case .fiveMinutes: "Once, 5 minutes before"
+        case .oneMinute: "Once, a minute before"
+        case .atStart: "Once, as the event starts"
+        }
+    }
+
+    /// What the app shipped with: the three the reference asks for.
+    static let defaults: [CalendarReminderLead] = [.thirtyMinutes, .fifteenMinutes, .fiveMinutes]
+
+    /// Known leads only, no duplicates, longest first — the order they read in.
+    /// Deliberately allowed to come back empty: every chip off means "do not
+    /// remind me", which is a legitimate answer rather than a broken state.
+    static func sanitized(_ leads: [CalendarReminderLead]) -> [CalendarReminderLead] {
+        var seen = Set<CalendarReminderLead>()
+        return leads.filter { seen.insert($0).inserted }.sorted { $0.rawValue > $1.rawValue }
+    }
+}
+
 /// User preferences, persisted to UserDefaults, plus the launch-at-login
 /// registration through SMAppService.
 @Observable
@@ -139,8 +195,45 @@ final class NotchSettings {
         didSet { save(animationProfile.rawValue, "animationProfile") }
     }
 
-    /// Battery plug/unplug and meeting-soon activities in the collapsed notch.
+    /// Master switch for the system events that interrupt the collapsed notch.
+    /// Each source below also has its own switch, so this is the "all of it"
+    /// answer rather than the only one.
     var liveActivitiesEnabled = true { didSet { save(liveActivitiesEnabled, "liveActivitiesEnabled") } }
+
+    /// Battery plug/unplug and low-battery activities.
+    var powerEventEnabled = true { didSet { save(powerEventEnabled, "powerEventEnabled") } }
+
+    /// Focus mode changes (Do Not Disturb, Work, Sleep…).
+    var focusChangeEnabled = true { didSet { save(focusChangeEnabled, "focusChangeEnabled") } }
+
+    /// Screen lock and unlock.
+    var screenLockActivityEnabled = true {
+        didSet { save(screenLockActivityEnabled, "screenLockActivityEnabled") }
+    }
+
+    /// Announce upcoming calendar events in the notch.
+    var calendarActivityEnabled = true {
+        didSet {
+            save(calendarActivityEnabled, "calendarActivityEnabled")
+            onCalendarReminderSettingChanged?()
+        }
+    }
+
+    /// When to announce an event, in minutes before it starts — each enabled
+    /// lead rings once and then the notch hands itself back.
+    var calendarReminderLeads: [CalendarReminderLead] = CalendarReminderLead.defaults {
+        didSet {
+            let clean = CalendarReminderLead.sanitized(calendarReminderLeads)
+            if clean != calendarReminderLeads { calendarReminderLeads = clean }
+            save(calendarReminderLeads.map(\.rawValue), "calendarReminderLeads")
+            onCalendarReminderSettingChanged?()
+        }
+    }
+
+    /// Fires when the calendar reminders are switched on or off, or when the
+    /// lead times change, so the schedule is rebuilt on the spot instead of at
+    /// the next calendar edit.
+    var onCalendarReminderSettingChanged: (() -> Void)?
 
     /// Show system volume changes as a HUD in the collapsed notch.
     var volumeHUDEnabled = true { didSet { save(volumeHUDEnabled, "volumeHUDEnabled") } }
@@ -185,6 +278,10 @@ final class NotchSettings {
     /// Show the numeric percentage beside the battery glyph.
     var showBatteryPercentage = true { didSet { save(showBatteryPercentage, "showBatteryPercentage") } }
 
+    /// A small bolt — plus the live percentage while actually charging —
+    /// beside the closed notch whenever the charger is connected. The
+    /// plug-in popup announces the transition; this is the persistent state.
+
     /// Low battery notification threshold.
     var lowBatteryThreshold = 20 { didSet { save(lowBatteryThreshold, "lowBatteryThreshold") } }
 
@@ -210,18 +307,17 @@ final class NotchSettings {
     var sneakPeekDuration = 3.5 { didSet { save(sneakPeekDuration, "sneakPeekDuration") } }
 
     /// Show the current synced lyric line under the closed notch while playing.
-    var lyricActivityEnabled = true { didSet { save(lyricActivityEnabled, "lyricActivityEnabled") } }
-
-    /// Play the Spotify Canvas (the looping video behind a track) in place of
-    /// the album art, when signed in. Off by default: it needs a Spotify
-    /// sign-in and reaches Spotify's private endpoints.
-    var spotifyCanvasEnabled = false {
+    var lyricActivityEnabled = true {
         didSet {
-            save(spotifyCanvasEnabled, "spotifyCanvasEnabled")
-            notify(onSpotifyCanvasSettingChanged, spotifyCanvasEnabled)
+            save(lyricActivityEnabled, "lyricActivityEnabled")
+            notify(onLyricActivitySettingChanged, lyricActivityEnabled)
         }
     }
-    var onSpotifyCanvasSettingChanged: ((Bool) -> Void)?
+
+    /// Fires when the closed notch's lyric line is switched on or off, so the
+    /// line appears (or goes away) immediately instead of waiting for the next
+    /// track change or open/close to be noticed.
+    var onLyricActivitySettingChanged: ((Bool) -> Void)?
 
     /// Two-finger scroll over the closed notch opens it. (Only opens —
     /// closing is hover-out, the hotkey, or a click outside.)
@@ -466,9 +562,6 @@ final class NotchSettings {
         if defaults.object(forKey: "showMediaWings") != nil {
             showMediaWings = defaults.bool(forKey: "showMediaWings")
         }
-        if defaults.object(forKey: "spotifyCanvasEnabled") != nil {
-            spotifyCanvasEnabled = defaults.bool(forKey: "spotifyCanvasEnabled")
-        }
         if let providerString = defaults.string(forKey: "musicProvider"),
            let provider = MusicProvider(rawValue: providerString) {
             musicProvider = provider
@@ -483,6 +576,23 @@ final class NotchSettings {
         }
         if defaults.object(forKey: "liveActivitiesEnabled") != nil {
             liveActivitiesEnabled = defaults.bool(forKey: "liveActivitiesEnabled")
+        }
+        if defaults.object(forKey: "powerEventEnabled") != nil {
+            powerEventEnabled = defaults.bool(forKey: "powerEventEnabled")
+        }
+        if defaults.object(forKey: "focusChangeEnabled") != nil {
+            focusChangeEnabled = defaults.bool(forKey: "focusChangeEnabled")
+        }
+        if defaults.object(forKey: "screenLockActivityEnabled") != nil {
+            screenLockActivityEnabled = defaults.bool(forKey: "screenLockActivityEnabled")
+        }
+        if defaults.object(forKey: "calendarActivityEnabled") != nil {
+            calendarActivityEnabled = defaults.bool(forKey: "calendarActivityEnabled")
+        }
+        if let storedLeads = defaults.array(forKey: "calendarReminderLeads") as? [Int] {
+            calendarReminderLeads = CalendarReminderLead.sanitized(
+                storedLeads.compactMap(CalendarReminderLead.init(rawValue:))
+            )
         }
         if defaults.object(forKey: "volumeHUDEnabled") != nil {
             volumeHUDEnabled = defaults.bool(forKey: "volumeHUDEnabled")

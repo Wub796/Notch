@@ -92,7 +92,7 @@ struct ExpandedNotchView: View {
     /// The reference separates the view toggle from the day controls with thin
     /// rules, and spells "Today" out rather than using a pill.
     private func calendarHeaderTrailing(maxWidth: CGFloat) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             NotchIconButton(
                 systemImage: state.calendar.isMonthView ? "calendar" : "square.grid.2x2",
                 isActive: state.calendar.isMonthView,
@@ -115,11 +115,17 @@ struct ExpandedNotchView: View {
                 Text("Today")
                     .font(.notchBody.weight(.bold))
                     .foregroundStyle(NotchTheme.inkPrimary)
+                    // Never accept compression: at the slab's minimum width
+                    // the header flank was tighter than this cluster and the
+                    // label ellipsized to "Tod…". fixedSize plus lineLimit(1)
+                    // forces the shortfall onto the dividers' slack instead.
+                    .fixedSize()
                     .lineLimit(1)
                     .contentShape(Rectangle())
             }
             .buttonStyle(PressableButtonStyle())
             .help("Jump to today")
+            .accessibilityLabel("Today")
 
             headerDivider
 

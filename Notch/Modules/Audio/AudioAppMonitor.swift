@@ -120,6 +120,45 @@ final class AudioAppMonitor {
         return false
     }
 
+    /// Whether this macOS still lets a client set another process's output
+    /// level. The per-process `'voul'` property shipped in the earliest
+    /// macOS 14.4 seeds and was gone again by macOS 27, where the Process
+    /// class answers only its PID, bundle ID, device list and running flags
+    /// (verified against the SDK header and live objects) — so the Audio
+    /// screen's app sliders were writing into the void while the bars moved.
+    /// Probed by a write/read-back/restore round trip on a live process
+    /// object, because this is a platform fact, not a version fact.
+    private(set) var canControlAppVolume = false
+
+    private static var processVolumeSupport: Bool?
+
+    private static func probeProcessVolumeSupport() -> Bool {
+        if let supported = processVolumeSupport { return supported }
+        guard #available(macOS 14.4, *) else { return false }
+        guard let candidate = audioProcesses().first(where: { $0.isRunningOutput })
+            ?? audioProcesses().first else { return false }
+        var address = address(processVolumeSelector)
+        var size = UInt32(MemoryLayout<Float>.size)
+
+        var original: Float = -1
+        guard AudioObjectGetPropertyData(candidate.object, &address, 0, nil, &size, &original) == noErr,
+              original >= 0 else {
+            processVolumeSupport = false
+            return false
+        }
+        // Nudge away from where it sits so a no-op write is detectable.
+        var probe: Float = original >= 0.5 ? 0.4 : 0.6
+        AudioObjectSetPropertyData(candidate.object, &address, 0, nil, size, &probe)
+        var readBack: Float = -1
+        AudioObjectGetPropertyData(candidate.object, &address, 0, nil, &size, &readBack)
+        var restore: Float = original
+        AudioObjectSetPropertyData(candidate.object, &address, 0, nil, size, &restore)
+
+        let supported = readBack >= 0 && abs(readBack - probe) < 0.01
+        processVolumeSupport = supported
+        return supported
+    }
+
     /// `nowPlayingBundleID` is only used on the fallback path, and to keep the
     /// current player listed even while it is momentarily silent.
     func refresh(nowPlayingBundleID: String? = nil, isPlaying: Bool = false) {
@@ -136,9 +175,11 @@ final class AudioAppMonitor {
             } else {
                 apps = Self.fallbackApps(nowPlayingBundleID: nowPlayingBundleID, isPlaying: isPlaying)
             }
+            let canControl = Self.probeProcessVolumeSupport()
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.apps = self.withPinned(apps)
+                self.canControlAppVolume = canControl
             }
         }
     }

@@ -185,8 +185,14 @@ final class MediaKeyInterceptor {
             onVolume?(muted ? 0 : (volumeSource?() ?? 0), muted)
 
         case .brightnessUp, .brightnessDown:
-            var current = brightnessSource?() ?? 0
-            if current <= 0.001 {
+            // Zero is a real level, not a broken reader: a display stepped
+            // down to true black reads back 0, and the old "0 means unreadable,
+            // assume half" fallback made the very next key press jump to ~45% —
+            // the bounce-back. Only guess when there is no reader at all.
+            let current: Float
+            if let source = brightnessSource {
+                current = source()
+            } else {
                 current = 0.5
             }
             let target = min(max(current + (key == .brightnessUp ? delta : -delta), 0), 1)

@@ -13,7 +13,13 @@ struct CollapsedNotchView: View {
     var isHovering: Bool = false
 
     var body: some View {
-        ZStack {
+        // Top-anchored, deliberately. The strip fills a frame exactly as tall as
+        // `collapsedSize`, and centring it meant any mismatch — a drop height a
+        // few points short of what is actually drawn — was split between the top
+        // and bottom edges, pushing the wings up off the hardware notch. Anchored
+        // to the top, the notch's own row can only ever stay welded where it
+        // belongs and a shortfall spills harmlessly downward into the window.
+        ZStack(alignment: .top) {
             activityStrip
                 // One transition for every activity, keyed on the kind rather
                 // than the value: the wings, the lyric line, the dropped rows
@@ -114,9 +120,21 @@ struct CollapsedNotchView: View {
 
                         ChargingPopupView(level: CGFloat(percent) / 100)
                             .padding(.horizontal, NotchSizing.closedDropInset)
+                            // Clearance under the hardware cutout. The popup used
+                            // to start flush with the notch's bottom edge, and at
+                            // its natural height (45.6pt) inside a 46pt band the
+                            // centring pushed its top 3.4pt *above* that edge — so
+                            // its rounded top corners were painted over by the
+                            // notch and the pill read as hinged to it rather than
+                            // floating below it, iOS-style.
+                            .padding(.top, NotchSizing.chargingPopupTopGap)
                             .padding(.bottom, 6)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 46)
+                            // Top-aligned, not centred: the gap above the pill is
+                            // then exactly the constant, whatever the pill's own
+                            // height does with the text, and any slack falls
+                            // below it where nothing is drawn.
+                            .frame(height: NotchSizing.chargingPopupBandHeight, alignment: .top)
                             .transition(NotchAnimations.chargePop)
                     }
                 } else {
@@ -217,10 +235,15 @@ struct CollapsedNotchView: View {
         }
     }
 
-    /// "in 12m" / "now", for the meeting activity's trailing reading.
+    /// "in 12m" / "in 40s" / "now", for the meeting activity's trailing
+    /// reading. Seconds matter because the shortest reminder lead is a minute:
+    /// rounding that to whole minutes would have the row announce a meeting
+    /// that is still 59 seconds away as "now".
     private static func countdown(to start: Date, from now: Date) -> String {
-        let minutes = Int(start.timeIntervalSince(now) / 60)
-        if minutes <= 0 { return "now" }
+        let seconds = start.timeIntervalSince(now)
+        if seconds <= 0 { return "now" }
+        if seconds < 60 { return "in \(max(1, Int(seconds)))s" }
+        let minutes = Int(seconds / 60)
         if minutes < 60 { return "in \(minutes)m" }
         return "in \(minutes / 60)h \(minutes % 60)m"
     }
@@ -383,10 +406,15 @@ struct CollapsedNotchView: View {
     /// While music is playing the wings belong to the music: the cover on the
     /// left, a visualiser tinted from it on the right. The weather takes them
     /// back the moment playback stops.
+    @ViewBuilder
     private var musicWings: some View {
+        // The waveform is the permanent trailing wing while anything is
+        // playing — the charging state lives in the top-bar battery, never
+        // on the closed notch's sides.
         ActivityWingLayout(
             notchWidth: state.safeNotchSize.width,
             leading: miniArtwork,
+            leadingInset: NotchSizing.closedArtworkInset,
             trailing: MusicVisualizerView(
                 accent: state.media.accent,
                 // When the notch is following a tracked source (a real player
@@ -416,10 +444,41 @@ struct CollapsedNotchView: View {
                 .id(state.media.artworkVersion)
                 .transition(.opacity)
         }
-        .frame(width: 22, height: 22)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .frame(width: Self.artworkSide, height: Self.artworkSide)
+        .clipShape(RoundedRectangle(cornerRadius: artworkCornerRadius, style: .continuous))
         .animation(NotchAnimations.activity, value: state.media.artworkVersion)
         .accessibilityHidden(true)
+    }
+
+    /// The closed cover tile, square.
+    private static let artworkSide: CGFloat = 22
+
+    /// The cover's corner, nested in the notch's own.
+    ///
+    /// Nested corners only read as one shape when they follow one rule: an
+    /// inner corner's radius is the outer one's minus the black between them.
+    /// The cover sits `closedArtworkInset` from the frame edge, so on a closed
+    /// notch that is 8pt of black, and the radius is 16 - 8 = 8.
+    ///
+    /// 11 is the same rule against the 5pt the tile has above and below it,
+    /// and it was what this drew for a while. It cannot work here: 11 is half
+    /// the tile's 22pt side, so the tile has no straight edge left and reads as
+    /// a circle dropped in the pill rather than a corner of the same family.
+    ///
+    /// The notch's own radius is clamped by half the pill's height before it is
+    /// drawn: a 32pt pill asking for an 18pt bottom corner gets 16. That
+    /// clamped value is the closed pair's top radius, so 16 is what this
+    /// subtracts from rather than the nominal 18.
+    ///
+    /// Both are drawn with `ContinuousCorner`'s geometry, so the two curves are
+    /// the same curve at different sizes, which is what makes the numbers add
+    /// up: fitting the two corner arcs back out of the drawn shape puts their
+    /// centres 3.3pt apart (0.3pt of that horizontally), leaves at least 4.9pt
+    /// of black around the whole tile — the same 5pt it has above and below it
+    /// — and 5.1pt between the two arcs themselves.
+    private var artworkCornerRadius: CGFloat {
+        let gap = NotchSizing.closedArtworkInset - NotchSizing.closedFlareInset
+        return max(NotchSizing.cornerRadiusInsets.closed.top - gap, 0)
     }
 
     @ViewBuilder
@@ -433,7 +492,9 @@ struct CollapsedNotchView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
         } else {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            // Same corner as the tile it is standing in for: any rounder and
+            // its curve would be clipped away by the tile's own.
+            RoundedRectangle(cornerRadius: artworkCornerRadius, style: .continuous)
                 .fill(NotchTheme.surfaceHover)
                 .overlay {
                     Image(systemName: "music.note")

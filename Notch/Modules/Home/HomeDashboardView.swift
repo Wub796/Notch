@@ -152,16 +152,17 @@ struct HomeDashboardView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     // Uppercase and letterspaced, as in the reference: the title is
-                    // the loudest thing on the panel.
-                    Text(displayTitle.uppercased())
-                        .font(.system(size: 18, weight: .heavy, design: .rounded))
-                        .tracking(2.0)
-                        .foregroundStyle(NotchTheme.inkPrimary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: 220, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .onTapGesture { state.select(.audio) }
+                    // the loudest thing on the panel. Long titles marquee instead
+                    // of truncating — same treatment the Now player's title gets.
+                    MarqueeText(
+                        text: displayTitle.uppercased(),
+                        font: .system(size: 18, weight: .heavy, design: .rounded),
+                        width: 220,
+                        tracking: 2.0
+                    )
+                    .foregroundStyle(NotchTheme.inkPrimary)
+                    .contentShape(Rectangle())
+                    .onTapGesture { state.select(.audio) }
 
                     HStack(spacing: 4) {
                         Text(displayArtist)
@@ -279,17 +280,9 @@ struct HomeDashboardView: View {
             artworkContent
                 .id(state.media.artworkVersion)
                 .transition(.opacity)
-
-            // The Spotify Canvas plays over the cover when there is one.
-            if let url = state.spotifyCanvas.canvasURL {
-                CanvasVideoView(url: url)
-                    .id(url)
-                    .transition(.opacity)
-            }
         }
         .frame(width: 88, height: 88)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .animation(NotchAnimations.content, value: state.spotifyCanvas.canvasURL)
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: state.media.accent.opacity(0.38), radius: 12, y: 4)
         .animation(NotchAnimations.content, value: state.media.artworkVersion)
@@ -493,6 +486,26 @@ struct HomeDashboardView: View {
             nextEventLine(next)
                 .fixedSize(horizontal: true, vertical: false)
         }
+        // A little air around the block. Its ink — the month, the day numbers
+        // and the event line — ran within a few points of the card's edges,
+        // where the music card keeps 16pt to its own; the event line in
+        // particular read as crowded against the bottom of the pane.
+        //
+        // Both rungs are honest about what they buy, and both are measured.
+        // The pane hugs this block, so a side pad widens the card by exactly
+        // what it adds: the ink's side inset went 7 -> 11 for these 8pt, paid
+        // for by the music pane giving up 9 (334 -> 325) while the weather kept
+        // its 227. Height is not the pane's to give — the row height is fixed —
+        // so a bottom pad only re-centres the block inside its card, and the
+        // event line gains *half* of it: 16 sat the block 4pt higher (ink top
+        // 69.5 -> 65.5), which is 4pt more under the line and 4 less above.
+        //
+        // Keep the pair inside the tile's budget. The block and this padding
+        // have to stay shorter than the row height less the pane's own 16, or
+        // the pane's minimum wins and its tile grows past the row — which is
+        // what a 40pt pad did: the calendar card ran 8pt above the other two.
+        .padding(.horizontal, NotchTheme.Space.s)
+        .padding(.bottom, NotchTheme.Space.l)
         .dashboardPane(opens: .calendar, in: state, help: "Open the calendar")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Calendar")

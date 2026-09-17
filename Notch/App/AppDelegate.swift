@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        clearRetiredSpotifyCookie()
 
         attachToBestScreen()
         installScrollGesture()
@@ -193,6 +194,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         HotKeyManager.shared.apply(.disabled)
         state.shutdown()
+    }
+
+    /// Deletes the Spotify session cookie the retired Canvas feature stored.
+    ///
+    /// Canvas is gone — see the note in README. It ran on Spotify's
+    /// `get_access_token`, which now answers 403 to every request and whose
+    /// replacement states that third-party use is not permitted, so nothing
+    /// is left that could use this credential. Anything still in the keychain
+    /// is account access for a feature that no longer exists, and keeping it
+    /// there is the one part of this retirement that is not cosmetic.
+    ///
+    /// Runs once: guarded by a defaults flag, so it is not a keychain write on
+    /// every launch, and not a migration that repeats forever.
+    private func clearRetiredSpotifyCookie() {
+        let key = "retiredSpotifyCanvasCookieCleared"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        KeychainStore.delete("spotify.sp_dc")
+        // The feature's own preference goes with it, so nothing is left in
+        // defaults for a switch that no longer exists.
+        UserDefaults.standard.removeObject(forKey: "spotifyCanvasEnabled")
+        UserDefaults.standard.set(true, forKey: key)
     }
 
     /// Rebuilds the panel on the screen that physically has a notch,

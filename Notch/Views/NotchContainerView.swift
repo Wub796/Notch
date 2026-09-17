@@ -89,10 +89,10 @@ struct NotchContainerView: View {
             slab
 
             // Closed, hovering and clicking are detected by this and nothing
-            // else: a generous rectangle around the hardware notch, pinned to
-            // the top centre. Keeping this larger than the visible pill makes
-            // crossing into the notch forgiving without making the whole menu
-            // bar interactive.
+            // else: a rectangle over the closed pill, pinned to the top centre.
+            // Sized to the drawn pill — wings and dropped row included, see
+            // `hoverProbeSize` — so hovering the cover art or the visualiser
+            // counts as hovering the notch, and only the pill does.
             if state.mode != .expanded {
                 Color.black.opacity(0.001)
                     .frame(

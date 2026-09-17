@@ -116,20 +116,24 @@ struct ThreeDLyricsView: View {
         return lyrics.lines[idx - 1]
     }
 
+    /// The line being sung, or nothing at all.
+    ///
+    /// Deliberately not `lines.first` as a fallback. Before the first timestamp
+    /// — the intro, which for a lot of songs is 15 seconds of music — the first
+    /// line used to be drawn in the bright, bold "this is what you are hearing"
+    /// slot, so the panel announced a line the singer had not reached yet and
+    /// read as lyrics running ahead of the song. It belongs in the *upcoming*
+    /// slot below until its moment comes.
     private var currentLine: LyricsEngine.Line? {
-        guard let idx = currentIndex, lyrics.lines.indices.contains(idx) else {
-            return lyrics.lines.first
-        }
+        guard let idx = currentIndex, lyrics.lines.indices.contains(idx) else { return nil }
         return lyrics.lines[idx]
     }
 
+    /// The line after the current one — or, before anything has been sung, the
+    /// first line waiting its turn.
     private var nextLine: LyricsEngine.Line? {
-        guard let idx = currentIndex, idx + 1 < lyrics.lines.count else {
-            if currentIndex == nil && lyrics.lines.count > 1 {
-                return lyrics.lines[1]
-            }
-            return nil
-        }
+        guard let idx = currentIndex else { return lyrics.lines.first }
+        guard idx + 1 < lyrics.lines.count else { return nil }
         return lyrics.lines[idx + 1]
     }
 

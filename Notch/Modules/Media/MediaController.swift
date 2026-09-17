@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import SwiftUI
+import os
 
 /// System-wide now-playing state. Primary source is MediaRemote (push-based
 /// notifications, zero polling while collapsed); when that is unavailable it
@@ -15,13 +16,30 @@ final class MediaController {
         var duration: TimeInterval = 0
     }
 
-    private(set) var track: Track?
+    private(set) var track: Track? {
+        didSet {
+            guard track != oldValue else { return }
+            // The collapsed lyric line hangs off the track: the moment one
+            // arrives, the activity that draws it has to be reconsidered.
+            // (Calling this only from the playback paths is what left the
+            // line missing until the notch had been opened and closed once.)
+            // A new song also means the clock is anchored to whatever position
+            // the player reported for the *previous* one, so it is re-read now.
+            invalidatePlaybackReconcile()
+            updateLyricActivityTimer()
+        }
+    }
     private(set) var artwork: NSImage?
 
     private(set) var isPlaying = false {
         didSet {
             guard isPlaying != oldValue else { return }
+            // Resuming is the one moment the anchor is known to be stale: the
+            // clock was frozen at the pause, and the player may have moved on
+            // since (a seek, or a pause the stream never pushed).
+            invalidatePlaybackReconcile()
             onPlaybackStateChange?(isPlaying)
+            updateLyricActivityTimer()
         }
     }
 
@@ -70,7 +88,14 @@ final class MediaController {
     /// True while the current metadata came from a YouTube/web-video probe.
     /// This is deliberately exposed so every media surface uses the same
     /// source-priority rule instead of independently guessing from app names.
-    private(set) var isBrowserVideo = false
+    private(set) var isBrowserVideo = false {
+        didSet {
+            guard isBrowserVideo != oldValue else { return }
+            // Video never gets a lyric line, so a switch to (or away from) a
+            // browser video changes whether the activity should run at all.
+            updateLyricActivityTimer()
+        }
+    }
 
     var selectedProvider: MusicProvider {
         NotchSettings.shared.musicProvider
@@ -246,7 +271,7 @@ final class MediaController {
         guard let userInfo = notification.userInfo else { return }
 
         let rawState = (userInfo["Player State"] as? String)?.lowercased() ?? ""
-        let position = (userInfo["Position"] as? Double) ?? (userInfo["Player Position"] as? Double)
+        let position = Self.playbackPosition(from: userInfo)
 
         if !rawState.isEmpty {
             let playing = rawState == "playing"
@@ -266,6 +291,25 @@ final class MediaController {
             isPlaying = playing
             updateLyricActivityTimer()
         }
+    }
+
+    /// The position a player's distributed playback notification carries.
+    ///
+    /// These notifications are the one push-based position source that works
+    /// without consent, and they arrive on exactly the events that move the
+    /// playhead — play, pause, track change and seek — so this is the app's
+    /// chance to be exactly right at each of them. Spotify's key is
+    /// `Playback Position`; reading only `Position`/`Player Position` meant the
+    /// real position was dropped on every one of those events, leaving the
+    /// extrapolated clock — which is what made a pause freeze at nothing, a
+    /// resume keep a stale position, and a seek leave the lyrics where they
+    /// were until something else happened to correct them.
+    private static func playbackPosition(from userInfo: [AnyHashable: Any]) -> TimeInterval? {
+        for key in ["Playback Position", "Position", "Player Position"] {
+            if let value = userInfo[key] as? Double { return value }
+            if let value = userInfo[key] as? NSNumber { return value.doubleValue }
+        }
+        return nil
     }
 
     /// The dlopen MediaRemoteBridge as the source. Used when the perl-bridge
@@ -300,6 +344,12 @@ final class MediaController {
         useMediaRemote = true
         isSystemNowPlayingRestricted = false
         adapterRestartAttempts = 0
+        if Self.syncLogEnabled {
+            let allowed = automationIsAllowed()
+            let adapterActive = useAdapter
+            let fallback = fallbackBundleID
+            Self.syncLog?.notice("SYNCLOG init adapter=\(adapterActive ? 1 : 0, privacy: .public) allowed=\(allowed ? 1 : 0, privacy: .public) fallback=\(fallback, privacy: .public)")
+        }
         adapter.onInfo = { [weak self] info in
             self?.applyAdapterInfo(info)
         }
@@ -427,6 +477,9 @@ final class MediaController {
     /// reconcile — see `reconcilePlaybackIfStale`.
     func setActive(_ active: Bool) {
         isActive = active
+        // Opening the notch puts the lyric list on screen, so the position is
+        // worth re-reading at once rather than at the slower closed cadence.
+        if active { invalidatePlaybackReconcile() }
         mediaRemoteRetryWork?.cancel()
         mediaRemoteRetryWork = nil
         progressTimer?.invalidate()
@@ -543,6 +596,7 @@ final class MediaController {
             return
         }
         let elapsed = currentElapsed
+        syncLogTick()
         lyrics.updateCurrentLine(for: elapsed)
         // `liveLine`, not `currentIndex` — the closed notch shows one line
         // with nothing around it, so it has to go away when nothing is being
@@ -555,9 +609,12 @@ final class MediaController {
     }
 
     private func tickProgress() {
+        syncLogTick()
         displayedElapsed = currentElapsed
-        // Lyric highlighting must never advance while playback is paused.
-        guard isPlaying, !isBrowserVideo else { return }
+        expireStaleScrubPreview()
+        // Lyric highlighting must never advance while playback is paused, or
+        // while a scrub drag is previewing positions under the thumb.
+        guard isPlaying, !isBrowserVideo, !isScrubPreviewing else { return }
         // Use the live extrapolated clock, not the stored display copy, so
         // the highlight lands on the timestamp instead of one tick behind.
         lyrics.updateCurrentLine(for: currentElapsed)
@@ -581,17 +638,75 @@ final class MediaController {
         // Open, the scrubber and the lyric list are both on screen and a stale
         // pause is obvious within a second or two. Closed, the only thing this
         // corrects is the one-line lyric activity, so a far slower cadence is
-        // enough — at 2s it was an Apple Event round trip every two seconds
-        // for as long as anything was playing, notch shut, which is precisely
-        // the background cost this class claims not to have.
-        // While a lyric is actually on the closed notch, a missed pause is
-        // visible — the words keep coming — so it is checked far sooner.
+        // enough. While a lyric is actually on the closed notch, a missed
+        // pause is visible — the words keep coming — so it is checked sooner.
         let interval: TimeInterval = isActive ? 2 : (collapsedLyric != nil ? 5 : 15)
-        guard isPlaying, automationIsAllowed(),
-              !isReadingAppleScript,
+        guard isPlaying, !isReadingAppleScript,
               Date().timeIntervalSince(lastPlaybackReconcile) >= interval
         else { return }
         lastPlaybackReconcile = Date()
+
+        // Primary probe: the adapter's one-shot `get --now`. On this macOS the
+        // stream pushes position updates only while playing — the pause event
+        // never arrives, `isPlaying` stays true, and the extrapolated playhead
+        // carried the lyrics straight through pauses (measured: 12s+ past a
+        // paused Spotify). The `get` verb answers even where the pushes are
+        // gated, needs no consent, and reports the playing state correctly
+        // across pause/resume — and with `--now` it also reports where the
+        // playhead is at query time, which is what heals the clock (see below).
+        adapter.getNowPlaying { [weak self] info in
+            guard let self else { return }
+            guard let info else {
+                self.reconcilePlaybackViaAppleScript()
+                return
+            }
+            // Identity guard: only correct our own track. A payload for a
+            // different app belongs to the source-switching machinery, not
+            // the pause probe — without this, audio elsewhere could freeze
+            // these lyrics.
+            let reportedTitle = (info[MediaRemoteBridge.InfoKey.title] as? String ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let currentTitle = self.track?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !reportedTitle.isEmpty, reportedTitle == currentTitle else { return }
+
+            let reportedPlaying = (info[MediaRemoteBridge.InfoKey.playbackRate] as? Double)
+                .map { $0 > 0 } ?? true
+            if !reportedPlaying {
+                // A pause the stream never pushed. The frozen position is this
+                // side's own extrapolation: while paused the adapter's
+                // estimate is the time *since* the pause, not the position it
+                // stopped at, so it must not be adopted here.
+                let reported = info[MediaRemoteBridge.InfoKey.elapsedTime] as? TimeInterval
+                let pausedAt = (reported.flatMap { $0 > 0.5 ? $0 : nil }) ?? self.currentElapsed
+                self.elapsedAnchor = pausedAt
+                self.displayedElapsed = pausedAt
+                self.anchorDate = Date()
+                if self.isPlaying, self.acceptPlaybackReport(false) {
+                    Self.syncLog?.notice("RECONCILE play 1 → 0 at e=\(pausedAt, format: .fixed(precision: 2), privacy: .public)")
+                    self.isPlaying = false
+                }
+            } else if let position = Self.livePosition(from: info),
+                      position > 0.5,
+                      abs(position - self.currentElapsed) > 1.5 {
+                // Playing but the clock has wandered: re-anchor to the
+                // player's real position. This is the healing path for the
+                // "a bit slow" and rewind-loop symptoms — and the one that
+                // catches a launch (or track change) that was anchored to a
+                // zero/stale position, where the lyrics otherwise run a whole
+                // verse behind for the rest of the song.
+                Self.syncLog?.notice("RECONCILE drift e=\(self.currentElapsed, format: .fixed(precision: 2), privacy: .public) → \(position, format: .fixed(precision: 2), privacy: .public)")
+                self.elapsedAnchor = position
+                self.anchorDate = Date()
+                self.displayedElapsed = position
+            }
+        }
+    }
+
+    /// The legacy reconcile rung: an Apple Events read of the fallback player.
+    /// Used when the adapter's `get` is unavailable. Never raises a consent
+    /// prompt, and never blanks the track — it only corrects the play state.
+    private func reconcilePlaybackViaAppleScript() {
+        guard automationIsAllowed() else { return }
         isReadingAppleScript = true
 
         let inputs = captureScriptInputs()
@@ -607,6 +722,7 @@ final class MediaController {
                     self.anchorDate = Date()
                 }
                 if snapshot.isPlaying != self.isPlaying {
+                    Self.syncLog?.notice("RECONCILE play \(self.isPlaying ? 1 : 0, privacy: .public) → \(snapshot.isPlaying ? 1 : 0, privacy: .public) at e=\(self.currentElapsed, format: .fixed(precision: 2), privacy: .public)")
                     guard self.acceptPlaybackReport(snapshot.isPlaying) else { return }
                     self.isPlaying = snapshot.isPlaying
                     self.updateLyricActivityTimer()
@@ -615,8 +731,49 @@ final class MediaController {
         }
     }
 
-    /// When the last time we re-read the real player to catch a missed pause.
+    /// When the last time we re-read the real player to catch a missed pause,
+    /// or to put a wandered clock back on the playhead.
     private var lastPlaybackReconcile = Date.distantPast
+
+    /// The freshest position a `get --now` reply carries.
+    ///
+    /// `elapsedTimeNow` is preferred because it is computed when the query is
+    /// answered, so it describes the playhead *now*. The elapsed/timestamp
+    /// pair is the fallback — it is only a position if the player actually
+    /// refreshed its state recently, and Spotify leaves `elapsedTime` at zero
+    /// and republishes the pair on state changes only, so a stream can hold
+    /// "0 at t" from before the current position for the whole song.
+    private static func livePosition(from info: [String: Any]) -> TimeInterval? {
+        if let now = info[MediaRemoteBridge.InfoKey.elapsedTimeNow] as? TimeInterval,
+           now > 0.5 {
+            return now
+        }
+        return info[MediaRemoteBridge.InfoKey.elapsedTime] as? TimeInterval
+    }
+
+    /// Makes the next tick re-read the player instead of waiting out the
+    /// cadence: called when the position is known to be suspect — a song just
+    /// started, playback just started, or the notch just opened onto the
+    /// lyric list.
+    private func invalidatePlaybackReconcile() {
+        lastPlaybackReconcile = .distantPast
+    }
+
+    // TEMPORARY sync-verification logging (NOTCH_SYNC_LOG=1 env or arg). Remove after testing.
+    private static let syncLogEnabled = ProcessInfo.processInfo.environment["NOTCH_SYNC_LOG"] != nil
+        || CommandLine.arguments.contains("NOTCH_SYNC_LOG=1")
+    private static let syncLog: Logger? = syncLogEnabled ? Logger(subsystem: "com.notchapp.Notch", category: "synclog") : nil
+    private var lastSyncLoggedSecond: Int = -1
+    private func syncLogTick() {
+        guard Self.syncLogEnabled else { return }
+        let sec = Int(currentElapsed)
+        guard sec != lastSyncLoggedSecond else { return }
+        lastSyncLoggedSecond = sec
+        let idxText = lyrics.currentIndex.map(String.init) ?? "nil"
+        let lineText = lyrics.currentLine.map { "[\(String(format: "%05.2f", $0.time))] \($0.text)" } ?? "—"
+        let peekText = collapsedLyric.map { "[\(String(format: "%05.2f", $0.start))]" } ?? "none"
+        Self.syncLog?.notice("SYNCLOG e=\(self.currentElapsed, format: .fixed(precision: 2)) play=\(self.isPlaying ? 1 : 0, privacy: .public) idx=\(idxText, privacy: .public) peek=\(peekText, privacy: .public) line=\(lineText, privacy: .public)")
+    }
 
     // MARK: - Transport controls
 
@@ -624,8 +781,19 @@ final class MediaController {
     /// controls (play/pause, next, previous, seek) share one priority ladder
     /// instead of four copies that can drift:
     ///
-    /// 1. A running music player always wins (by the now-playing app, then
-    ///    the selected provider, then whichever player is actually running).
+    /// Every AppleScript rung is additionally gated on Apple Events consent for
+    /// the app it would drive, because "the player is running" is not the same
+    /// question as "the player will obey". Without consent an AppleScript
+    /// command raises no prompt and changes nothing — it returns
+    /// `errAEEventNotPermitted` — and the media-key fallback behind it needs a
+    /// *different* grant (Accessibility). So the ladder used to spend every
+    /// command on a rung that could not work and then on a fallback that could
+    /// not either, while the player sat there running: the play/pause button
+    /// flipped its icon and nothing else happened. Ungranted players now fall
+    /// through to the MediaRemote rung, which needs no permission at all.
+    ///
+    /// 1. A running music player we may script wins (by the now-playing app,
+    ///    then the selected provider, then whichever player is running).
     /// 2. Browser media (YouTube, web videos) — only when no music player
     ///    is active.
     /// 3. The selected provider's own AppleScript app, when it has one.
@@ -638,64 +806,107 @@ final class MediaController {
         case system
     }
 
+    /// Whether Apple Events to `bundleID` are allowed. Cached and never
+    /// blocking (see `AutomationConsent`), so it is safe to ask on the way
+    /// through a button press.
+    private func canScript(_ bundleID: String) -> Bool {
+        guard !bundleID.isEmpty else { return false }
+        return IntegrationPermissions.isAutomationAllowed(bundleID)
+    }
+
     private func resolveTransportTarget(providerCommand: String) -> TransportTarget {
         let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
         let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
+        let spotifyScriptable = spotifyRunning && canScript(MusicProvider.spotify.bundleID)
+        let musicScriptable = musicRunning && canScript(MusicProvider.appleMusic.bundleID)
 
-        // 1. If a music player is running/active, ALWAYS prioritize controlling the music player!
-        if !isBrowserVideo && (spotifyRunning || musicRunning) {
+        // 1. If a music player is running/active *and we are allowed to drive
+        //    it*, ALWAYS prioritize controlling the music player!
+        if !isBrowserVideo && (spotifyScriptable || musicScriptable) {
             if let bundle = sourceAppBundleID {
-                if bundle == MusicProvider.spotify.bundleID {
+                if bundle == MusicProvider.spotify.bundleID, spotifyScriptable {
                     return .provider(appName: "Spotify", command: providerCommand)
-                } else if bundle == MusicProvider.appleMusic.bundleID {
+                } else if bundle == MusicProvider.appleMusic.bundleID, musicScriptable {
                     return .provider(appName: "Music", command: providerCommand)
                 }
             }
-            if selectedProvider == .spotify && spotifyRunning {
+            if selectedProvider == .spotify && spotifyScriptable {
                 return .provider(appName: "Spotify", command: providerCommand)
-            } else if selectedProvider == .appleMusic && musicRunning {
+            } else if selectedProvider == .appleMusic && musicScriptable {
                 return .provider(appName: "Music", command: providerCommand)
             }
-            if spotifyRunning {
+            if spotifyScriptable {
                 return .provider(appName: "Spotify", command: providerCommand)
-            } else if musicRunning {
+            } else if musicScriptable {
                 return .provider(appName: "Music", command: providerCommand)
             }
         }
 
-        // 2. Browser media (YouTube, web videos) — only when no music player is active
-        if isBrowserVideo || isShowingBrowserSnapshot {
+        // 2. Browser media (YouTube, web videos) — only when no music player is
+        //    active, and only for a browser we are allowed to script: playing a
+        //    page means Apple Events to the browser, so this rung has exactly
+        //    the same problem as the players. Ungranted, it falls through to
+        //    the MediaRemote rung, which drives the browser's own now-playing
+        //    session without any consent.
+        if isBrowserVideo || isShowingBrowserSnapshot,
+           Self.browserTargets.contains(where: { browser in
+               canScript(browser.bundleID)
+                   && !NSRunningApplication
+                       .runningApplications(withBundleIdentifier: browser.bundleID).isEmpty
+           }) {
             return .browser
         }
 
         // 3. Specific Selected Provider
-        if let provider = selectedProvider.appleScriptAppName {
+        if let provider = selectedProvider.appleScriptAppName,
+           canScript(selectedProvider.bundleID) {
             return .provider(appName: provider, command: providerCommand)
         }
 
         // 4. Automatic provider detection
         if let bundle = sourceAppBundleID {
-            if bundle == MusicProvider.spotify.bundleID {
+            if bundle == MusicProvider.spotify.bundleID, canScript(bundle) {
                 return .provider(appName: "Spotify", command: providerCommand)
-            } else if bundle == MusicProvider.appleMusic.bundleID {
+            } else if bundle == MusicProvider.appleMusic.bundleID, canScript(bundle) {
                 return .provider(appName: "Music", command: providerCommand)
-            } else if Self.browserTargets.contains(where: { $0.bundleID == bundle }) {
+            } else if Self.browserTargets.contains(where: { $0.bundleID == bundle }),
+                      canScript(bundle) {
                 return .browser
             }
         }
 
-        // 5. Last resort: any running player.
-        if spotifyRunning {
+        // 5. Last resort: any running player we may script.
+        if spotifyScriptable {
             return .provider(appName: "Spotify", command: providerCommand)
         }
-        if musicRunning {
+        if musicScriptable {
             return .provider(appName: "Music", command: providerCommand)
         }
 
         return .system
     }
 
+    /// Whether a resolved target has any chance of reaching a player.
+    ///
+    /// The provider and browser rungs carry their own fallbacks, and the system
+    /// rung has three (the MediaRemote adapter, the dlopen bridge, a synthetic
+    /// media key) — of which only the last needs a grant. With no MediaRemote
+    /// source armed *and* no Accessibility trust, a command would be a no-op
+    /// with nowhere to report itself, so the controls leave the UI alone
+    /// instead of showing a state the player never entered.
+    private func transportIsDeliverable(_ target: TransportTarget) -> Bool {
+        switch target {
+        case .provider, .browser: return true
+        case .system: return useAdapter || useMediaRemote || AXIsProcessTrusted()
+        }
+    }
+
     func togglePlayPause() {
+        let target = resolveTransportTarget(providerCommand: isPlaying ? "pause" : "play")
+        // Resolve (and rule out) the route *before* flipping anything: the
+        // optimistic state used to be the only thing a doomed command changed.
+        guard transportIsDeliverable(target) else { return }
+
         let newState = !isPlaying
         isPlaying = newState
         if newState {
@@ -713,7 +924,7 @@ final class MediaController {
         // Filter conflicting playback reports until one confirms this toggle.
         armOptimisticWindow(newState)
 
-        switch resolveTransportTarget(providerCommand: newState ? "play" : "pause") {
+        switch target {
         case let .provider(appName, command):
             runProviderCommand(appName: appName, command: command)
         case .browser:
@@ -763,6 +974,48 @@ final class MediaController {
         }
     }
 
+    /// While true, the scrubber is being dragged and the lyric highlight is
+    /// being driven by the thumb (`previewScrub`), not the playhead. The
+    /// 0.1s progress tick must not fight it.
+    private var isScrubPreviewing = false
+
+    /// When the last preview event arrived. The flag must be able to clear
+    /// itself: a drag that ends outside the panel collapses it mid-gesture,
+    /// SwiftUI cancels the gesture, and `onEnded` never runs — an endlessly
+    /// stuck flag froze the highlight at the previewed line while the song
+    /// played on. One beat without a fresh event ends the preview.
+    private var lastScrubEventAt: Date?
+    private static let scrubPreviewStaleAfter: TimeInterval = 1.2
+
+    /// Live scrub preview: moves the open player's lyric highlight to the
+    /// position under the thumb as the drag moves, without touching playback.
+    /// Real-time only — the song keeps playing from where it was.
+    func previewScrub(to seconds: TimeInterval) {
+        guard lyrics.isSynced, !lyrics.lines.isEmpty else { return }
+        isScrubPreviewing = true
+        lastScrubEventAt = Date()
+        lyrics.updateCurrentLine(for: seconds)
+    }
+
+    /// Ends the preview. The highlight snaps to wherever the seek landed
+    /// (`seek` writes the line itself); if the seek was refused, the next
+    /// progress tick re-syncs the highlight to the untouched playhead.
+    func endScrubPreview() {
+        isScrubPreviewing = false
+        lastScrubEventAt = nil
+    }
+
+    /// Clears the preview flag when no drag event has arrived for a beat —
+    /// the gesture-cancelled case above. Cheap, and self-healing wherever
+    /// the stickiness happens.
+    private func expireStaleScrubPreview() {
+        guard isScrubPreviewing,
+              let last = lastScrubEventAt,
+              Date().timeIntervalSince(last) > Self.scrubPreviewStaleAfter
+        else { return }
+        endScrubPreview()
+    }
+
     /// Jumps playback to an absolute position (scrubber drag or lyric tap).
     func seek(to seconds: TimeInterval) {
         // Clamp to the track's length when known; otherwise allow any
@@ -770,12 +1023,24 @@ final class MediaController {
         let duration = track?.duration ?? 0
         let clamped = duration > 0 ? max(0, min(seconds, duration)) : max(0, seconds)
 
+        let target = resolveTransportTarget(providerCommand: "set player position to \(Int(clamped))")
+        // Same rule as the play button: a position the player was never told
+        // about must not move the scrubber, the lyric line or the remaining
+        // time. A scrub that cannot be delivered is better refused than faked.
+        guard transportIsDeliverable(target) else {
+            // A refused scrub leaves the thumb's previewed line on screen
+            // while the playhead never moved — hand the highlight straight
+            // back so the lyrics don't claim a position the song isn't at.
+            lyrics.updateCurrentLine(for: currentElapsed)
+            return
+        }
+
         elapsedAnchor = clamped
         anchorDate = Date()
         displayedElapsed = clamped
         lyrics.updateCurrentLine(for: clamped)
 
-        switch resolveTransportTarget(providerCommand: "set player position to \(Int(clamped))") {
+        switch target {
         case let .provider(appName, command):
             runProviderCommand(appName: appName, command: command)
         case .browser:
@@ -1455,8 +1720,24 @@ final class MediaController {
         }
 
         if let elapsed = info[MediaRemoteBridge.InfoKey.elapsedTime] as? TimeInterval {
-            elapsedAnchor = elapsed
-            anchorDate = info[MediaRemoteBridge.InfoKey.timestamp] as? Date ?? Date()
+            let timestamp = info[MediaRemoteBridge.InfoKey.timestamp] as? Date ?? Date()
+            // A position that has not moved while its capture time has, in the
+            // middle of playback, is the player re-reporting where it was: the
+            // song has demonstrably gone on since. Adopting such a reading
+            // re-anchored the playhead to the old position — the lyric line
+            // snapped back to an earlier verse and the remaining time grew — so
+            // the extrapolation already running is the better answer. A seek is
+            // unaffected: it reports a *different* position.
+            let isStaleRepeat = isPlaying
+                && abs(elapsed - elapsedAnchor) < 0.05
+                && timestamp > anchorDate
+            if Self.syncLogEnabled {
+                Self.syncLog?.notice("ANCHOR e=\(elapsed, format: .fixed(precision: 2), privacy: .public) anchor=\(self.elapsedAnchor, format: .fixed(precision: 2), privacy: .public) stale=\(isStaleRepeat ? 1 : 0, privacy: .public) t=\(timestamp.timeIntervalSince1970, format: .fixed(precision: 2), privacy: .public) ad=\(self.anchorDate.timeIntervalSince1970, format: .fixed(precision: 2), privacy: .public)")
+            }
+            if !isStaleRepeat {
+                elapsedAnchor = elapsed
+                anchorDate = timestamp
+            }
         }
 
         let playbackRate: Double?
@@ -1469,6 +1750,9 @@ final class MediaController {
         }
         if let playbackRate {
             let playing = playbackRate > 0
+            if Self.syncLogEnabled, playing != isPlaying {
+                Self.syncLog?.notice("APPLY play \(self.isPlaying ? 1 : 0, privacy: .public) → \(playing ? 1 : 0, privacy: .public) rate=\(playbackRate, format: .fixed(precision: 2), privacy: .public) accept=\(self.acceptPlaybackReport(playing) ? 1 : 0, privacy: .public)")
+            }
             // A stale diff riding in right after a user toggle must not flip
             // the transport state; the metadata below still applies, so only
             // the playback write is skipped, not the whole update.

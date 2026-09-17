@@ -234,17 +234,9 @@ struct DevicesScreenView: View {
             artworkContent
                 .id(media.artworkVersion)
                 .transition(.opacity)
-
-            // The Spotify Canvas plays over the cover when there is one.
-            if let url = state.spotifyCanvas.canvasURL {
-                CanvasVideoView(url: url)
-                    .id(url)
-                    .transition(.opacity)
-            }
         }
         .frame(width: 76, height: 76)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .animation(NotchAnimations.content, value: state.spotifyCanvas.canvasURL)
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: media.accent.opacity(0.38), radius: 14, y: 5)
         .animation(NotchAnimations.content, value: media.artworkVersion)
@@ -364,10 +356,11 @@ struct DevicesScreenView: View {
         ScrubberBar(
             duration: media.track?.duration ?? 0,
             elapsed: media.displayedElapsed,
-            accent: media.accent
-        ) { target in
-            media.seek(to: target)
-        }
+            accent: media.accent,
+            onSeek: { media.seek(to: $0) },
+            onScrubPreview: { media.previewScrub(to: $0) },
+            onScrubEnd: { media.endScrubPreview() }
+        )
     }
 
     private var transportRow: some View {

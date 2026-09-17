@@ -1,9 +1,12 @@
 import AppKit
+import AVFoundation
+import CoreBluetooth
 import CoreLocation
 import SwiftUI
 import EventKit
 import Foundation
 import Observation
+import UserNotifications
 
 /// Live authorization state for the integrations the notch depends on.
 ///
@@ -43,32 +46,48 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    /// Every permission Notch can need, in the order System Settings lists
+    /// them — a permission the user has already met there is in the same
+    /// relative place here, which is half of what makes a privacy page
+    /// trustworthy.
     enum Integration: String, CaseIterable, Identifiable {
         case accessibility
-        case music
-        case calendar
-        case location
         case screenCapture
+        case filesAndFolders
+        case music
+        case location
+        case calendar
+        case camera
+        case bluetooth
+        case notifications
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .accessibility: "Accessibility"
-            case .music: "Music & Player Automation"
-            case .calendar: "Calendar"
-            case .location: "Location"
             case .screenCapture: "Screen & Audio Recording"
+            case .filesAndFolders: "Files & Folders"
+            case .music: "Music & Player Automation"
+            case .location: "Location"
+            case .calendar: "Calendar"
+            case .camera: "Camera"
+            case .bluetooth: "Bluetooth"
+            case .notifications: "Notifications"
             }
         }
 
         var systemImage: String {
             switch self {
             case .accessibility: "accessibility"
-            case .music: "music.note"
-            case .calendar: "calendar"
-            case .location: "location.fill"
             case .screenCapture: "waveform.badge.magnifyingglass"
+            case .filesAndFolders: "folder"
+            case .music: "music.note"
+            case .location: "location.fill"
+            case .calendar: "calendar"
+            case .camera: "video.fill"
+            case .bluetooth: "antenna.radiowaves.left.and.right"
+            case .notifications: "bell.badge.fill"
             }
         }
 
@@ -76,14 +95,24 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
             switch self {
             case .accessibility:
                 "Enables hardware media key interception, volume/brightness HUDs, and hotkeys."
+            case .screenCapture:
+                "Not used — Notch never captures your screen. The audio visualizer "
+                    + "reads output levels without it. Listed so the system's own "
+                    + "record is visible here."
+            case .filesAndFolders:
+                "Lets the notch catch finished downloads and new screenshots as they land."
             case .music:
                 "Lets the notch control playback and lyrics across Apple Music and Spotify."
-            case .calendar:
-                "Shows your schedule, upcoming events, and meeting links."
             case .location:
                 "Pins weather forecasts to your current city."
-            case .screenCapture:
-                "Analyzes audio playback levels for the real-time sound visualizer."
+            case .calendar:
+                "Shows your schedule, upcoming events, and meeting links."
+            case .camera:
+                "Shows a live preview on the camera screen, and only while it is open."
+            case .bluetooth:
+                "Lists your paired audio accessories, with battery levels."
+            case .notifications:
+                "Lets a finished timer reach you when the notch is closed."
             }
         }
 
@@ -93,14 +122,26 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
             switch self {
             case .accessibility:
                 "Without it, system media keys and global hotkeys use default macOS routing."
+            case .screenCapture:
+                "Nothing here needs it; Notch works fully without it."
+            case .filesAndFolders:
+                "Without it, files you drop on the notch still work; arrivals in those "
+                    + "folders are not announced."
             case .music:
-                "Without it, playback still follows whatever is playing — only direct automation needs permission."
-            case .calendar:
-                "Without it, the schedule stays empty."
+                "Without it, the notch still controls playback through the system's "
+                    + "now-playing channel, and only follows what is playing — grant this "
+                    + "to drive the player directly instead."
             case .location:
                 "Without it, weather falls back to an approximate location from your network."
-            case .screenCapture:
-                "Without it, the notch audio visualizer falls back to animated waveforms."
+            case .calendar:
+                "Without it, the schedule stays empty."
+            case .camera:
+                "Without it, the camera screen stays empty — the device is never opened "
+                    + "speculatively."
+            case .bluetooth:
+                "Without it, paired accessories are still listed, without names or levels."
+            case .notifications:
+                "Without it, a finished timer is shown in the notch only."
             }
         }
 
@@ -108,10 +149,17 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
             let base = "x-apple.systempreferences:com.apple.preference.security"
             switch self {
             case .accessibility: return URL(string: base + "?Privacy_Accessibility")
-            case .music: return URL(string: base + "?Privacy_Automation")
-            case .calendar: return URL(string: base + "?Privacy_Calendars")
-            case .location: return URL(string: base + "?Privacy_LocationServices")
             case .screenCapture: return URL(string: base + "?Privacy_ScreenCapture")
+            case .filesAndFolders: return URL(string: base + "?Privacy_FilesAndFolders")
+            case .music: return URL(string: base + "?Privacy_Automation")
+            case .location: return URL(string: base + "?Privacy_LocationServices")
+            case .calendar: return URL(string: base + "?Privacy_Calendars")
+            case .camera: return URL(string: base + "?Privacy_Camera")
+            case .bluetooth: return URL(string: base + "?Privacy_Bluetooth")
+            // Notifications are their own extension rather than a Privacy pane
+            // in System Settings, so they carry their own identifier.
+            case .notifications:
+                return URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")
             }
         }
     }
@@ -134,6 +182,11 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     private let locationManager = CLLocationManager()
     private var calendarStore: EKEventStore?
 
+    /// Held only for the moment the Bluetooth prompt is raised. Nothing scans,
+    /// connects, or stays open: creating the manager is the prompt, and it is
+    /// released as soon as the answer lands.
+    private var bluetoothPrompt: CBCentralManager?
+
     private override init() {
         super.init()
         locationManager.delegate = self
@@ -144,9 +197,33 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         statuses[integration] ?? .unknown
     }
 
+    /// Whether macOS can still put its own prompt on screen for this one.
+    ///
+    /// Consent is asked for once per app and permission. While the answer is
+    /// still open the prompt is ours to raise; once macOS has recorded a
+    /// decision, asking again is silent — so the pane changes what its button
+    /// does rather than firing a request that can no longer happen.
+    func canPrompt(for integration: Integration) -> Bool {
+        switch status(for: integration) {
+        case .notDetermined, .unknown: true
+        case .granted, .denied: false
+        }
+    }
+
+    /// Takes the user to the exact pane that can change `integration`.
+    func openSettings(for integration: Integration) {
+        guard let url = integration.settingsURL else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     // MARK: - Refresh
 
-    func refresh() {
+    /// - Parameter probeFolders: whether to check access to the folders the
+    ///   file catcher watches. Reading one is the only way to learn whether
+    ///   macOS is blocking it, and a read is also the one check here that can
+    ///   raise a consent prompt — so it is reserved for the permissions pane,
+    ///   never part of the routine refresh that runs at launch.
+    func refresh(probeFolders: Bool = false) {
         // Notes describe the most recent attempt, so a fresh read clears them
         // before anything re-states its own.
         notes.removeAll()
@@ -155,6 +232,14 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         statuses[.calendar] = calendarStatus()
         statuses[.location] = locationStatus()
         statuses[.screenCapture] = screenCaptureStatus()
+        statuses[.camera] = cameraStatus()
+        statuses[.bluetooth] = bluetoothStatus()
+        refreshNotificationStatus()
+        if probeFolders {
+            refreshFolderAccess()
+        } else if statuses[.filesAndFolders] == nil {
+            statuses[.filesAndFolders] = .unknown
+        }
         refreshMusicStatus()
     }
 
@@ -180,6 +265,85 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     private func screenCaptureStatus() -> Status {
         if CGPreflightScreenCaptureAccess() { return .granted }
         return Self.hasRequested(.screenCapture) ? .denied : .notDetermined
+    }
+
+    /// Read without opening the device, so the pane can report the camera's
+    /// state — and the hardware light stays off while it does.
+    private func cameraStatus() -> Status {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: .granted
+        case .denied, .restricted: .denied
+        case .notDetermined: .notDetermined
+        @unknown default: .unknown
+        }
+    }
+
+    /// `CBManager.authorization` answers without a manager, which matters:
+    /// creating one while the answer is still open is itself the prompt.
+    private func bluetoothStatus() -> Status {
+        switch CBManager.authorization {
+        case .allowedAlways: .granted
+        case .denied, .restricted: .denied
+        case .notDetermined: .notDetermined
+        @unknown default: .unknown
+        }
+    }
+
+    /// Notification consent is read asynchronously, so the row keeps whatever
+    /// it had until the real answer lands rather than flickering to Unknown.
+    private func refreshNotificationStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            let status: Status
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral: status = .granted
+            case .denied: status = .denied
+            case .notDetermined: status = .notDetermined
+            @unknown default: status = .unknown
+            }
+            DispatchQueue.main.async { self?.statuses[.notifications] = status }
+        }
+    }
+
+    /// Whether Notch can read the folders it watches for arriving files.
+    ///
+    /// macOS has no preflight call for these, so the check is a real listing of
+    /// the same two folders the file catcher uses. A folder that does not exist
+    /// is skipped rather than counted as blocked: on a Mac with screenshots
+    /// moved elsewhere, the default Desktop path is simply absent.
+    private func refreshFolderAccess(completion: (() -> Void)? = nil) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var folders: [URL] = []
+            for folder in [FileCatcher.downloadsFolder, FileCatcher.screenshotFolder] {
+                guard let folder else { continue }
+                let standardized = folder.standardizedFileURL
+                if !folders.contains(standardized) { folders.append(standardized) }
+            }
+
+            var blocked = false
+            for folder in folders {
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory),
+                      isDirectory.boolValue
+                else { continue }
+                if (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) == nil {
+                    blocked = true
+                }
+            }
+
+            let status: Status = blocked
+                ? (Self.hasRequested(.filesAndFolders) ? .denied : .notDetermined)
+                : .granted
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.statuses[.filesAndFolders] = status
+                if status == .denied {
+                    self.notes[.filesAndFolders] = "macOS is blocking "
+                        + "\(folders.map(\.lastPathComponent).joined(separator: " and ")) "
+                        + "for Notch."
+                }
+                completion?()
+            }
+        }
     }
 
     /// Apple Events authorization is read off the main thread.
@@ -326,6 +490,18 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     /// silent, and silence is what made these buttons look broken.
     func request(_ integration: Integration, completion: @escaping () -> Void = {}) {
         guard !pending.contains(integration) else { return }
+
+        // A decision macOS has already recorded cannot be asked again — the
+        // prompt is shown once per app and permission, and every call after
+        // that is silent. Opening the pane that owns the switch is then the
+        // only thing that can change the answer, and it is what this row's
+        // button promises in that state.
+        guard canPrompt(for: integration) else {
+            openSettings(for: integration)
+            completion()
+            return
+        }
+
         pending.insert(integration)
         let before = status(for: integration)
 
@@ -342,32 +518,71 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         switch integration {
         case .accessibility:
             Self.markRequested(.accessibility)
+            // The alert macOS raises here *is* the prompt: it explains the ask
+            // and offers to open the pane that grants it. Nothing is opened by
+            // us first — sending the user to System Settings on their click is
+            // the detour this replaces. Bring Notch forward, because the dialog
+            // is tied to the requesting app and only shows while it is
+            // frontmost.
+            NSApp.activate(ignoringOtherApps: true)
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-            let trusted = AXIsProcessTrustedWithOptions(options)
-            if !trusted {
-                if let url = integration.settingsURL {
-                    // Bring Notch forward first: the accessibility consent
-                    // dialog is tied to the requesting app, and macOS only
-                    // shows it while that app is frontmost.
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSWorkspace.shared.open(url)
-                }
-            }
-            // These two are granted in System Settings, out of band — there is
-            // no callback. A fixed 1.2s wait finished long before anyone could
+            _ = AXIsProcessTrustedWithOptions(options)
+            // This one is granted out of band, in System Settings — there is no
+            // callback. A fixed 1.2s wait finished long before anyone could
             // click anything, so the pane always concluded "nothing moved".
             awaitGrant(integration, finish: finish)
 
         case .screenCapture:
             Self.markRequested(.screenCapture)
             NSApp.activate(ignoringOtherApps: true)
-            let hasAccess = CGRequestScreenCaptureAccess()
-            if !hasAccess {
-                if let url = integration.settingsURL {
-                    NSWorkspace.shared.open(url)
-                }
+            // Raises the system's own screen-recording prompt. It answers
+            // false while the answer is still pending, so the grant is awaited
+            // below rather than concluded from the return value.
+            _ = CGRequestScreenCaptureAccess()
+            awaitGrant(integration, finish: finish)
+
+        case .filesAndFolders:
+            Self.markRequested(.filesAndFolders)
+            // No prompt API exists for these folders: macOS asks the first time
+            // the app actually reads one, so the request *is* a read of the
+            // folders the file catcher already watches.
+            refreshFolderAccess { finish() }
+
+        case .camera:
+            Self.markRequested(.camera)
+            NSApp.activate(ignoringOtherApps: true)
+            // The system prompt, from the only API that raises it. The device
+            // is never opened to find out: `authorizationStatus` answered that
+            // already.
+            AVCaptureDevice.requestAccess(for: .video) { _ in
+                DispatchQueue.main.async(execute: finish)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: finish)
+
+        case .bluetooth:
+            Self.markRequested(.bluetooth)
+            NSApp.activate(ignoringOtherApps: true)
+            // Bluetooth has no request call — the prompt is raised by creating
+            // a central manager while the answer is still open. It is told not
+            // to scan, connect, or raise a power alert, held just long enough
+            // for the answer to register, then released.
+            bluetoothPrompt = CBCentralManager(
+                delegate: nil,
+                queue: .main,
+                options: [CBCentralManagerOptionShowPowerAlertKey: false]
+            )
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.bluetoothPrompt = nil
+                finish()
+            }
+
+        case .notifications:
+            Self.markRequested(.notifications)
+            NSApp.activate(ignoringOtherApps: true)
+            UNUserNotificationCenter.current().requestAuthorization(
+                options: [.alert, .sound]
+            ) { _, _ in
+                DispatchQueue.main.async(execute: finish)
+            }
 
         case .calendar:
             let store = EKEventStore()
@@ -526,6 +741,14 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
             return "Enable Notch in Privacy & Security → Accessibility to unlock all hardware and global controls."
         case .screenCapture:
             return "Enable Notch in Privacy & Security → Screen Recording for real-time sound metering."
+        case .filesAndFolders:
+            return "Allow Notch for these folders under Privacy & Security → Files and Folders."
+        case .camera:
+            return "Add Notch under Privacy & Security → Camera."
+        case .bluetooth:
+            return "Add Notch under Privacy & Security → Bluetooth."
+        case .notifications:
+            return "Turn notifications on for Notch in System Settings → Notifications."
         case .location:
             return status == .notDetermined
                 ? "macOS showed no prompt — add Notch under Privacy & Security → Location Services."

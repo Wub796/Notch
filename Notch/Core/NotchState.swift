@@ -312,10 +312,6 @@ final class NotchState {
     let quickActions = QuickActions()
     /// The webcam preview. Strictly bound to its screen being visible.
     let camera = CameraController()
-    /// The Spotify sign-in behind the Canvas feature.
-    let spotifyCanvasSession = SpotifyCanvasSession.shared
-    /// The current track's Spotify Canvas video, when signed in and enabled.
-    let spotifyCanvas: SpotifyCanvasController
     let audioApps = AudioAppMonitor()
     let audioMeter = SystemAudioMeter()
 
@@ -358,10 +354,6 @@ final class NotchState {
     private static let minimumDwellForClick: TimeInterval = 0.06
 
     init() {
-        spotifyCanvas = SpotifyCanvasController(
-            session: spotifyCanvasSession,
-            media: media
-        )
         // Personalization: reopen on the tab the user last used. Every tab is
         // reachable from the top bar, so any of them is a valid landing spot.
         if let restored = NotchTab(rawValue: settings.lastTab) {
@@ -404,13 +396,6 @@ final class NotchState {
         media.onTrackChange = { [weak self] track in
             guard let self else { return }
             self.activities.showTrackChange(title: track.title, artist: track.artist)
-            self.spotifyCanvas.trackChanged()
-        }
-        settings.onSpotifyCanvasSettingChanged = { [weak self] _ in
-            self?.spotifyCanvas.refresh()
-        }
-        spotifyCanvasSession.onStatusChange = { [weak self] _ in
-            self?.spotifyCanvas.refresh()
         }
 
         // The visualizer is data-only and does not capture screen pixels.
@@ -436,6 +421,27 @@ final class NotchState {
         audioApps.startObserving()
         settings.onRealtimeAudioMeterChanged = { [weak self] _ in
             self?.syncAudioMeter()
+        }
+        // The lyric line is the closed notch's only activity whose size the
+        // user can switch off from Settings: without this the toggle only took
+        // effect at the next track change or open/close.
+        settings.onLyricActivitySettingChanged = { [weak self] _ in
+            guard let self else { return }
+            // Re-decides the activity and, through the window controller's
+            // mode callback, grows or shrinks the closed pill around the line
+            // the moment the switch is flipped.
+            self.media.updateLyricActivityTimer()
+            self.onModeChange?(self.mode)
+        }
+        // Reminders are raised by one-shot timers rather than polled, so
+        // flipping the switch or changing the lead times has to rebuild them
+        // on the spot — otherwise reminders switched off stayed on the notch
+        // until the next calendar edit, and reminders switched on did nothing
+        // until one arrived.
+        settings.onCalendarReminderSettingChanged = { [weak self] in
+            guard let self else { return }
+            self.calendar.armUpcomingWatch()
+            self.onModeChange?(self.mode)
         }
         syncAudioMeter()
 
@@ -630,13 +636,15 @@ final class NotchState {
         // Each side is `NotchSizing.closedWingInset` of margin, the content,
         // and ~10pt clear of the camera housing, so a wing needs roughly its
         // content's width plus 23pt. The cover and visualiser are 22pt.
-        case .music: 96
+        case .music: Self.playingWingWidth
         // The lyric line lives under the notch and wants room to read; the
-        // wings only carry the cover and the visualiser.
-        case .lyrics: 120
+        // wings only carry the cover and the visualiser. Kept the same 24pt
+        // over the playing pill as before, so the two narrow together and the
+        // pill does not change width as lines come and go.
+        case .lyrics: Self.playingWingWidth + 24
         // Volume and brightness should not make the closed notch narrower
         // than the music pill while their bar is dropped beneath it.
-        case .volume, .brightness: max(flankWingWidth, 96)
+        case .volume, .brightness: max(flankWingWidth, Self.playingWingWidth)
         // Everything else drops its reading beneath the notch, so the wings
         // only carry what stays on the notch's own row.
         case .battery, .timer, .trackChange, .screenLock, .focusMode, .eyeBreak,
@@ -648,10 +656,25 @@ final class NotchState {
         }
     }
 
+    /// Total width the closed pill adds for its two wings while media is
+    /// playing — the cover's side and the visualiser's side together.
+    ///
+    /// The geometry behind the number, so it can be trimmed without guessing:
+    /// each wing gets `(this + notchCoverageBleed) / 2`, the artwork is
+    /// `NotchSizing.closedWingInset` (28) in from the pill's edge and 22pt
+    /// wide, and the real camera cutout begins where the wing ends — leaving
+    /// the difference as clearance. At 96 that clearance was 13pt, which read
+    /// as the pill hugging air; 88 tightens the pill against the notch and
+    /// still leaves 9pt between the cover and the cutout.
+    ///
+    /// One constant, read by every playing state, so the pill cannot end up
+    /// one width while a lyric line is up and another between lines.
+    private static let playingWingWidth: CGFloat = 88
+
     /// The wings `CollapsedNotchView.notchRowFlank` draws beside a dropped
     /// activity: media while something is playing, otherwise the weather.
     private var flankWingWidth: CGFloat {
-        if isAudioActive { return 96 }
+        if isAudioActive { return Self.playingWingWidth }
         return settings.showCompactWeather ? Self.weatherWingWidth : 82
     }
 
@@ -667,15 +690,23 @@ final class NotchState {
         switch collapsedActivity {
         case .lyrics: 26
         case .volume, .brightness: 34
-        // The charging popup drops beneath the notch, iOS-style.
-        case .battery(_, true, _): 46
+        // The charging popup drops beneath the notch, iOS-style, with a gap
+        // between the pill and the cutout's bottom edge — see
+        // `NotchSizing.chargingPopupBandHeight`.
+        case .battery(_, true, _): NotchSizing.chargingPopupBandHeight
         // Unplugged: an ordinary dropped row.
         case .battery: 36
         case .timer: 42
         // Taller than a plain row: this one carries a thumbnail and is a drag
         // target, so it needs to be worth aiming at.
         case .fileCaught: 54
-        case .screenLock, .focusMode, .eyeBreak, .accessoryBattery, .meetingSoon: 36
+        // A track change drops exactly the same row as these, and used to be
+        // missing from this list: it fell to `default: 0`, so the pill kept the
+        // hardware notch's height while still drawing the peek row beneath it.
+        // The overflow was centred by the strip's ZStack and then clipped by the
+        // pill's shape, which lifted the artwork and visualiser up out of frame
+        // with only the top of the peek showing.
+        case .trackChange, .screenLock, .focusMode, .eyeBreak, .accessoryBattery, .meetingSoon: 36
         default: 0
         }
     }
@@ -687,23 +718,42 @@ final class NotchState {
         return size
     }
 
-    /// The closed notch's hover target: the live measured notch, plus the Hover
-    /// Side Tolerance on the sides only.
+    /// The closed notch's hover target: the closed pill *as it is drawn* — the
+    /// measured cutout plus the coverage bleed that makes the visible pill, the
+    /// wings it grows for whatever is showing (cover art and visualiser, the
+    /// weather glyph and temperature, a dropped activity row), and the little
+    /// growth the pill takes on while the pointer is on it — with the Hover
+    /// Side Tolerance added on the sides only.
     ///
-    /// The height stays exactly the notch, so raising the tolerance can never
-    /// make the notch peek while the cursor merely rests beneath it — it only
-    /// widens the side catch for fast crossings. The wings and any dropped
-    /// activity bar are deliberately not part of it, and the tolerance defaults
-    /// to 0, so out of the box this is exactly the notch and nothing more.
+    /// Built from `collapsedSize` rather than the cutout. It used to be the
+    /// bare notch, which made the wings — painted black, and to the eye part of
+    /// the same shape — dead to the pointer: hovering the cover art or the
+    /// visualiser did nothing, and the pill read as answering only in its
+    /// middle. The tolerance still stacks on the sides, so it keeps meaning what
+    /// it meant when the probe was the notch alone.
+    ///
+    /// One deliberate carve-out. While the dropped row is a *drag target* —
+    /// the HUD bars and a caught file, `collapsedActivityIsInteractive` — the
+    /// height stays the hardware notch's, so a drag aimed at that row cannot
+    /// make the panel open out from under itself. Every other row the pill
+    /// paints feeds hover, because it is drawn as part of the notch.
     ///
     /// Read fresh on every hit-test and every cursor sample rather than cached:
-    /// a display change or a notch-size trim has to land on the hit target at
-    /// once, not on the next rebuild of the panel.
+    /// a display change, a notch-size trim, or an activity arriving has to land
+    /// on the hit target at once, not on the next rebuild of the panel.
     var hoverProbeSize: CGSize {
         let slack = min(max(settings.hoverTolerance, 0), 32)
+        let drawn = collapsedSize
         return CGSize(
-            width: adjustedNotchSize.width + slack * 2,
-            height: adjustedNotchSize.height
+            width: max(drawn.width, safeNotchSize.width)
+                // The growth is part of the pill while it is up, so the probe
+                // has to include it or the pointer on the outer few points of
+                // the grown wings would drop the hover it just caused.
+                + (isHovering ? hoverExpansion * 2 : 0)
+                + slack * 2,
+            height: collapsedActivityIsInteractive
+                ? adjustedNotchSize.height
+                : max(drawn.height, adjustedNotchSize.height)
         )
     }
 
@@ -732,7 +782,27 @@ final class NotchState {
 
     // MARK: - Hover / expansion
 
+    /// True from the moment a close begins until the motion has finished.
+    ///
+    /// Hover entry is ignored while it is set, and this is the whole point: the
+    /// pointer is very often still on the notch when a panel closes — resting
+    /// on it is what kept the panel open, and leaving it is what closed it — so
+    /// the 60Hz probe would fire again within a frame and start re-opening the
+    /// notch before it had finished closing. That reads as a notch that refuses
+    /// to close at all, and as an open/close flicker when it eventually does.
+    ///
+    /// The gate lifts once the close has settled, and the probe picks the
+    /// pointer up again on its next sample — so the notch always closes fully
+    /// first, and only then can a hover open it again.
+    private(set) var isClosing = false
+    private var rearmHoverWork: DispatchWorkItem?
+
     func hoverChanged(_ hovering: Bool) {
+        // A closing notch does not take hover entry. Note this returns without
+        // recording the state: leaving `isHovering` false is what lets the
+        // probe re-fire once the gate lifts, without needing a fresh pointer
+        // movement to notice the cursor is still there.
+        if hovering, isClosing { return }
         guard hovering != isHovering else { return }
         isHovering = hovering
         pendingHoverWork?.cancel()
@@ -787,6 +857,11 @@ final class NotchState {
 
     func expand() {
         guard mode != .expanded, pendingExpandWork == nil else { return }
+        // An open outranks a close that is still settling: something asked for
+        // the panel while it was on its way down, and the newer intent wins.
+        rearmHoverWork?.cancel()
+        rearmHoverWork = nil
+        isClosing = false
         pendingHoverWork?.cancel()
         // Opened on the next turn of the run loop, never inline. Opening
         // resizes the panel window, and a click reaches here from inside
@@ -827,8 +902,21 @@ final class NotchState {
         // genuine hover a no-op.
         isHovering = false
         pendingHoverWork?.cancel()
+        holdHoverUntilClosed()
         onModeChange?(mode)
         sleepModules()
+    }
+
+    /// Keeps hover from re-opening the notch until the close has finished.
+    private func holdHoverUntilClosed() {
+        isClosing = true
+        rearmHoverWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.rearmHoverWork = nil
+            self?.isClosing = false
+        }
+        rearmHoverWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + NotchAnimations.closeSettle, execute: work)
     }
 
     func select(_ newTab: NotchTab) {

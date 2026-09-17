@@ -102,16 +102,21 @@ final class BrightnessController {
         if let resolvedAPI { return resolvedAPI }
         let id = displayID
         let api: BrightnessAPI? = {
+            // The probe accepts a 0 reading: true black is a legitimate level
+            // on the displays that support it (the write path can reach real
+            // zero), and rejecting it here could resolve onto a dead API if
+            // resolution ever happens while the panel is at 0. Only the call
+            // succeeding vs failing distinguishes a live getter.
             if let get = dsGetBrightness {
                 var level: Float = 0
-                if get(id, &level) == 0, level > 0.001 { return .displayServicesUser }
+                if get(id, &level) == 0 { return .displayServicesUser }
             }
             if let get = dsGetLinearBrightness {
                 var level: Float = 0
-                if get(id, &level) == 0, level > 0.001 { return .displayServicesLinear }
+                if get(id, &level) == 0 { return .displayServicesLinear }
             }
-            if let get = cdGetUserBrightness, get(id) > 0.001 { return .coreDisplayUser }
-            if let get = cdGetLinearBrightness, get(id) > 0.001 { return .coreDisplayLinear }
+            if cdGetUserBrightness != nil { return .coreDisplayUser }
+            if cdGetLinearBrightness != nil { return .coreDisplayLinear }
             return nil
         }()
         resolvedAPI = api
@@ -142,11 +147,14 @@ final class BrightnessController {
                 brightness = Self.userBrightness(forLinear: level)
             }
         case .coreDisplayUser:
-            if let level = cdGetUserBrightness?(id), level > 0.001 {
+            // No >0 floor on the reading: zero is a real level wherever the
+            // write path can reach it, and rejecting it left the property at
+            // a stale brighter value.
+            if let level = cdGetUserBrightness?(id) {
                 brightness = Float(min(max(level, 0), 1))
             }
         case .coreDisplayLinear:
-            if let level = cdGetLinearBrightness?(id), level > 0.001 {
+            if let level = cdGetLinearBrightness?(id) {
                 brightness = Self.userBrightness(forLinear: Float(level))
             }
         }

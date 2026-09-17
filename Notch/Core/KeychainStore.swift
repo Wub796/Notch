@@ -3,9 +3,15 @@ import Security
 
 /// A tiny wrapper over the login keychain for one-off secrets.
 ///
-/// The Spotify `sp_dc` cookie is account access — it must not sit in a plist in
-/// Application Support where any process and every backup can read it. The
-/// keychain is where a session token belongs.
+/// A session token is account access — it must not sit in a plist in
+/// Application Support, where any process and every backup can read it. The
+/// keychain is where one belongs.
+///
+/// Nothing stores a secret through it at the moment: the Spotify Canvas
+/// feature that did was retired (see the README), and `delete` is what clears
+/// the `sp_dc` cookie that feature left behind. It stays because it is the
+/// right shape for the next one, and because deleting a credential is exactly
+/// the kind of thing that must not want for a helper.
 enum KeychainStore {
     private static let service = "com.notchapp.Notch"
 

@@ -10,6 +10,13 @@ import SwiftUI
 struct WeatherDetailView: View {
     let state: NotchState
 
+    /// The hero illustration keeps a few points of its 112pt box empty on the
+    /// left — an SF Symbol's glyph sits inset inside its frame — so a label
+    /// flush with the panel's content edge reads as hanging off to the left of
+    /// the weather glyph above it. Nudging the label by that inset lines the
+    /// two up on the edge the eye actually sees.
+    private static let illustrationInkInset: CGFloat = 7
+
     var body: some View {
         Group {
             if let weather = state.weather.snapshot {
@@ -21,6 +28,7 @@ struct WeatherDetailView: View {
                             .font(.system(size: 11, weight: .heavy, design: .rounded))
                             .tracking(1.1)
                             .foregroundStyle(NotchTheme.inkSecondary)
+                            .padding(.leading, Self.illustrationInkInset)
 
                         if state.showsDailyForecast {
                             dailyStrip(weather)

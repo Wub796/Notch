@@ -130,6 +130,62 @@ struct SettingsSliderRow: View {
     }
 }
 
+/// A settings row whose control is a row of small selectable chips, laid out
+/// beneath the title instead of in the trailing column.
+///
+/// `SettingsRow` puts its control on the title's line, which only works for
+/// something that fits there. A set of options — the calendar reminders, where
+/// each lead time is a yes/no of its own — needs the row's full width.
+struct SettingsChipRow<Chip: View>: View {
+    var systemImage: String?
+    var tint: Color = .gray
+    let title: String
+    var subtitle: String?
+    var showsDivider: Bool = true
+    @ViewBuilder var chips: () -> Chip
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 12) {
+                    if let systemImage {
+                        Image(systemName: systemImage)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(tint)
+                            .frame(width: 28, height: 28)
+                            .background {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(tint.opacity(0.18))
+                            }
+                    }
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(title)
+                            .font(.system(size: 13, weight: .medium))
+                        if let subtitle {
+                            Text(subtitle)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    Spacer(minLength: 12)
+                }
+
+                chips()
+                    .padding(.leading, systemImage == nil ? 0 : 40)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+
+            if showsDivider {
+                Divider().padding(.leading, systemImage == nil ? 14 : 54)
+            }
+        }
+    }
+}
+
 /// The reference's tinted explanatory box.
 struct SettingsCallout: View {
     let text: String

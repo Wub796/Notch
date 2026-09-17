@@ -109,33 +109,39 @@ final class LiveActivityManager {
         wasLowBattery = (power?.percent ?? 100) <= NotchSettings.shared.lowBatteryThreshold
         powerMonitor.onChange = { [weak self] snapshot in
             self?.power = snapshot
-            guard NotchSettings.shared.liveActivitiesEnabled else { return }
             self?.handlePowerChange(snapshot)
         }
         powerMonitor.start()
 
-        if NotchSettings.shared.liveActivitiesEnabled {
-            // Session lock/unlock, announced by the system over the
-            // distributed notification center (DynamicNotch's approach). The
-            // tokens are kept so these can be taken back off at shutdown.
-            let center = DistributedNotificationCenter.default()
-            lockObservers = [
-                center.addObserver(
-                    forName: Notification.Name("com.apple.screenIsLocked"),
-                    object: nil, queue: .main
-                ) { [weak self] _ in
-                    guard NotchSettings.shared.liveActivitiesEnabled else { return }
-                    self?.show(.screenLock(locked: true), for: Self.lockEventDuration)
-                },
-                center.addObserver(
-                    forName: Notification.Name("com.apple.screenIsUnlocked"),
-                    object: nil, queue: .main
-                ) { [weak self] _ in
-                    guard NotchSettings.shared.liveActivitiesEnabled else { return }
-                    self?.show(.screenLock(locked: false), for: Self.lockEventDuration)
-                },
-            ]
-        }
+        // Session lock/unlock, announced by the system over the distributed
+        // notification center (DynamicNotch's approach). The tokens are kept so
+        // these can be taken back off at shutdown.
+        //
+        // Registered whether or not the activity is switched on: an observer on
+        // an idle notification costs nothing, and subscribing here — the only
+        // place with a `stop()` that takes them off again — means flipping the
+        // switch on takes effect at once instead of at the next launch.
+        let center = DistributedNotificationCenter.default()
+        lockObservers = [
+            center.addObserver(
+                forName: Notification.Name("com.apple.screenIsLocked"),
+                object: nil, queue: .main
+            ) { [weak self] _ in
+                guard NotchSettings.shared.liveActivitiesEnabled,
+                      NotchSettings.shared.screenLockActivityEnabled
+                else { return }
+                self?.show(.screenLock(locked: true), for: Self.lockEventDuration)
+            },
+            center.addObserver(
+                forName: Notification.Name("com.apple.screenIsUnlocked"),
+                object: nil, queue: .main
+            ) { [weak self] _ in
+                guard NotchSettings.shared.liveActivitiesEnabled,
+                      NotchSettings.shared.screenLockActivityEnabled
+                else { return }
+                self?.show(.screenLock(locked: false), for: Self.lockEventDuration)
+            },
+        ]
     }
 
     /// Gives back everything this holds of the system's: the CoreAudio volume
@@ -171,7 +177,9 @@ final class LiveActivityManager {
 
     /// Focus mode changed (Do Not Disturb, Work, Sleep…).
     func showFocusChange(name: String, symbol: String) {
-        guard NotchSettings.shared.liveActivitiesEnabled else { return }
+        guard NotchSettings.shared.liveActivitiesEnabled,
+              NotchSettings.shared.focusChangeEnabled
+        else { return }
         show(.focusMode(name: name, symbol: symbol), for: Self.batteryEventDuration)
     }
 
@@ -222,7 +230,6 @@ final class LiveActivityManager {
     }
 
     private func handlePowerChange(_ snapshot: PowerMonitor.Snapshot) {
-        guard NotchSettings.shared.liveActivitiesEnabled else { return }
         defer { lastPowerSnapshot = snapshot }
 
         let isLow = snapshot.percent <= NotchSettings.shared.lowBatteryThreshold
@@ -231,9 +238,18 @@ final class LiveActivityManager {
         let becameLow = isLow && !wasLowBattery
         wasLowBattery = isLow
 
-        // Announce plugging in/out and the low-battery crossing — not every
-        // percent tick.
-        guard plugStateChanged || becameLow else { return }
+        // The two readings above are kept current even while the activity is
+        // switched off: they are what makes the next announcement correct,
+        // rather than one decided from a snapshot taken before the switch.
+        guard NotchSettings.shared.liveActivitiesEnabled,
+              NotchSettings.shared.powerEventEnabled
+        else { return }
+
+        // Announce plugging in and the low-battery crossing — not every
+        // percent tick, and never on unplug: the plug-in popup is a one-shot
+        // confirmation, and the persistent charging state lives in the
+        // opened notch's top-bar battery, not in repeated interruptions.
+        guard (plugStateChanged && snapshot.onACPower) || becameLow else { return }
         show(
             .battery(percent: snapshot.percent, charging: snapshot.onACPower, low: isLow),
             for: Self.batteryEventDuration

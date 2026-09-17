@@ -372,6 +372,18 @@ Store out):
   this at runtime and falls back to Apple Events, which reaches the selected
   player (Music or Spotify) and nothing else — a browser playing audio cannot
   be read on those systems by any available API.
+- **Spotify Canvas was retired.** It played the looping video Spotify shows
+  behind a track. Canvas has no public API, so the app did what every
+  third-party client did: sign in through Spotify's own web login, keep the
+  `sp_dc` session cookie, and exchange it for a web-player token. Spotify has
+  since closed that door — `open.spotify.com/get_access_token` now answers
+  **403 "URL Blocked"** to every request shape, cookie or not, and the web
+  player's replacement (`/api/token`, which needs a TOTP generated from a
+  secret embedded in their own bundle) states outright that third-party use is
+  not permitted. The feature, its sign-in window and the stored cookie are
+  gone rather than left looking half-working; the implementation is in this
+  file's history under `Notch/Modules/SpotifyCanvas/`. The notch still shows
+  the album art it always had.
 - Battery gauges hide themselves on desktop Macs with no `AppleSmartBattery`
   service; network throughput sums the `en*` interfaces.
 - Telemetry refresh-rate changes apply the next time the notch opens.

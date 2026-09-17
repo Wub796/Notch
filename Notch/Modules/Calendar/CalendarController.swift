@@ -86,14 +86,29 @@ final class CalendarController {
         moveSelectedDay(to: target)
     }
 
-    /// The next event starting within the live-activity window, published in
-    /// the collapsed notch wings.
+    /// The event whose reminder is on the notch, or nil.
+    ///
+    /// Non-nil only for the few seconds a reminder stays up. It used to be a
+    /// window — on at 15 minutes before an event, off at 5 minutes after it
+    /// started — and that is what made the row read "now" and then sit there
+    /// through the opening minutes of every meeting.
     private(set) var upcomingSoon: ScheduleItem?
 
     private let store = EKEventStore()
     private var upcomingWork: [DispatchWorkItem] = []
-    private static let upcomingWindow: TimeInterval = 15 * 60
-    private static let upcomingGrace: TimeInterval = 5 * 60
+    /// How long a reminder stays on screen: long enough to read a title and
+    /// its countdown, short enough to hand the notch straight back to whatever
+    /// else was there.
+    private static let reminderDuration: TimeInterval = 5
+    /// A "start" reminder is still true for a few seconds after the event
+    /// begins, and an event that began less than this ago is still the one the
+    /// reminders are about — without that, a zero-minute lead could never fire.
+    private static let startGrace: TimeInterval = 30
+    /// Reminders already delivered, by event id, so re-arming — which happens
+    /// on every calendar edit, every refetch and every month of navigation —
+    /// never rings the same bell twice.
+    private var rungLeads: [String: Set<Int>] = [:]
+    private var reminderDismiss: DispatchWorkItem?
 
     init() {
         // Wake on external calendar edits so the timeline and the
@@ -228,48 +243,111 @@ final class CalendarController {
 
     // MARK: - Meeting-soon live activity
 
-    /// One-shot timers (not polling) that raise/lower the meeting-soon
-    /// activity: show at start − 15 min, clear at start + 5 min, then re-arm
-    /// for the following event.
-    private func armUpcomingWatch() {
-        guard NotchSettings.shared.liveActivitiesEnabled else {
-            upcomingSoon = nil
-            return
-        }
-
+    /// One-shot timers (not polling), one per enabled lead: the next event is
+    /// announced at each time the user picked — 30, 15 and 5 minutes before it
+    /// starts by default — and every announcement takes itself off the notch a
+    /// few seconds later.
+    func armUpcomingWatch() {
         upcomingWork.forEach { $0.cancel() }
         upcomingWork.removeAll()
 
         let now = Date()
-        // The window now spans a month, so this has to exclude everything
-        // before now rather than relying on the fetch range to do it.
-        let candidate = items.first {
-            !$0.isAllDay
-                && $0.start.timeIntervalSince(now) > -Self.upcomingGrace
-                && $0.start.timeIntervalSince(now) < 24 * 60 * 60
-        }
+        let settings = NotchSettings.shared
 
-        guard let event = candidate else {
-            upcomingSoon = nil
+        guard settings.liveActivitiesEnabled, settings.calendarActivityEnabled,
+              !settings.calendarReminderLeads.isEmpty
+        else {
+            clearReminder()
             return
         }
 
-        let showAt = event.start.addingTimeInterval(-Self.upcomingWindow)
-        let clearAt = event.start.addingTimeInterval(Self.upcomingGrace)
+        // Events that are over can never ring again, so their bookkeeping goes
+        // with them.
+        rungLeads = rungLeads.filter { id, _ in
+            items.contains { $0.id == id && $0.end > now }
+        }
 
-        if now >= showAt {
-            upcomingSoon = event
-        } else {
-            upcomingSoon = nil
-            schedule(at: showAt) { [weak self] in
-                self?.upcomingSoon = event
+        // The fetch window spans a month, so this has to exclude everything
+        // before now rather than relying on the fetch range to do it.
+        guard let event = items.first(where: {
+            !$0.isAllDay
+                && $0.start.timeIntervalSince(now) > -Self.startGrace
+                && $0.start.timeIntervalSince(now) < 24 * 60 * 60
+        }) else {
+            clearReminder()
+            return
+        }
+
+        let alreadyRung = rungLeads[event.id] ?? []
+        var missed: [CalendarReminderLead] = []
+
+        for lead in settings.calendarReminderLeads where !alreadyRung.contains(lead.rawValue) {
+            let fireAt = event.start.addingTimeInterval(-Double(lead.rawValue) * 60)
+            if fireAt > now {
+                schedule(at: fireAt) { [weak self] in
+                    self?.ring(event, lead: lead)
+                }
+            } else if Self.reminderStillTrue(lead: lead, eventStart: event.start, now: now) {
+                missed.append(lead)
+            } else {
+                // Its moment has gone by with nothing true left to say, so it
+                // is marked delivered rather than rung late.
+                rungLeads[event.id, default: []].insert(lead.rawValue)
             }
         }
 
-        schedule(at: clearAt) { [weak self] in
-            self?.upcomingSoon = nil
-            self?.loadEvents()
+        // A launch, or a calendar edit, inside the reminder window still
+        // deserves one announcement — the lead that passed most recently, and
+        // only that one. The rest are marked delivered alongside it, so the
+        // same meeting cannot ring three times as the app re-arms.
+        if let latest = missed.min(by: { $0.rawValue < $1.rawValue }) {
+            rungLeads[event.id, default: []].formUnion(missed.map(\.rawValue))
+            ring(event, lead: latest)
         }
+    }
+
+    /// Whether a lead whose moment has already passed still says something
+    /// true. Every lead before the event does — opening the app two minutes
+    /// inside the 15-minute lead should still tell you the meeting is coming —
+    /// while the zero-minute "start" lead is only worth a few seconds after
+    /// the event begins. Past that, no lead rings: a reminder that has outlived
+    /// its event is what left the row sitting on "now".
+    private static func reminderStillTrue(
+        lead: CalendarReminderLead,
+        eventStart: Date,
+        now: Date
+    ) -> Bool {
+        lead == .atStart
+            ? now < eventStart.addingTimeInterval(startGrace)
+            : now < eventStart
+    }
+
+    /// Puts one reminder on the notch for `reminderDuration`, then takes it
+    /// away again.
+    private func ring(_ event: ScheduleItem, lead: CalendarReminderLead) {
+        guard NotchSettings.shared.liveActivitiesEnabled,
+              NotchSettings.shared.calendarActivityEnabled
+        else { return }
+
+        rungLeads[event.id, default: []].insert(lead.rawValue)
+        upcomingSoon = event
+
+        reminderDismiss?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.upcomingSoon?.id == event.id else { return }
+            self.upcomingSoon = nil
+            self.reminderDismiss = nil
+        }
+        reminderDismiss = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.reminderDuration, execute: work)
+    }
+
+    /// Takes any reminder off the notch immediately — used when the reminders
+    /// are switched off, and when the event they belonged to is gone.
+    private func clearReminder() {
+        reminderDismiss?.cancel()
+        reminderDismiss = nil
+        upcomingSoon = nil
     }
 
     private func schedule(at date: Date, _ action: @escaping () -> Void) {

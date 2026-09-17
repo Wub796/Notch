@@ -66,10 +66,11 @@ struct CameraView: View {
                 caption: "Turn Notch on under Privacy & Security → Camera."
             )
             .onTapGesture {
-                if let url = URL(string:
-                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") {
-                    NSWorkspace.shared.open(url)
-                }
+                // The same entry point the permissions page uses: it raises the
+                // system prompt while the answer is still open and opens the
+                // Camera pane once macOS has recorded a decision — so a tap is
+                // never a dead end, and never the wrong destination.
+                IntegrationPermissions.shared.request(.camera)
             }
 
         case .unavailable:

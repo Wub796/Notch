@@ -56,15 +56,19 @@ struct SettingsView: View {
             case .activities:
                 ["live activity", "battery", "volume", "brightness", "hud",
                  "clipboard", "shelf", "airdrop", "desktop", "space", "timer",
-                 "eye break", "focus", "accessory", "download", "downloads",
-                 "screenshot", "screenshots", "catch", "file"]
+                 "eye break", "focus", "lock", "unlock", "accessory", "download",
+                 "downloads", "screenshot", "screenshots", "catch", "file",
+                 "calendar", "event", "events", "meeting", "reminder",
+                 "reminders", "before", "minutes"]
             case .system:
                 ["cpu", "memory", "network", "telemetry", "stats", "gauge",
                  "sparkline", "battery health", "audio", "output", "input",
                  "device"]
             case .privacy:
                 ["permission", "accessibility", "calendar", "automation",
-                 "screen recording", "access"]
+                 "screen recording", "camera", "webcam", "bluetooth",
+                 "notifications", "files", "folders", "downloads", "desktop",
+                 "allow", "grant", "access"]
             case .about:
                 ["version", "licence", "license", "credits", "acknowledgements"]
             }
@@ -690,7 +694,6 @@ private struct MediaSettingsPane: View {
     var body: some View {
         SettingsPane {
             spotifyCard
-            canvasCard
             appleMusicCard
             preferredPlayerCard
             closedNotchCard
@@ -847,55 +850,6 @@ private struct MediaSettingsPane: View {
                         .foregroundStyle(.green)
                 }
                 action()
-            }
-        }
-    }
-
-    private var canvasSession = SpotifyCanvasSession.shared
-
-    private var canvasStatus: (title: String, subtitle: String) {
-        switch canvasSession.status {
-        case .signedOut:
-            return ("Not signed in", "Sign in to play the Canvas video behind a track.")
-        case .working:
-            return ("Signing in…", "Checking the sign-in with Spotify.")
-        case .signedIn:
-            return ("Signed in to Spotify", "Canvas plays in place of the album art.")
-        case .expired:
-            return ("Sign-in expired", "Spotify signed this session out. Sign in again.")
-        case let .error(message):
-            return ("Couldn’t sign in", message)
-        }
-    }
-
-    private var canvasCard: some View {
-        SettingsCard(title: "Spotify Canvas") {
-            SettingsRow(
-                systemImage: "play.rectangle.on.rectangle.fill",
-                tint: .green,
-                title: "Show Spotify Canvas",
-                subtitle: "Play the looping Canvas video in place of the album art. "
-                    + "Uses Spotify’s private endpoints, so it can break when Spotify changes them."
-            ) {
-                Toggle("", isOn: $settings.spotifyCanvasEnabled)
-                    .labelsHidden()
-                    .disabled(!canvasSession.hasCookie)
-            }
-
-            SettingsRow(
-                systemImage: "person.crop.circle.fill",
-                tint: .green,
-                title: canvasStatus.title,
-                subtitle: canvasStatus.subtitle,
-                showsDivider: false
-            ) {
-                if canvasSession.hasCookie {
-                    Button("Sign Out") { canvasSession.signOut() }
-                } else {
-                    Button("Sign in with Spotify") {
-                        SpotifyCanvasLoginWindowController.shared.present(session: canvasSession)
-                    }
-                }
             }
         }
     }
@@ -1088,12 +1042,17 @@ private struct ActivitiesSettingsPane: View {
                         showsDivider: false
                     ) {
                         HStack(spacing: 8) {
-                            Button("Grant") { MediaKeyInterceptor.requestAccessibility() }
+                            // Through the permissions type rather than the
+                            // interceptor's own prompt call: that one can only
+                            // *raise* the system alert, so once macOS has
+                            // recorded a denial it does nothing at all. This
+                            // path raises the prompt while the answer is still
+                            // open and opens the pane when it is not.
+                            Button("Grant") {
+                                IntegrationPermissions.shared.request(.accessibility)
+                            }
                             Button("Open Settings") {
-                                if let url = URL(string: "x-apple.systempreferences:"
-                                    + "com.apple.preference.security?Privacy_Accessibility") {
-                                    NSWorkspace.shared.open(url)
-                                }
+                                IntegrationPermissions.shared.openSettings(for: .accessibility)
                             }
                             .buttonStyle(.link)
                         }
@@ -1108,28 +1067,35 @@ private struct ActivitiesSettingsPane: View {
                     + "own overlay and the notch shows brightness by sampling."
             )
 
+            // Everything in this card is the same kind of thing: a system
+            // event that interrupts the closed notch. The master switch at the
+            // top silences all of them; the rows beneath pick them off one
+            // app at a time.
             SettingsCard(title: "Live Activities") {
-                toggleRow("bolt.badge.clock", .yellow, "Battery and Power Events",
-                          $settings.liveActivitiesEnabled)
-                toggleRow("speaker.wave.2.fill", .blue, "Volume Changes",
-                          $settings.volumeHUDEnabled)
-                toggleRow("sun.max.fill", .orange, "Brightness Changes",
-                          $settings.brightnessHUDEnabled)
-                toggleRow("macwindow.on.rectangle", .purple, "Desktop and Spaces Switches",
-                          $settings.desktopChangeEnabled)
-                toggleRow("airpodspro", .cyan, "Accessory Battery Levels",
-                          $settings.showAccessoryBattery)
-                toggleRow("eye.fill", .green, "Eye Break Reminders",
-                          $settings.eyeBreakEnabled)
-                toggleRow("wrench.and.screwdriver.fill", .gray, "Quick Actions in Tools",
-                          $settings.showQuickActions)
-                toggleRow("battery.75percent", .green, "Battery Percentage in the Notch",
-                          $settings.showBatteryPercentage)
+                SettingsRow(
+                    systemImage: "bell.badge.fill",
+                    tint: .indigo,
+                    title: "All Live Activities",
+                    subtitle: "One switch for every event below."
+                ) {
+                    Toggle("", isOn: $settings.liveActivitiesEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                toggleRow("calendar", .red, "Calendar Events",
+                          $settings.calendarActivityEnabled)
+                if settings.calendarActivityEnabled {
+                    reminderLeadsRow
+                }
+
+                toggleRow("bolt.fill", .yellow, "Battery and Power Events",
+                          $settings.powerEventEnabled)
                 SettingsRow(
                     systemImage: "exclamationmark.triangle.fill",
                     tint: .red,
                     title: "Low Battery Warning",
-                    showsDivider: false
+                    subtitle: "When the plug-in popup and the low-battery note appear."
                 ) {
                     Picker("", selection: $settings.lowBatteryThreshold) {
                         ForEach([10, 15, 20, 25], id: \.self) { Text("\($0)%").tag($0) }
@@ -1137,6 +1103,33 @@ private struct ActivitiesSettingsPane: View {
                     .labelsHidden()
                     .frame(width: 90)
                 }
+
+                toggleRow("moon.fill", .purple, "Focus Mode Changes",
+                          $settings.focusChangeEnabled)
+                toggleRow("lock.fill", .gray, "Lock and Unlock",
+                          $settings.screenLockActivityEnabled)
+                toggleRow("airpodspro", .cyan, "Accessory Battery Levels",
+                          $settings.showAccessoryBattery,
+                          showsDivider: false)
+            }
+
+            // The notch's own indicators: each has its own switch rather than
+            // being part of the live-activity master, because none of them is a
+            // notification about something that happened elsewhere.
+            SettingsCard(title: "Indicators and HUDs") {
+                toggleRow("speaker.wave.2.fill", .blue, "Volume Changes",
+                          $settings.volumeHUDEnabled)
+                toggleRow("sun.max.fill", .orange, "Brightness Changes",
+                          $settings.brightnessHUDEnabled)
+                toggleRow("macwindow.on.rectangle", .purple, "Desktop and Spaces Switches",
+                          $settings.desktopChangeEnabled)
+                toggleRow("eye.fill", .green, "Eye Break Reminders",
+                          $settings.eyeBreakEnabled)
+                toggleRow("wrench.and.screwdriver.fill", .gray, "Quick Actions in Tools",
+                          $settings.showQuickActions)
+                toggleRow("battery.75percent", .green, "Battery Percentage in the Notch",
+                          $settings.showBatteryPercentage,
+                          showsDivider: false)
             }
 
             SettingsCard(title: "Clipboard and Shelf") {
@@ -1183,13 +1176,71 @@ private struct ActivitiesSettingsPane: View {
         settings.hudReplacement && !MediaKeyInterceptor.isAccessibilityTrusted
     }
 
+    /// One chip per lead time, in any combination. Each rings once, a little
+    /// while before the event, and then the notch goes back to whatever it was
+    /// showing — which is the whole point of telling the user when it rings.
+    private var reminderLeadsRow: some View {
+        SettingsChipRow(
+            systemImage: "clock.fill",
+            tint: .red,
+            title: "Remind Me Before",
+            subtitle: settings.calendarReminderLeads.isEmpty
+                ? "Nothing selected, so events do not reach the notch. "
+                    + "Pick at least one time to be reminded."
+                : "Each time rings once and then hands the notch back."
+        ) {
+            HStack(spacing: 6) {
+                ForEach(CalendarReminderLead.allCases) { lead in
+                    reminderLeadChip(lead)
+                }
+            }
+        }
+    }
+
+    private func reminderLeadChip(_ lead: CalendarReminderLead) -> some View {
+        let isOn = settings.calendarReminderLeads.contains(lead)
+
+        return Button {
+            var leads = settings.calendarReminderLeads
+            if isOn {
+                leads.removeAll { $0 == lead }
+            } else {
+                leads.append(lead)
+            }
+            settings.calendarReminderLeads = leads
+        } label: {
+            Text(lead.title)
+                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background {
+                    Capsule().fill(
+                        isOn
+                            ? Color.accentColor.opacity(0.85)
+                            : Color.primary.opacity(0.08)
+                    )
+                }
+                .foregroundStyle(isOn ? Color.white : Color.primary)
+        }
+        .buttonStyle(.plain)
+        .help(lead.help)
+        .accessibilityLabel(lead.help)
+        .accessibilityAddTraits(isOn ? [.isSelected] : [])
+    }
+
     private func toggleRow(
         _ symbol: String,
         _ tint: Color,
         _ title: String,
-        _ binding: Binding<Bool>
+        _ binding: Binding<Bool>,
+        showsDivider: Bool = true
     ) -> some View {
-        SettingsRow(systemImage: symbol, tint: tint, title: title) {
+        SettingsRow(
+            systemImage: symbol,
+            tint: tint,
+            title: title,
+            showsDivider: showsDivider
+        ) {
             Toggle("", isOn: binding)
                 .labelsHidden()
                 .toggleStyle(.switch)
@@ -1211,23 +1262,36 @@ private struct PrivacySettingsPane: View {
             } header: {
                 Label("Integrations & Permissions", systemImage: "hand.raised.fill")
             } footer: {
-                Text("Status is read from the system each time this pane appears. Apple Events access can only be verified while the target app is running, so Music control reads Unavailable until Music or Spotify is open.")
+                Text("Everything Notch can ask for, in the order System Settings lists it. "
+                    + "macOS asks once per permission: while the answer is still open these "
+                    + "rows raise the system prompt, and once it has been answered they open "
+                    + "the exact pane instead, because macOS will not ask a second time. "
+                    + "Apple Events access can only be verified while the target app is "
+                    + "running, so Music control reads Unavailable until Music or Spotify is "
+                    + "open.")
             }
 
             Section {
                 Button("Re-check Now") {
-                    permissions.refresh()
+                    permissions.refresh(probeFolders: true)
                 }
             }
         }
         .formStyle(.grouped)
-        .onAppear { permissions.refresh() }
+        // `probeFolders` only from here. Checking access to the folders the file
+        // catcher watches means reading them, and that read is the one check in
+        // this type that can put a consent prompt on screen — so it is tied to
+        // somebody actually looking at the permissions page, not to app launch.
+        .onAppear { permissions.refresh(probeFolders: true) }
         .onReceive(
             NotificationCenter.default.publisher(
                 for: NSApplication.didBecomeActiveNotification
             )
         ) { _ in
-            permissions.refresh()
+            // Also probed: the usual reason the app becomes active again from
+            // this pane is that the user just changed something in System
+            // Settings, and a stale row would read as "nothing happened".
+            permissions.refresh(probeFolders: true)
         }
     }
 }
@@ -1245,6 +1309,7 @@ private struct PermissionRow: View {
 
     var body: some View {
         let status = permissions.status(for: integration)
+        let canPrompt = permissions.canPrompt(for: integration)
         let isPending = permissions.pending.contains(integration)
 
         VStack(alignment: .leading, spacing: 6) {
@@ -1278,27 +1343,33 @@ private struct PermissionRow: View {
                         .controlSize(.small)
                         .frame(width: 60)
                 } else if status != .granted {
-                    Button("Allow") {
+                    // The label says which of the two things the click will do,
+                    // because they are not the same thing: one raises the
+                    // system prompt, the other opens the pane that owns the
+                    // switch. `request` itself enforces the same rule.
+                    Button(canPrompt ? "Allow" : "Allow in Settings…") {
                         // Music needs to know which player before it can ask
                         // for anything: the Automation prompt is per target
                         // app, so "allow music" is not a single permission.
-                        if integration == .music {
+                        if integration == .music, canPrompt {
                             isChoosingPlayer = true
                         } else {
                             permissions.request(integration)
                         }
                     }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 }
 
-                // System Settings is always available, not only once macOS has
-                // recorded a denial: a prompt that never appears leaves the
-                // status at "Not requested" with no other way forward.
-                Button("Open Settings") {
-                    if let url = integration.settingsURL {
-                        NSWorkspace.shared.open(url)
+                // Only when the button above does not already lead there: two
+                // controls doing the same thing in one row reads as a bug.
+                // Granted rows keep it, so access can still be revoked.
+                if status == .granted || canPrompt {
+                    Button("Open Settings") {
+                        permissions.openSettings(for: integration)
                     }
+                    .buttonStyle(.link)
                 }
-                .buttonStyle(.link)
             }
 
             // Say what still works without it, and why it can't be read.

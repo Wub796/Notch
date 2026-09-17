@@ -314,13 +314,17 @@ struct AudioDevicesView: View {
                     title: app.name,
                     status: app.isPlaying ? "Playing" : "Idle",
                     statusIsLive: app.isPlaying,
-                    level: Double(appVolumes[app.id] ?? app.volume() ?? 1),
+                    level: state.audioApps.canControlAppVolume
+                        ? Double(appVolumes[app.id] ?? app.volume() ?? 1)
+                        : nil,
                     isHighlighted: app.isPlaying,
-                    onLevelChange: { level in
-                        let value = Float(level)
-                        appVolumes[app.id] = value
-                        app.setVolume(value)
-                    },
+                    onLevelChange: state.audioApps.canControlAppVolume
+                        ? { level in
+                            let value = Float(level)
+                            appVolumes[app.id] = value
+                            app.setVolume(value)
+                        }
+                        : nil,
                     onSelect: { app.activate() }
                 ) {
                     RoundIconButton(
@@ -346,10 +350,13 @@ struct AudioDevicesView: View {
                         systemImage: isAppMuted(app.id)
                             ? "speaker.wave.2.fill"
                             : "speaker.slash.fill",
-                        help: isAppMuted(app.id)
-                            ? "Unmute \(app.name)"
-                            : "Mute \(app.name)",
-                        tint: isAppMuted(app.id) ? nil : .red
+                        help: state.audioApps.canControlAppVolume
+                            ? (isAppMuted(app.id)
+                                ? "Unmute \(app.name)"
+                                : "Mute \(app.name)")
+                            : "Per-app muting isn't available on this macOS",
+                        tint: isAppMuted(app.id) ? nil : .red,
+                        isEnabled: state.audioApps.canControlAppVolume
                     ) {
                         toggleAppMute(app)
                     }
@@ -357,12 +364,16 @@ struct AudioDevicesView: View {
                 .notchRowEntrance(index)
             }
 
-            Text(state.audioApps.canObserveProcesses
+            Text(!state.audioApps.canObserveProcesses
+                 ? "macOS 14.4 or later is needed to tell which apps are "
+                    + "actually making sound; this lists media apps that are "
+                    + "running."
+                 : state.audioApps.canControlAppVolume
                  ? "Adjust each app independently. Changes use CoreAudio's "
                     + "per-process output level."
-                 : "macOS 14.4 or later is needed to tell which apps are "
-                    + "actually making sound; this lists media apps that are "
-                    + "running.")
+                 : "This macOS no longer lets apps set another app's volume "
+                    + "(CoreAudio removed the per-process level), so only the "
+                    + "system output is adjustable.")
                 .font(.notchFootnote)
                 .foregroundStyle(NotchTheme.inkMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -505,10 +516,14 @@ struct AudioDevicesView: View {
     /// lost. The monitor lives for the app's lifetime, so the mute state
     /// does too.
     private func isAppMuted(_ id: String) -> Bool {
-        state.audioApps.isAppMuted(id)
+        state.audioApps.canControlAppVolume && state.audioApps.isAppMuted(id)
     }
 
+    /// Per-app mute is a per-process volume write (to zero and back), so it
+    /// exists only where that property does. Where it doesn't, the button is
+    /// disabled rather than silently doing nothing.
     private func toggleAppMute(_ app: AudioAppMonitor.App) {
+        guard state.audioApps.canControlAppVolume else { return }
         // Keep the row's level mirror in step so the bar sits at the new
         // value (0 while muted, the restored level after).
         appVolumes[app.id] = state.audioApps.toggleAppMute(app)

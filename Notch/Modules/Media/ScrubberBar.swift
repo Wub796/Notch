@@ -11,6 +11,14 @@ struct ScrubberBar: View {
     let accent: Color
     let onSeek: (TimeInterval) -> Void
 
+    /// Called continuously while the thumb moves, with the position under it.
+    /// Lets the lyric highlight follow the drag in real time instead of only
+    /// after release; does not move playback.
+    var onScrubPreview: ((TimeInterval) -> Void)? = nil
+    /// Called once when the drag ends (after `onSeek`), so the consumer can
+    /// stop previewing and hand the highlight back to the playhead.
+    var onScrubEnd: (() -> Void)? = nil
+
     @State private var dragFraction: Double?
     @State private var hovering = false
     @State private var showRemaining = true
@@ -72,13 +80,16 @@ struct ScrubberBar: View {
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
                             guard duration > 0, width > 0 else { return }
-                            dragFraction = min(max(value.location.x / width, 0), 1)
+                            let fraction = min(max(value.location.x / width, 0), 1)
+                            dragFraction = fraction
+                            onScrubPreview?(fraction * duration)
                         }
                         .onEnded { _ in
                             if let fraction = dragFraction {
                                 onSeek(fraction * duration)
                             }
                             dragFraction = nil
+                            onScrubEnd?()
                         }
                 )
             }

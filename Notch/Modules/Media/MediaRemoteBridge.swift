@@ -17,6 +17,10 @@ final class MediaRemoteBridge {
         static let album = "kMRMediaRemoteNowPlayingInfoAlbum"
         static let duration = "kMRMediaRemoteNowPlayingInfoDuration"
         static let elapsedTime = "kMRMediaRemoteNowPlayingInfoElapsedTime"
+        /// The adapter's live position estimate (`get --now`), which is the
+        /// only field that describes where the playhead is *now* on this
+        /// platform — see `MediaRemoteAdapter.Key.elapsedTimeNow`.
+        static let elapsedTimeNow = "kMRMediaRemoteNowPlayingInfoElapsedTimeNow"
         static let timestamp = "kMRMediaRemoteNowPlayingInfoTimestamp"
         static let playbackRate = "kMRMediaRemoteNowPlayingInfoPlaybackRate"
         static let artworkData = "kMRMediaRemoteNowPlayingInfoArtworkData"

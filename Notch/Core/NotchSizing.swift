@@ -77,17 +77,32 @@ enum NotchSizing {
     /// corners; the side gutter carries a little more air than the bottom so
     /// the row reads as relaxed rather than cramped, while the bottom stays
     /// tight to the transport row. The other surfaces keep the corner-radius
-    /// clearance plus breathing room.
+    /// clearance plus breathing room, and the calendar one 4pt rung more: its
+    /// month and day strip start straight in at the left edge, where the
+    /// screens that begin with a heading can afford to hang off the corner.
     static func contentSideInset(for tab: NotchTab) -> CGFloat {
-        tab == .home ? 30 : cornerRadiusInsets.opened.top + openContentInset
+        let base = cornerRadiusInsets.opened.top + openContentInset
+        switch tab {
+        case .home: return 30
+        case .calendar: return base + 4
+        default: return base
+        }
     }
 
     /// Per-tab inset below the open module. Home's bottom gutter is kept
     /// tight (5pt) — just enough air under the transport row, well short of
     /// the 30pt side gutter so the panel doesn't carry a tall black band
-    /// beneath the dashboard. Taller surfaces keep the baseline inset.
+    /// beneath the dashboard. Taller surfaces keep the baseline inset, except
+    /// the calendar: its slab fits its content, and a day's events end at the
+    /// last row, so the baseline 5 left them sitting on the rounded bottom
+    /// edge. 12 is measured clearance under the last row's text, not padding
+    /// for padding's sake.
     static func contentBottomInset(for tab: NotchTab) -> CGFloat {
-        tab == .home ? 5 : openContentInset
+        switch tab {
+        case .home: return 5
+        case .calendar: return 12
+        default: return openContentInset
+        }
     }
 
     /// Height the open slab grows by while a volume/brightness HUD drops below
@@ -208,6 +223,36 @@ enum NotchSizing {
     /// shape clipped them.
     static var closedDropInset: CGFloat { closedFlareInset + 8 }
 
+    /// Clearance between the hardware cutout's bottom edge and the top of the
+    /// plug-in popup, and the band that popup drops into.
+    ///
+    /// Both live here because both the view and the state read them: the view
+    /// draws the band, while `NotchState.activityDropHeight` sizes the closed
+    /// pill — and with it the window and the hover target — from the band. Two
+    /// copies of the number is how the popup ended up half-hidden under the
+    /// notch: the pill's natural height is 45.6pt, and centring that plus its
+    /// 6pt bottom gutter inside a 46pt band pushed its top 3.4pt above the
+    /// cutout, where the notch's black painted over its rounded corners. The
+    /// band is therefore the pill, both gutters, and the gap — 45.6 + 6 + 5
+    /// measured, rounded up so a font that grows a hair never clips it.
+    static let chargingPopupTopGap: CGFloat = 5
+    static let chargingPopupBandHeight: CGFloat = 57
+
+    /// The closed cover's inset from the frame edge: the flare, then 8pt of
+    /// black. Deliberately tighter than `closedWingInset`, which the weather
+    /// glyph, the temperature and the visualiser all keep.
+    ///
+    /// The cover is a filled tile, so its corner is read against the notch's
+    /// corner rather than against a stroke's clearance, and those two only
+    /// nest when the corner radius equals the notch's minus the black between
+    /// them. At the standard 12pt that radius would be 4, which is visibly
+    /// tighter than the notch's own corner; at 8pt it is 8, which measures out
+    /// as the pair being concentric — the two corner arcs' centres 3.3pt apart
+    /// with the horizontal offset 0.3pt, and a uniform 5pt of black around the
+    /// tile, the same as it has above and below it. See
+    /// `CollapsedNotchView.artworkCornerRadius`.
+    static var closedArtworkInset: CGFloat { closedFlareInset + 8 }
+
     /// Each screen's natural size at the default width.
     private static func baseSize(for tab: NotchTab) -> CGSize {
         switch tab {
@@ -223,7 +268,12 @@ enum NotchSizing {
         case .home: CGSize(width: 900, height: 236)
         case .audio: CGSize(width: 880, height: 390)
         case .weather: CGSize(width: 600, height: 320)
-        case .calendar: CGSize(width: 620, height: 350)
+        // 660, not 620: the header's trailing cluster (grid toggle, prev,
+        // Today, next) sits in a flank that is half the module width minus
+        // the notch dead zone — at 620 that flank came out narrower than the
+        // cluster and "Today" compressed down to "Tod…". The extra 40 gives
+        // the flank ~20pt of slack over the cluster instead.
+        case .calendar: CGSize(width: 660, height: 350)
         case .shelf: CGSize(width: 640, height: 240)
         case .tools: CGSize(width: 880, height: 295)
         case .notes: CGSize(width: 580, height: 265)

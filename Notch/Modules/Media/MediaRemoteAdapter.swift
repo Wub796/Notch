@@ -21,6 +21,13 @@ final class MediaRemoteAdapter {
         static let album = "album"
         static let duration = "duration"
         static let elapsedTime = "elapsedTime"
+        /// The adapter's own estimate of the position *now*, only emitted by
+        /// `get --now`. `elapsedTime` is not a live position on this platform:
+        /// Spotify publishes it as 0 and leans on the pair's timestamp, which
+        /// the player only refreshes when its state changes — so a long-lived
+        /// stream holds a zero anchor from whenever the song last changed
+        /// state, and a playhead read from it can be a minute or more behind.
+        static let elapsedTimeNow = "elapsedTimeNow"
         static let timestamp = "timestamp"
         // Microsecond variants. The plain keys drop sub-second precision — the
         // framework serializes `timestamp` truncated to whole seconds, which
@@ -29,6 +36,7 @@ final class MediaRemoteAdapter {
         // runs with `--micros` so the capture time keeps its fraction.
         static let durationMicros = "durationMicros"
         static let elapsedTimeMicros = "elapsedTimeMicros"
+        static let elapsedTimeNowMicros = "elapsedTimeNowMicros"
         static let timestampEpochMicros = "timestampEpochMicros"
         static let playbackRate = "playbackRate"
         static let artworkData = "artworkData"
@@ -189,6 +197,55 @@ final class MediaRemoteAdapter {
         spawnOneShot(arguments: ["send", "\(command.rawValue)"])
     }
 
+    /// One-shot now-playing query (the framework's `get` verb): spawns a
+    /// short-lived process and returns the merged payload through the same
+    /// normalization the stream uses. On Macs where MediaRemote's push
+    /// notifications are gated this still answers — including the playing
+    /// state, which the stream demonstrably fails to push on pause — and it
+    /// needs no user consent, unlike the Apple Events fallback.
+    func getNowPlaying(_ completion: @escaping ([String: Any]?) -> Void) {
+        Self.oneShotQueue.async { [weak self] in
+            guard let self,
+                  let script = Self.scriptURL(),
+                  let framework = Self.frameworkURL() else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            let process = Process()
+            let pipe = Pipe()
+            process.executableURL = Self.perlURL()
+            // `--now` makes the framework add its own estimate of the position
+            // at query time. Without it the payload's only position field is
+            // `elapsedTime`, which the player leaves at zero — and a query that
+            // answers "0" looks like a deliberate rewind to the caller.
+            process.arguments = [script.path, framework.path, "get", "--now"]
+            process.standardOutput = pipe
+            process.standardError = FileHandle.nullDevice
+            do {
+                try process.run()
+            } catch {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+
+            var payload: [String: Any]?
+            if let object = try? JSONSerialization.jsonObject(with: data),
+               let document = object as? [String: Any],
+               let raw = document["payload"] as? [String: Any], !raw.isEmpty {
+                // Same mapping the stream path uses, so the controller sees
+                // identical keys (playbackRate, elapsedTime, timestamp…).
+                payload = Self.normalizedInfo(from: raw, carried: Set(raw.keys))
+            }
+            DispatchQueue.main.async { completion(payload) }
+        }
+    }
+
+    /// Dedicated queue for one-shot queries: `readDataToEndOfFile` blocks for
+    /// the subprocess lifetime, which must never delay the stream's events.
+    private static let oneShotQueue = DispatchQueue(label: "com.notchapp.MediaRemoteAdapter.get", qos: .utility)
+
     /// One-shot `seek` to an absolute position; the adapter expects microseconds.
     /// Off the main thread.
     func seek(to seconds: TimeInterval) {
@@ -281,7 +338,9 @@ final class MediaRemoteAdapter {
         // active — so forward nothing until real data has arrived.
         guard hasSeenNonEmpty else { return }
 
-        let info = Self.normalizedInfo(from: state)
+        // The event's own keys, not just the merged state: the position pair
+        // below may only be forwarded when *this* event carried it.
+        let info = Self.normalizedInfo(from: state, carried: Set(payload.keys))
         DispatchQueue.main.async { [weak self] in
             guard let self, self.process != nil else { return }
             self.onInfo?(info)
@@ -289,7 +348,20 @@ final class MediaRemoteAdapter {
     }
 
     /// Maps the adapter's camelCase payload onto the controller's info keys.
-    private static func normalizedInfo(from state: [String: Any]) -> [String: Any] {
+    ///
+    /// `carried` is the key set of the event being parsed. It matters for the
+    /// position pair: the adapter merges diffs into one state, so an event
+    /// carrying a fresh `timestampEpochMicros` but no elapsed would otherwise
+    /// re-publish the *last* position with the *new* capture time — and the
+    /// controller, reading that as "the playhead is here now", rewound the
+    /// song. Spotify sends exactly that shape on track changes and rate
+    /// updates, so mid-playback the playhead (and with it the lyric line, the
+    /// scrubber and the remaining time) kept jumping back to wherever the last
+    /// real position report had left it.
+    private static func normalizedInfo(
+        from state: [String: Any],
+        carried: Set<String> = []
+    ) -> [String: Any] {
         var info: [String: Any] = [:]
 
         if let value = state[Key.title] as? String {
@@ -308,22 +380,42 @@ final class MediaRemoteAdapter {
         } else if let value = state[Key.duration] as? Int {
             info[MediaRemoteBridge.InfoKey.duration] = Double(value)
         }
+        // A position is only worth reporting when it arrives with the instant
+        // it was captured. Where it does not, the previous position stands and
+        // the controller goes on extrapolating from it.
+        let carriesElapsed = carried.contains(Key.elapsedTimeMicros)
+            || carried.contains(Key.elapsedTime)
+        let carriesTimestamp = carried.contains(Key.timestampEpochMicros)
+            || carried.contains(Key.timestamp)
+        var elapsed: TimeInterval?
         if let micros = Self.microsValue(state[Key.elapsedTimeMicros]) {
-            info[MediaRemoteBridge.InfoKey.elapsedTime] = micros
+            elapsed = micros
         } else if let value = state[Key.elapsedTime] as? Double {
-            info[MediaRemoteBridge.InfoKey.elapsedTime] = value
+            elapsed = value
         } else if let value = state[Key.elapsedTime] as? Int {
-            info[MediaRemoteBridge.InfoKey.elapsedTime] = Double(value)
+            elapsed = Double(value)
         }
-        if let micros = state[Key.timestampEpochMicros] as? NSNumber {
-            // Epoch microseconds → the exact capture instant, sub-second
-            // fraction intact, so the extrapolated playhead agrees with the
-            // audio instead of trailing it by up to a second.
-            info[MediaRemoteBridge.InfoKey.timestamp] =
-                Date(timeIntervalSince1970: micros.doubleValue / 1_000_000)
-        } else if let rawTimestamp = state[Key.timestamp] as? String,
-                  let date = Self.timestampDate(from: rawTimestamp) {
-            info[MediaRemoteBridge.InfoKey.timestamp] = date
+        // The live estimate, when this payload carries one (`get --now`).
+        // Reported alongside — not instead of — the elapsed/timestamp pair:
+        // the controller has to know the answer is a fresh position before it
+        // is entitled to re-anchor to it.
+        if let micros = Self.microsValue(state[Key.elapsedTimeNowMicros]) {
+            info[MediaRemoteBridge.InfoKey.elapsedTimeNow] = micros
+        } else if let value = state[Key.elapsedTimeNow] as? Double {
+            info[MediaRemoteBridge.InfoKey.elapsedTimeNow] = value
+        } else if let value = state[Key.elapsedTimeNow] as? Int {
+            info[MediaRemoteBridge.InfoKey.elapsedTimeNow] = Double(value)
+        }
+        if carriesElapsed, let elapsed {
+            info[MediaRemoteBridge.InfoKey.elapsedTime] = elapsed
+            // Paired with the moment it was captured. An elapsed without its
+            // own timestamp is read now, which is as close as this side can
+            // get to when the player measured it.
+            if carriesTimestamp, let capture = Self.captureDate(from: state) {
+                info[MediaRemoteBridge.InfoKey.timestamp] = capture
+            } else {
+                info[MediaRemoteBridge.InfoKey.timestamp] = Date()
+            }
         }
         // `playing` wins over `playbackRate`. It is the adapter's own answer to
         // "is this app playing" and is kept current, while the rate is only
@@ -350,6 +442,21 @@ final class MediaRemoteAdapter {
             info[Key.mediaType] = type
         }
         return info
+    }
+
+    /// The instant the information was captured, from the microsecond epoch
+    /// field when present and the string form otherwise.
+    private static func captureDate(from state: [String: Any]) -> Date? {
+        if let micros = state[Key.timestampEpochMicros] as? NSNumber {
+            // Epoch microseconds → the exact capture instant, sub-second
+            // fraction intact, so the extrapolated playhead agrees with the
+            // audio instead of trailing it by up to a second.
+            return Date(timeIntervalSince1970: micros.doubleValue / 1_000_000)
+        }
+        if let rawTimestamp = state[Key.timestamp] as? String {
+            return timestampDate(from: rawTimestamp)
+        }
+        return nil
     }
 
     /// Converts a microsecond-valued payload number to seconds.

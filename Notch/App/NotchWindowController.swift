@@ -16,6 +16,10 @@ final class NotchWindowController: NSWindowController {
     private var lastCollapsedWindowSize: CGSize?
     private var screenParametersObserver: NSObjectProtocol?
     private var collapseResizeWork: DispatchWorkItem?
+    /// True only while this controller is applying a frame of its own, so the
+    /// window delegate can tell our sizing apart from anything else that moves
+    /// or resizes the panel. See `repairFrameIfDrifted`.
+    private var isApplyingFrame = false
 
     init(state: NotchState, screen: NSScreen) {
         self.state = state
@@ -53,6 +57,7 @@ final class NotchWindowController: NSWindowController {
         panel.contentView = hostingView
 
         super.init(window: panel)
+        panel.delegate = self
 
         setupModeChangeObserver()
         setupSpaceObserver()
@@ -74,6 +79,7 @@ final class NotchWindowController: NSWindowController {
         state.onWillShowTab = nil
         collapseResizeWork?.cancel()
         collapseResizeWork = nil
+        window?.delegate = nil
         if let spaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver)
             self.spaceObserver = nil
@@ -167,7 +173,10 @@ final class NotchWindowController: NSWindowController {
             self.setWindowFrame(current, on: screen)
         }
         collapseResizeWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55, execute: work)
+        // The same settle the hover probe waits for before it will open the
+        // notch again, so the window can never shrink while the slab is still
+        // animating inside it — nor lag behind a notch that has finished.
+        DispatchQueue.main.asyncAfter(deadline: .now() + NotchAnimations.closeSettle, execute: work)
     }
 
     private func setWindowFrame(_ size: CGSize, on screen: NSScreen) {
@@ -179,7 +188,39 @@ final class NotchWindowController: NSWindowController {
             height: size.height.rounded()
         )
         guard panel.frame != frame else { return }
+        isApplyingFrame = true
         panel.setFrame(frame, display: true)
+        isApplyingFrame = false
+    }
+
+    /// Puts the panel back on the notch after a frame change this controller
+    /// did not ask for.
+    ///
+    /// Every path in here re-centres when it sizes the window, so the anchor
+    /// survives on its own — until something outside the controller changes
+    /// the frame. A panel at status-bar level, joined to every Space, is moved
+    /// and resized by the window server around Space, display and full-screen
+    /// transitions, and once that happens nothing here re-derives an origin
+    /// until the next resize or a Space change: the notch then sits beside the
+    /// hardware cutout and stays there. Watching the window itself closes that
+    /// hole, because a frame that moved for *any* reason is repaired the
+    /// moment it moves, not only when this code happens to run next.
+    private func repairFrameIfDrifted() {
+        guard !isApplyingFrame, let panel = window, let screen = trackedScreen else { return }
+        let notchCentre = NotchGeometry(screen: screen).notchCenterX
+        let offCentre = abs(panel.frame.midX - notchCentre) > 0.5
+        let target = state.mode == .expanded ? expandedWindowSize() : collapsedWindowSize()
+        let wrongSize = abs(panel.frame.width - target.width) > 0.5
+            || abs(panel.frame.height - target.height) > 0.5
+        guard offCentre || wrongSize else { return }
+        // Re-anchor at whatever size the window currently is first, so a pure
+        // move is corrected on the spot instead of after the shrink settle.
+        if offCentre {
+            setWindowFrame(panel.frame.size, on: screen)
+        }
+        if wrongSize {
+            apply(windowSize: target, on: screen)
+        }
     }
 
     /// Grows the window, synchronously, to hold the open slab for `tab` (the
@@ -453,6 +494,20 @@ final class NotchWindowController: NSWindowController {
     }
 }
 
+/// Both halves matter: a window server transition can resize the panel without
+/// moving it, or move it without resizing, and either one alone leaves the notch
+/// beside the hardware cutout. Corrected rather than fought over: see
+/// `repairFrameIfDrifted`.
+extension NotchWindowController: NSWindowDelegate {
+    func windowDidResize(_ notification: Notification) {
+        repairFrameIfDrifted()
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        repairFrameIfDrifted()
+    }
+}
+
 /// The panel's interactive region — the area that takes the mouse instead of
 /// letting it through to whatever is underneath.
 ///
@@ -473,11 +528,16 @@ enum NotchInteractiveRegion {
                 height: state.expandedTotalHeight + NotchSizing.shadowPadding
             )
         }
-        // Hover/click hit testing is deliberately the measured notch only.
-        // Wings and tolerance bands must not turn the menu bar around it into
-        // an interactive dead zone. A dropped HUD/file row is the one
-        // exception: it remains a deliberate drag target, but it does not feed
-        // hover state because `probeScreenRect` stays notch-sized.
+        // Hover/click hit testing is the closed pill as it is drawn: the notch,
+        // its wings and any dropped row — the tolerance bands included. Those
+        // wings are painted black, so taking the mouse over them costs nothing
+        // the menu bar did not already give up, and leaving them out made the
+        // drawn pill answer only in its middle.
+        //
+        // A dropped HUD/file row is the one difference: it stays a deliberate
+        // drag target — the full drawn shape takes the mouse — while the hover
+        // probe stays the notch's height there, so aiming a drag at that row can
+        // never make the panel open out from under itself.
         if state.collapsedActivityIsInteractive {
             let collapsed = state.collapsedSize
             return CGSize(width: collapsed.width, height: collapsed.height)
