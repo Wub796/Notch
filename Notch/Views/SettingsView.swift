@@ -1519,6 +1519,13 @@ private struct AboutSettingsPane: View {
                 .frame(width: 240)
                 .padding(.vertical, 6)
 
+            Button("Check for Updates…") {
+                UpdateController.shared.checkForUpdates()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .padding(.bottom, 4)
+
             Text("A notch-extending utility for macOS.\nInspired by boring.notch, Sapphire, DynamicNotch, and Atoll.")
                 .font(.callout)
                 .foregroundStyle(.secondary)

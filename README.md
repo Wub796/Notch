@@ -5,7 +5,7 @@ Hover (or click) the notch and it springs open into a liquid-glass hub with medi
 live lyrics, a file shelf, your next 24 hours of events, and hardware telemetry.
 
 - **Target:** macOS 14.0+ (Apple Silicon optimized)
-- **Stack:** SwiftUI + AppKit, `@Observable` (Observation framework), EventKit, IOKit, Mach host statistics, ServiceManagement
+- **Stack:** SwiftUI + AppKit, `@Observable` (Observation framework), EventKit, IOKit, Mach host statistics, ServiceManagement, Sparkle 2
 - **Xcode:** 16.0 or newer (project uses file-system-synchronized groups)
 
 ## Features
@@ -348,8 +348,16 @@ third-party service — deliberate omissions, not oversights.
 
 ## Shipping checklist
 
-To distribute outside the App Store (the MediaRemote dependency rules the App
-Store out):
+To distribute outside the App Store (the MediaRemote dependency rules the App Store out):
+
+Sparkle is integrated through the Swift Package Manager and checks the GitHub
+release appcast at `https://github.com/Wub796/Notch/releases/latest/download/appcast.xml`.
+Before publishing the first update, generate a Sparkle EdDSA key pair with
+`generate_keys`, keep the private key in CI, add the public key to the app's
+`SUPublicEDKey` Info.plist value, and upload the generated `appcast.xml` plus a
+signed archive to each GitHub release. Automatic checks are enabled; users can
+also choose **Check for Updates…** from the menu bar or About settings.
+
 
 1. Archive in Xcode with your Developer ID Application certificate
    (Hardened Runtime is already enabled; the Apple Events entitlement is set).

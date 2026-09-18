@@ -22,6 +22,15 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
+	<!-- Sparkle reads the signed appcast published with GitHub releases. -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/Wub796/Notch/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>dSk3ZIqvbu5e3OCpwp1kBe1Q+0eUwhVc3geq/JmEXWA=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>

@@ -77,6 +77,10 @@ struct NotchApp: App {
 
             Divider()
 
+            Button("Check for Updates…") {
+                UpdateController.shared.checkForUpdates()
+            }
+
             Button("Settings…") {
                 SettingsWindowController.shared.show()
             }
