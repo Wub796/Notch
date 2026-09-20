@@ -1,12 +1,17 @@
 import SwiftUI
 import Observation
 
-/// Sapphire-style three-state interaction: hovering the notch makes it
-/// "peek" (a subtle 1.10× grow), and a click — or a hover linger, when
-/// enabled — springs it fully open.
+/// The panel's two resting states: closed, or fully open. Hovering the closed
+/// notch grows it in place (see `NotchState.isHovering`), but that is a
+/// property of the closed pill rather than a mode of its own — it pads the
+/// pill's width and moves nothing else, so there is one bit for "open" and the
+/// hover flag for everything else. It used to be a third case here, flipped by
+/// hover entry and back by hover exit; because the mode is an animation key in
+/// `NotchContainerView`, every hover then fired two animations for one geometry
+/// change — the hover spring for the padding and the close spring for the mode
+/// — which is a jolt at exactly the moment the peek is meant to feel immediate.
 enum NotchMode: Equatable {
     case collapsed
-    case peek
     case expanded
 }
 
@@ -270,12 +275,17 @@ final class NotchState {
         )
     }
 
-    /// How far the closed pill's wings ease outward on hover.
+    /// How far the closed pill pads outward on hover — the whole of the peek,
+    /// now that the hover flag rather than a mode of its own drives it.
     ///
     /// The references pad by a fixed amount; deriving it from the user's
     /// "hover grow" preference keeps that slider meaningful now that peek is a
     /// padding rather than a scale. The 1.10 default lands on 6pt, which is
     /// what the fixed value was.
+    ///
+    /// This is the *visible* growth only. The hover target floors its own
+    /// growth at `NotchSizing.hoverExitHysteresis`, so an exit edge wider than
+    /// the pill exists even at the 100% setting, where this is zero.
     var hoverExpansion: CGFloat {
         let scale = min(max(settings.peekScale, 1.0), 1.4)
         // 1.0 -> 0pt, the 1.10 default -> 6pt, the 1.4 maximum -> 24pt. The
@@ -345,8 +355,14 @@ final class NotchState {
     private var pendingSelectWork: DispatchWorkItem?
     private var hoverStartedAt: Date?
 
-    /// Whether the pointer is over the notch. Read by the view for its hover
-    /// affordances; there is deliberately only one copy of this.
+    /// Whether the pointer is over the closed pill. Read by the view for its
+    /// hover affordances — the pad the pill grows by, the shadow it takes on —
+    /// and by `NotchWindowController` to decide whether the pointer is on the
+    /// notch at all; there is deliberately only one copy of this.
+    ///
+    /// The single source of truth for the peek. It is also what the hover probe
+    /// is sized from (see `hoverProbeSize`), so entry is tested against the
+    /// idle pill and exit against the grown one.
     private(set) var isHovering = false
 
     /// Minimum dwell before a click counts as intentional rather than the tail
@@ -744,16 +760,32 @@ final class NotchState {
     var hoverProbeSize: CGSize {
         let slack = min(max(settings.hoverTolerance, 0), 32)
         let drawn = collapsedSize
+        // While the pointer is on the pill the target grows with it. Two
+        // things fall out of that, and both are wanted: the probe still covers
+        // the outer few points of the wings the pill pads out by, so the hover
+        // it just caused cannot be dropped by its own growth; and because the
+        // probe is measured once per hit test, the *same* number is the entry
+        // edge while idle and the exit edge while hovered — which is the
+        // hysteresis that keeps a cursor resting on the pill's own boundary
+        // from blinking the peek on and off.
+        //
+        // That second one needs the growth to be non-zero to exist at all, and
+        // "Hover grow" at 100% is exactly zero, so the exit edge is floored at
+        // `hoverExitHysteresis` whether or not the pill visibly grows.
+        let growth = isHovering
+            ? max(hoverExpansion, NotchSizing.hoverExitHysteresis)
+            : 0
         return CGSize(
-            width: max(drawn.width, safeNotchSize.width)
-                // The growth is part of the pill while it is up, so the probe
-                // has to include it or the pointer on the outer few points of
-                // the grown wings would drop the hover it just caused.
-                + (isHovering ? hoverExpansion * 2 : 0)
-                + slack * 2,
+            width: max(drawn.width, safeNotchSize.width) + growth * 2 + slack * 2,
             height: collapsedActivityIsInteractive
+                // A dropped drag target keeps the exact notch band — no growth
+                // and no slack. Its bar hangs below the notch precisely so that
+                // reaching for it can never make the panel open out from under
+                // the drag, and that only holds if leaving the notch's own row
+                // ends the hover immediately rather than staying latched while
+                // the pointer rests on the bar.
                 ? adjustedNotchSize.height
-                : max(drawn.height, adjustedNotchSize.height)
+                : max(drawn.height, adjustedNotchSize.height) + growth
         )
     }
 
@@ -806,14 +838,20 @@ final class NotchState {
         guard hovering != isHovering else { return }
         isHovering = hovering
         pendingHoverWork?.cancel()
+        #if DEBUG
+        // The one funnel every hover transition passes through — the pointer's
+        // own `onHover`, and the window controller's cursor samples alike. A
+        // log line here is how the peek, the open delay and the close-settle
+        // re-arm can be watched without a mouse.
+        print("[Notch] hover \(hovering ? "on" : "off") mode=\(mode) closing=\(isClosing)")
+        #endif
 
         if hovering {
             hoverStartedAt = Date()
-            if mode == .collapsed {
-                mode = .peek
-            }
             // Linger past the open delay to expand fully (when enabled).
-            guard settings.expandOnHover, mode == .peek else { return }
+            // Expanding is the one thing an already-open panel has nothing to
+            // do for.
+            guard settings.expandOnHover, mode != .expanded else { return }
             let work = DispatchWorkItem { [weak self] in
                 self?.expand()
             }
@@ -821,19 +859,16 @@ final class NotchState {
             DispatchQueue.main.asyncAfter(deadline: .now() + settings.openDelay, execute: work)
         } else {
             hoverStartedAt = nil
-            switch mode {
-            case .peek:
-                mode = .collapsed
-            case .expanded:
-                guard !isPinned, settings.autoCollapseOnMouseExit else { return }
-                let work = DispatchWorkItem { [weak self] in
-                    self?.collapse()
-                }
-                pendingHoverWork = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + settings.closeDelay, execute: work)
-            case .collapsed:
-                break
+            // Leaving the closed pill is nothing to act on: un-peeking is the
+            // view reacting to `isHovering`, and there is no pending auto-open
+            // left to cancel. Only the open panel follows the pointer out.
+            guard mode == .expanded else { return }
+            guard !isPinned, settings.autoCollapseOnMouseExit else { return }
+            let work = DispatchWorkItem { [weak self] in
+                self?.collapse()
             }
+            pendingHoverWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + settings.closeDelay, execute: work)
         }
     }
 

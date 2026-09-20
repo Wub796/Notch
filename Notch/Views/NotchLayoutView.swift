@@ -58,7 +58,7 @@ struct NotchLayoutView: View {
                 .transition(NotchAnimations.panelContent)
                 .zIndex(2)
         } else {
-            CollapsedNotchView(state: state, isHovering: isHovering)
+            CollapsedNotchView(state: state)
                 .frame(width: state.collapsedSize.width, height: state.collapsedSize.height)
                 // Hovering the closed pill widens it slightly, the way both
                 // references pad their wings out on hover. The amount is the
@@ -66,6 +66,13 @@ struct NotchLayoutView: View {
                 // itself — a `min(…, 5)` here used to cap it below the 6pt
                 // default, so every setting above 1.083x behaved identically
                 // and the slider looked broken.
+                //
+                // Padding on the *outside* of the pill's own frame, so the
+                // added black belongs to the notch shape and the wings keep
+                // their measured width. The hover target is what has to know
+                // this happened: `hoverProbeSize` grows by the same amount,
+                // which is also what stops the growth from dropping the hover
+                // that caused it.
                 .padding(.horizontal, isHovering ? state.hoverExpansion : 0)
                 .transition(NotchAnimations.closedStrip)
                 .zIndex(2)

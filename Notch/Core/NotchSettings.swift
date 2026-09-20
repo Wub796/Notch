@@ -177,11 +177,14 @@ final class NotchSettings {
     var openDelay = 0.22 { didSet { save(openDelay, "openDelay") } }
 
     /// Points of slack on each SIDE of the notch that still count as
-    /// hovering it. The probe's height stays exactly the notch — vertical
-    /// slack made the notch peek whenever the cursor merely rested beneath
-    /// the menu bar — so this knob only widens the sides, catching fast
-    /// crossings. Defaults to 0: the hover target is exactly the notch and
-    /// nothing beside it, which is what the panel is meant to occupy.
+    /// hovering it. The probe's height stays exactly the notch on the way in
+    /// — vertical slack made the notch peek whenever the cursor merely rested
+    /// beneath the menu bar — so this knob only widens the sides, catching
+    /// fast crossings. Defaults to 0: the hover target is exactly the closed
+    /// pill and nothing beside it, which is what the panel is meant to
+    /// occupy. (The exit edge is a little wider than the entry edge whatever
+    /// this is set to — see `NotchSizing.hoverExitHysteresis` — but only for a
+    /// pointer that is already on the pill.)
     var hoverTolerance = 0.0 { didSet { save(hoverTolerance, "hoverTolerance") } }
     var closeDelay = 0.2 { didSet { save(closeDelay, "closeDelay") } }
 

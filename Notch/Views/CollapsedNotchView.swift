@@ -8,10 +8,6 @@ import SwiftUI
 struct CollapsedNotchView: View {
     let state: NotchState
 
-    /// Passed down so the HUD wings ease outward as the pill grows, matching
-    /// the references' hover behaviour.
-    var isHovering: Bool = false
-
     var body: some View {
         // Top-anchored, deliberately. The strip fills a frame exactly as tall as
         // `collapsedSize`, and centring it meant any mismatch — a drop height a

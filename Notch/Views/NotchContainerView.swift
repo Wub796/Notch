@@ -92,7 +92,10 @@ struct NotchContainerView: View {
             // else: a rectangle over the closed pill, pinned to the top centre.
             // Sized to the drawn pill — wings and dropped row included, see
             // `hoverProbeSize` — so hovering the cover art or the visualiser
-            // counts as hovering the notch, and only the pill does.
+            // counts as hovering the notch, and only the pill does. It grows
+            // while hovered, which is what gives the hover its hysteresis:
+            // entry is tested against the idle rectangle, exit against this
+            // grown one, so the two edges never coincide.
             if state.mode != .expanded {
                 Color.black.opacity(0.001)
                     .frame(

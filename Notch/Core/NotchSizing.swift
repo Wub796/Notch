@@ -207,6 +207,14 @@ enum NotchSizing {
     /// the drawn pill is unchanged.
     static let notchCoverageBleed: CGFloat = 30
 
+    /// How far past the pill the pointer may travel before the closed notch
+    /// stops counting it as hovering it. Never applied on the way *in* — the
+    /// cursor has to reach the pill itself — only on the way out, so entry and
+    /// exit cannot share an edge and blink the peek on and off under a cursor
+    /// resting exactly on the boundary. See `NotchState.hoverProbeSize`, which
+    /// rounds the pill's own hover growth up to this.
+    static let hoverExitHysteresis: CGFloat = 5
+
     /// How far the closed shape's visible body sits inside its layout frame.
     /// Its top corners flare outward into the menu bar, so the black starts
     /// this far in from each side of the frame.

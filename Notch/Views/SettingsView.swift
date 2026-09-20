@@ -651,7 +651,7 @@ private struct DimensionSliders: View {
         } header: {
             Label("Open Panel", systemImage: "square.on.circle")
         } footer: {
-            Text("These scale every screen together — each one keeps its own shape, so switching tabs does move the panel, but always between sizes you chose here. The width is capped to your display. Hovering is detected over the hardware notch itself, never over the wings beside it.")
+            Text("These scale every screen together — each one keeps its own shape, so switching tabs does move the panel, but always between sizes you chose here. The width is capped to your display. Hovering is detected over the closed pill exactly as it is drawn: the notch and whatever it is wearing beside it, and nothing else.")
         }
     }
 

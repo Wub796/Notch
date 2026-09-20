@@ -432,35 +432,56 @@ final class NotchWindowController: NSWindowController {
         let dragging = NSEvent.pressedMouseButtons != 0
         let shouldIgnore = !pointerInside && !dragging
 
-        let didChangeHitTesting = panel.ignoresMouseEvents != shouldIgnore
-        if didChangeHitTesting {
+        if panel.ignoresMouseEvents != shouldIgnore {
             panel.ignoresMouseEvents = shouldIgnore
         }
 
-        // If the cursor is inside the hover probe, keep the state machine fed
-        // even when AppKit does not deliver an onHover transition (e.g. the
-        // panel only just stopped ignoring events). Scoped to the probe rect,
-        // never the wider interactive area: the notch must not peek just
-        // because the cursor is near it.
+        // Hover is decided here on both sides of the same rectangle, rather
+        // than entered here and left to SwiftUI to exit.
+        //
+        // Both directions are needed because the panel stops receiving events
+        // the moment it starts ignoring them: SwiftUI never sees the pointer
+        // leave, so an exit SwiftUI had to report is an exit that never
+        // arrives. But the exit used to be tied to that switch — fired only
+        // when `ignoresMouseEvents` flipped — and the interactive region is
+        // deliberately wider than the probe whenever a dropped row is a drag
+        // target (see `NotchInteractiveRegion`). A pointer that left the notch
+        // for that row never left the region, so nothing flipped and the hover
+        // stayed latched: the notch then peeked, and after the open delay
+        // opened itself, under a pointer that was sitting on the HUD bar
+        // — which is exactly the row that exists to be dragged without the
+        // panel moving. So the exit is tested against the probe itself.
+        //
+        // One rect, read as it is now: idle it is the entry edge, and hovered
+        // it has grown (see `hoverProbeSize`), so the two edges differ and a
+        // cursor resting on the pill's boundary cannot blink the peek.
+        let pointer = NSEvent.mouseLocation
         let probeRect = probeScreenRect(on: screen)
-        if probeRect.contains(NSEvent.mouseLocation), state.mode == .collapsed, !state.isHovering {
-            state.hoverChanged(true)
-        }
-
-        guard didChangeHitTesting else { return }
-
-        // The panel stops receiving events the moment it starts ignoring them,
-        // so SwiftUI never sees the pointer leave. Say so directly, or the
-        // notch stays open behind a pointer that is long gone.
-        if shouldIgnore, state.isHovering {
-            state.hoverChanged(false)
+        if state.mode == .expanded {
+            // The open slab answers hover itself; all this has to do is say
+            // when the pointer got away from it. Still gated on the switch,
+            // because a held button keeps the panel interactive on purpose
+            // — dragging the dropped bar downwards must not close the panel
+            // mid-drag.
+            if shouldIgnore, state.isHovering {
+                state.hoverChanged(false)
+            }
+        } else {
+            // Scoped to the probe, never the wider interactive area: the notch
+            // must not peek just because the cursor is near it.
+            if probeRect.contains(pointer) {
+                if !state.isHovering { state.hoverChanged(true) }
+            } else if state.isHovering {
+                state.hoverChanged(false)
+            }
         }
     }
 
     /// The hover probe's screen rect: centered on the slab and anchored to the
     /// top of the screen, exactly where the SwiftUI probe view in
-    /// NotchContainerView is drawn. Used to keep the state machine fed while
-    /// the cursor rests on the notch.
+    /// NotchContainerView is drawn. It is the closed pill's hover target — the
+    /// entry edge, and once hovering, the exit edge as well, because it is
+    /// grown by the same amount the probe view is (see `hoverProbeSize`).
     private func probeScreenRect(on screen: NSScreen) -> NSRect {
         let probe = state.hoverProbeSize
         return NSRect(
