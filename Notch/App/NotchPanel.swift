@@ -45,4 +45,21 @@ final class NotchPanel: NSPanel {
     }
 
     override var canBecomeMain: Bool { false }
+
+    /// Traces every click that reaches the panel, and what hit testing made of
+    /// it. The window sees a click before any view does, so a press that logs
+    /// nothing here never arrived; a press that logs "no view" was delivered
+    /// and then dropped by `NotchHostingView.hitTest`.
+    override func sendEvent(_ event: NSEvent) {
+        #if DEBUG
+        if event.type == .leftMouseDown, let contentView {
+            let local = event.locationInWindow
+            let hit = contentView.hitTest(local).map { String(describing: type(of: $0)) }
+            print("[Notch] click: panel got mouseDown at \(Int(local.x)),\(Int(local.y))"
+                + " → \(hit ?? "no view")  [mode=\(String(describing: state?.mode))"
+                + " ignoring=\(ignoresMouseEvents)]")
+        }
+        #endif
+        super.sendEvent(event)
+    }
 }

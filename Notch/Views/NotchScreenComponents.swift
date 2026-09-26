@@ -361,7 +361,15 @@ struct ScreenTextButton: View {
     @State private var isHovering = false
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            #if DEBUG
+            // Same trace as `NotchHostingView.mouseDown`: a line here means the
+            // click reached this button and its action ran, so a button that
+            // does nothing without logging this never got the click at all.
+            print("[Notch] tap: \(title)")
+            #endif
+            action()
+        } label: {
             HStack(spacing: 5) {
                 if let systemImage {
                     Image(systemName: systemImage)

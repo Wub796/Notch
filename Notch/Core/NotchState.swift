@@ -31,6 +31,8 @@ enum NotchTab: String {
     case telemetry
     /// A live mirror for checking yourself before a call.
     case camera
+    /// Enrollment, stored faces, and the live readout for face unlocking.
+    case faceID
 }
 
 /// Root observable state for the notch UI. Owns every feature module and
@@ -315,6 +317,11 @@ final class NotchState {
     let eyeBreak = EyeBreakManager()
     let shortcuts = ShortcutsManager()
     let audio = AudioOutputManager.shared
+    /// Per-app volume, EQ, routing and loudness — the audio path that rewrites
+    /// an app's own output. Starts inert: it only creates a tap for an app the
+    /// user has actually changed, so nothing runs on behalf of an untouched app.
+    let mixer = MixerEngine()
+
     /// Microphone devices and levels — the Audio screen's input control.
     let audioInput = AudioInputManager()
     let bluetooth = BluetoothBatteryMonitor()
@@ -322,6 +329,43 @@ final class NotchState {
     let quickActions = QuickActions()
     /// The webcam preview. Strictly bound to its screen being visible.
     let camera = CameraController()
+
+    /// Face unlock: triggers, the recognition pipeline, the credential session,
+    /// and the lock-screen panel. Starts at launch rather than when its screen is
+    /// first opened, because the events it waits for — the screen locking, the
+    /// display waking — happen with the panel closed and nobody watching.
+    ///
+    /// Built on first use rather than at init, and reachable only from the main
+    /// actor: the controller owns AppKit windows and an `AVCaptureSession`, so it
+    /// is main-actor isolated, while this class deliberately is not. Every access
+    /// site — the Face ID screen, the settings pane, the lifecycle hooks below —
+    /// is already on the main actor, so the first of them builds it.
+    @ObservationIgnored private var cachedFaceID: FaceIDController?
+
+    @MainActor var faceID: FaceIDController {
+        if let cachedFaceID { return cachedFaceID }
+        let controller = FaceIDController()
+        cachedFaceID = controller
+        return controller
+    }
+
+    /// The guided enrollment capture, built on first use: it borrows the
+    /// controller's camera and pipeline, and it is only ever wanted from the Face
+    /// ID screen.
+    ///
+    /// A cache behind a computed property rather than a `lazy var`, because this
+    /// is an `@Observable` class and the stored half must not be observed: the
+    /// screen reads this while it draws, and writing observable state during a
+    /// view update is exactly the bug that produces the "modifying state during
+    /// view update" warning and an update loop with it.
+    @ObservationIgnored private var cachedFaceIDEnrollment: FaceIDEnrollmentSession?
+
+    @MainActor var faceIDEnrollment: FaceIDEnrollmentSession {
+        if let cachedFaceIDEnrollment { return cachedFaceIDEnrollment }
+        let session = FaceIDEnrollmentSession(camera: faceID.camera, pipeline: faceID.pipeline)
+        cachedFaceIDEnrollment = session
+        return session
+    }
     let audioApps = AudioAppMonitor()
     let audioMeter = SystemAudioMeter()
 
@@ -586,6 +630,12 @@ final class NotchState {
             nowPlayingBundleID: media.sourceAppBundleID,
             isPlaying: media.isPlaying
         )
+        // The mixer needs the same list for a different reason: the process
+        // objects behind each app are what a tap names, and they change as apps
+        // start, quit and spawn helpers. It also re-reads the output device
+        // here, since its UID decides where an unrouted app's audio goes.
+        mixer.observe(apps: audioApps.apps)
+        mixer.refreshDevices()
     }
 
     /// The focus mode currently active, for the dashboard.
@@ -1017,7 +1067,11 @@ final class NotchState {
     /// module timers. Called on termination — a screen-capture stream that
     /// outlives the app keeps the recording indicator lit, and an event tap
     /// left enabled is a keystroke the next app does not get.
-    func shutdown() {
+    ///
+    /// Main-actor isolated so it can reach the Face ID controller, whose camera
+    /// session and elevated panel are torn down here. The only caller is
+    /// `applicationWillTerminate`, which is already on the main actor.
+    @MainActor func shutdown() {
         audioMeter.stop()
         audioApps.stopObserving()
         audio.stopListening()
@@ -1031,6 +1085,15 @@ final class NotchState {
         camera.stop()
         fileCatcher.stop()
         timer.cancel()
+        // The mixer's private aggregate devices are the same kind of thing: a
+        // tap left running silences the app it was reading while this process
+        // is gone, exactly the failure this method exists to avoid.
+        mixer.shutdown()
+        // Face ID holds a camera session, an IOKit HID tap, and an elevated
+        // window; all three outlive the process that owns them if they are left
+        // running, so it is torn down with the same intent as the event tap.
+        faceIDEnrollment.cancel()
+        faceID.stop()
         sleepModules()
     }
 
@@ -1067,7 +1130,10 @@ final class NotchState {
 
     private func sleepModules() {
         // Belt and braces with CameraView's own onDisappear: a collapse should
-        // never leave the capture device open and the hardware light on.
+        // never leave the capture device open and the hardware light on. The
+        // Face ID camera is deliberately not stopped here — its whole point is
+        // that it runs when the notch is closed — and instead stops itself at the
+        // end of every scan.
         camera.stop()
         media.setActive(false)
         telemetry.stop()

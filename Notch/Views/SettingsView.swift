@@ -2,225 +2,107 @@ import AppKit
 import SwiftUI
 
 /// The Settings window (⌘, from the menu bar item, or the gear in the notch).
-/// A sidebar rather than a tab strip: eight tabs crowded the tab bar and left
-/// each pane cramped, and the sidebar is the modern macOS settings idiom.
+///
+/// Glance's layout, not this app's old sidebar: one `.sidebar` material behind
+/// the whole window, the selected page scrolling beneath a transparent header
+/// (AppKit's own traffic lights on the leading side, the session lock button on
+/// the trailing side), and a floating pill tab bar pinned to the bottom.
+///
+/// Ported from Glance (`Settings/SettingsWindowView.swift`, MIT © Jonathan
+/// Zhou). The sidebar it replaces had a search field, which has no equivalent
+/// here: nine named tabs with icons are the navigation, and the pill bar is
+/// where Glance's identity lives.
 struct SettingsView: View {
-    private enum Pane: String, CaseIterable, Identifiable {
-        case general, notch, media, weather, activities, system, privacy, about
+    @Bindable private var credentials = FaceIDCredentialController.shared
 
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .general: "General"
-            case .notch: "Notch"
-            case .media: "Media"
-            case .weather: "Weather"
-            case .activities: "Activities"
-            case .system: "System"
-            case .privacy: "Privacy"
-            case .about: "About"
-            }
-        }
-
-        var systemImage: String {
-            switch self {
-            case .general: "gearshape"
-            case .notch: "sparkles.rectangle.stack"
-            case .media: "music.note"
-            case .weather: "cloud.sun"
-            case .activities: "bolt.badge.clock"
-            case .system: "gauge.with.dots.needle.50percent"
-            case .privacy: "hand.raised"
-            case .about: "info.circle"
-            }
-        }
-
-        /// What each pane actually contains, for the sidebar's search field.
-        /// Keep in step with the panes below when settings move.
-        var keywords: [String] {
-            switch self {
-            case .general:
-                ["launch", "login", "startup", "hotkey", "shortcut", "menu bar",
-                 "animation", "style", "motion", "display", "screen", "monitor"]
-            case .notch:
-                ["hover", "peek", "size", "width", "height", "corner", "radius",
-                 "tolerance", "delay", "open", "close", "scroll", "pin",
-                 "widget", "widgets", "dashboard", "home"]
-            case .media:
-                ["music", "spotify", "apple music", "lyrics", "player",
-                 "provider", "sneak peek", "artwork", "visualizer", "wings"]
-            case .weather:
-                ["forecast", "temperature", "celsius", "fahrenheit", "location",
-                 "city", "units"]
-            case .activities:
-                ["live activity", "battery", "volume", "brightness", "hud",
-                 "clipboard", "shelf", "airdrop", "desktop", "space", "timer",
-                 "eye break", "focus", "lock", "unlock", "accessory", "download",
-                 "downloads", "screenshot", "screenshots", "catch", "file",
-                 "calendar", "event", "events", "meeting", "reminder",
-                 "reminders", "before", "minutes"]
-            case .system:
-                ["cpu", "memory", "network", "telemetry", "stats", "gauge",
-                 "sparkline", "battery health", "audio", "output", "input",
-                 "device"]
-            case .privacy:
-                ["permission", "accessibility", "calendar", "automation",
-                 "screen recording", "camera", "webcam", "bluetooth",
-                 "notifications", "files", "folders", "downloads", "desktop",
-                 "allow", "grant", "access"]
-            case .about:
-                ["version", "licence", "license", "credits", "acknowledgements"]
-            }
-        }
-
-        var tint: Color {
-            switch self {
-            case .general: .gray
-            case .notch: .indigo
-            case .media: .pink
-            case .weather: .cyan
-            case .activities: .orange
-            case .system: .green
-            case .privacy: .blue
-            case .about: .secondary
-            }
-        }
-    }
-
-    @State private var selection: Pane = Self.initialPane
-
-    /// The pane Settings opens on. Always General in release; a debug launch
-    /// flag can pick another, which is the only way to put a specific pane in
-    /// front of a screenshot without driving the UI.
-    private static var initialPane: Pane {
-        #if DEBUG
-        let args = CommandLine.arguments
-        if let i = args.firstIndex(of: "--debug-pane"), i + 1 < args.count,
-           let pane = Pane(rawValue: args[i + 1]) {
-            return pane
-        }
-        #endif
-        return .general
-    }
-    @State private var search = ""
-
-    /// The sidebar filters as you type.
-    ///
-    /// Matches each pane's own keywords as well as its title: searching
-    /// "lyrics" or "hover" used to return an empty sidebar, because only the
-    /// eight pane names were ever searched and none of them contain the words
-    /// anyone would actually look for.
-    private var visiblePanes: [Pane] {
-        let query = search.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return Pane.allCases }
-        return Pane.allCases.filter { pane in
-            pane.title.localizedCaseInsensitiveContains(query)
-                || pane.keywords.contains { $0.localizedCaseInsensitiveContains(query) }
-        }
-    }
+    @State private var selection: SettingsTab = SettingsTab.initial
+    @State private var headerTrailingAction: HeaderAction?
 
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar
-                .frame(width: 210)
-                .background(.quaternary.opacity(0.5))
-
-            Rectangle()
-                .fill(.separator)
-                .frame(width: 1)
-
-            VStack(alignment: .leading, spacing: 0) {
-                // Header bar with a hairline so the content begins on the
-                // same baseline as the sidebar, whichever pane is selected.
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(selection.title)
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(.primary)
-
-                    Rectangle()
-                        .fill(.separator)
-                        .frame(height: 1)
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 20)
-                .padding(.bottom, 8)
-
-                detail
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ZStack {
+            VisualEffectView()
+            SettingsMetrics.windowTintColor
+            contentPage
         }
-        .frame(minWidth: 780, idealWidth: 820, minHeight: 560, idealHeight: 620)
+        // No `.clipShape`, manual stroke, or `.shadow` on the outer window —
+        // deliberately: the window keeps its native background (see
+        // `WindowConfigurator`), so AppKit masks it to the real macOS corner
+        // and draws its own edge highlight and shadow for free.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
+        .background(WindowConfigurator())
+        // Cascades to every native control so nothing falls back to the
+        // system accent. Only takes effect because the window can become
+        // key; see `WindowConfiguringView.configure`.
+        .tint(SettingsMetrics.accent)
     }
 
-    private var sidebar: some View {
-        VStack(spacing: 0) {
-            // Search field
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                TextField("Search", text: $search)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12))
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .background {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(.quaternary.opacity(0.6))
-            }
-            .padding(12)
-
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 3) {
-                    ForEach(visiblePanes) { pane in
-                        let isSelected = selection == pane
-                        Button {
-                            withAnimation(NotchAnimations.content) {
-                                selection = pane
-                            }
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: pane.systemImage)
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 24, height: 24)
-                                    .background {
-                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                            .fill(pane.tint)
-                                    }
-                                Text(pane.title)
-                                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                                    .foregroundStyle(isSelected ? .white : .primary)
-                                Spacer()
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background {
-                                if isSelected {
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(Color.accentColor.opacity(0.35))
-                                }
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                    }
-                }
-                .padding(.horizontal, 10)
+    /// The header and tab bar float over the scroll content as overlays so
+    /// scrolled rows pass underneath them rather than being pushed aside.
+    private var contentPage: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            pageBody
+                .padding(.horizontal, SettingsMetrics.contentHorizontalPadding)
+                .padding(.top, SettingsMetrics.headerHeight + 4)
+                .padding(.bottom, SettingsMetrics.pageBottomInset)
+                // Without an explicit top alignment the scroll view centers
+                // short pages vertically, leaving a large gap between the
+                // header and the first row.
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .overlay(alignment: .top) {
+            // Blur first, header content on top — so it fades whatever
+            // scrolls beneath both without ever softening the buttons
+            // themselves.
+            ZStack(alignment: .top) {
+                ProgressiveHeaderBlur(height: SettingsMetrics.headerBlurHeight)
+                header
             }
         }
+        .overlay(alignment: .bottom) {
+            SettingsTabBar(selection: $selection)
+                .padding(.bottom, SettingsMetrics.tabBarBottomInset)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onPreferenceChange(HeaderTrailingActionKey.self) { headerTrailingAction = $0 }
+    }
+
+    /// Leading side stays empty — the window's real traffic lights are drawn
+    /// there by AppKit (see `WindowConfiguringView`). No background of its
+    /// own; `ProgressiveHeaderBlur` sits behind it in `contentPage`.
+    private var header: some View {
+        HStack(spacing: 8) {
+            Spacer()
+
+            if let headerTrailingAction {
+                // Glance's symbol here is `arrow.trianglehead.clockwise.rotate.90`,
+                // which needs macOS 15 — this app targets 14, so it uses the
+                // older equivalent.
+                Button(action: headerTrailingAction.perform) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 13))
+                        .foregroundStyle(SettingsMetrics.textPrimary)
+                        .frame(width: SettingsMetrics.headerButtonHeight, height: SettingsMetrics.headerButtonHeight)
+                        .background(Circle().fill(SettingsMetrics.rowColor))
+                        .overlay(
+                            Circle()
+                                .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
+                        )
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Refresh camera list")
+            }
+
+            SessionLockButton(credentials: credentials)
+        }
+        .padding(.horizontal, SettingsMetrics.contentHorizontalPadding)
+        .frame(height: SettingsMetrics.headerHeight)
     }
 
     @ViewBuilder
-    private var detail: some View {
-        // Crossfade on pane selection: panes swap in place, so a fade (never a
-        // slide/scale, which would imply spatial movement) bridges the swap.
-        // Driven by the sidebar's withAnimation(NotchAnimations.content);
-        // transitions retarget, so rapid clicking never stutters.
-        Group {
+    private var pageBody: some View {
+        VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
             switch selection {
             case .general: GeneralSettingsPane()
             case .notch: NotchSettingsPane()
@@ -228,12 +110,33 @@ struct SettingsView: View {
             case .weather: WeatherSettingsPane()
             case .activities: ActivitiesSettingsPane()
             case .system: SystemSettingsPane()
+            case .faceID: FaceIDSettingsPane()
             case .privacy: PrivacySettingsPane()
             case .about: AboutSettingsPane()
             }
         }
-        .id(selection)
-        .transition(.opacity)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A closure `onPreferenceChange` can actually consume — that API requires
+/// `Value: Equatable`, which a bare closure can never be. Equality is by
+/// identity (a fresh `id` per instance), so this is deliberately never equal
+/// to a previous instance.
+struct HeaderAction: Equatable {
+    private let id = UUID()
+    let perform: () -> Void
+
+    static func == (lhs: HeaderAction, rhs: HeaderAction) -> Bool { lhs.id == rhs.id }
+}
+
+/// Lets one page (today, Face ID's "Refresh camera list") publish a trailing
+/// action into the shared header without the header needing to know that
+/// page's state. Switching away resolves back to `defaultValue`.
+struct HeaderTrailingActionKey: PreferenceKey {
+    static var defaultValue: HeaderAction? { nil }
+    static func reduce(value: inout HeaderAction?, nextValue: () -> HeaderAction?) {
+        value = nextValue() ?? value
     }
 }
 
@@ -938,8 +841,10 @@ private struct MediaSettingsPane: View {
         }
     }
 
-    /// The visualiser's source. The measured option is a real capture of the
-    /// output mix, so it costs a Screen Recording permission.
+    /// The visualiser's source. The measured option is a genuine reading of
+    /// the output mix — a CoreAudio tap, split into the three bands the bars
+    /// draw — which macOS gates behind audio access, so the row under it says
+    /// what that costs and where to change the answer.
     @ViewBuilder
     private var visualizerCard: some View {
         SettingsCard(title: "Visualiser") {
@@ -948,49 +853,55 @@ private struct MediaSettingsPane: View {
                 tint: .indigo,
                 title: "Real-Time Audio Meter",
                 subtitle: settings.realtimeAudioMeter
-                    ? "Bars follow the actual output mix."
+                    ? "Bars follow the low, mid and high energy of the output mix."
                     : "Bars follow the output volume.",
                 showsDivider: settings.realtimeAudioMeter
             ) {
                 Toggle("", isOn: $settings.realtimeAudioMeter)
                     .labelsHidden()
                     .toggleStyle(.switch)
-                    .onChange(of: settings.realtimeAudioMeter) { _, enabled in
-                        guard enabled, !SystemAudioMeter.hasPermission else { return }
-                        _ = SystemAudioMeter.requestPermission()
-                    }
             }
 
             if settings.realtimeAudioMeter {
                 SettingsRow(
                     systemImage: "record.circle",
                     tint: .indigo,
-                    title: "Screen Recording Permission",
-                    subtitle: SystemAudioMeter.hasPermission
-                        ? "Granted. Reading the output mix while music plays."
-                        : "macOS only lets an app read other apps' audio with "
-                            + "this permission. Nothing is recorded or stored.",
+                    title: "Audio Access",
+                    subtitle: meterAccessSubtitle,
                     showsDivider: false
                 ) {
-                    if SystemAudioMeter.hasPermission {
-                        Label("Granted", systemImage: "checkmark.circle.fill")
-                            .labelStyle(.titleAndIcon)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.green)
-                    } else {
-                        Button("Open Settings") {
-                            let path = "x-apple.systempreferences:com.apple.preference"
-                                + ".security?Privacy_ScreenCapture"
-                            if let url = URL(string: path) {
-                                NSWorkspace.shared.open(url)
-                            }
+                    Button("Open Settings") {
+                        // Audio access sits in the same privacy pane as screen
+                        // recording on current macOS, which is why one link
+                        // covers both.
+                        let path = "x-apple.systempreferences:com.apple.preference"
+                            + ".security?Privacy_ScreenCapture"
+                        if let url = URL(string: path) {
+                            NSWorkspace.shared.open(url)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 }
             }
         }
+    }
+
+    /// What the meter can and cannot do here, in order of specificity: the
+    /// version floor, then a real CoreAudio refusal, then the general rule.
+    /// Only the middle one is about this Mac, so it wins when present rather
+    /// than being averaged away with the others.
+    private var meterAccessSubtitle: String {
+        guard SystemAudioMeter.isSupported else {
+            return "Measuring the output mix needs macOS 14.2 or later. Below that "
+                + "the bars follow the output volume instead."
+        }
+        if let reason = SystemAudioMeter.lastFailureReason {
+            return reason
+        }
+        return "macOS gates reading other apps' audio behind this permission. While "
+            + "something is playing, the meter taps the output mix, measures three "
+            + "frequency ranges, keeps nothing and stops with the music."
     }
 
     private func toggleRow(
@@ -1429,6 +1340,30 @@ private struct PermissionRow: View {
 
 private struct SystemSettingsPane: View {
     @Bindable var settings = NotchSettings.shared
+    @State private var isImportingProfile = false
+    /// Why a file could not be read at all — a folder that moved, a file macOS
+    /// will not hand over. The library has its own reason for the files it read
+    /// and refused, and the row below shows whichever of the two applies.
+    @State private var importFailure: String?
+
+    /// The mixer the app is running. Reached through the bridge rather than
+    /// built here: a second engine would tap the same apps the first one is
+    /// already processing, and the later tap wins.
+    private var mixer: MixerEngine? { MixerBridge.shared.mixer }
+
+    private var mixerEnabled: Binding<Bool> {
+        Binding(
+            get: { mixer?.isEnabled ?? false },
+            set: { mixer?.isEnabled = $0 }
+        )
+    }
+
+    private var displayVolumeEnabled: Binding<Bool> {
+        Binding(
+            get: { DisplayVolumeController.shared.isEnabled },
+            set: { DisplayVolumeController.shared.isEnabled = $0 }
+        )
+    }
 
     var body: some View {
         Form {
@@ -1472,17 +1407,126 @@ private struct SystemSettingsPane: View {
                 } maximumValueLabel: {
                     Image(systemName: "speaker.wave.3.fill")
                 }
+                Toggle("Control external display speakers", isOn: displayVolumeEnabled)
             } header: {
                 Label("Audio", systemImage: "speaker.wave.2.fill")
             } footer: {
-                Text("Alert volume controls the volume macOS uses for notification sounds, matching System Settings → Sound. Auto-switch routes output to a device the moment it connects.")
+                Text("Alert volume controls the volume macOS uses for notification sounds, matching System Settings → Sound. Auto-switch routes output to a device the moment it connects. Display speakers are set over the display's own control channel, because they are not an audio device macOS lists at all.")
             }
             .onAppear {
                 // AppleScript read is slow, so only refresh when the pane opens.
                 AudioOutputManager.shared.refreshAlertVolume()
             }
+
+            // The mixer's per-app controls live in the notch — that is where you
+            // can hear what you are changing. What belongs in a window is the
+            // switch, the corrections it can apply, and what happens when a tap
+            // is refused.
+            Section {
+                Toggle("Enable the per-app mixer", isOn: mixerEnabled)
+                    .disabled(mixer == nil)
+
+                if mixer == nil {
+                    Text("The mixer starts with the app; reopen Settings if this stays off.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                } else if mixer?.isSupported == false {
+                    Text("Per-app volume needs macOS 14.2 or later. On this macOS an app's own level cannot be changed by anything but the app itself, so the mixer stays off.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Label("Per-App Mixer", systemImage: "slider.horizontal.3")
+            } footer: {
+                Text("Gives each app its own level — above 100%, up to 4x — plus mute, output routing, an equalizer and loudness compensation. Nothing runs for an app you have not changed: each one is taken over only once you move its slider, and it returns to the system's own audio path the moment you reset it. If taking over an app fails with a CoreAudio error, a newer macOS may be holding back the audio-capture permission — allow Notch under Privacy & Security, then switch this off and on again.")
+            }
+
+            Section {
+                if profiles.isEmpty {
+                    Text("No corrections imported yet. An AutoEQ profile is a text file describing how one pair of headphones deviates from a target curve — parametric or graphic, both read here.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(profiles) { profile in
+                        profileRow(profile)
+                    }
+                }
+
+                HStack {
+                    Button("Import from File…") { isImportingProfile = true }
+                    Spacer()
+                    Button("Show Folder") { revealLibraryFolder() }
+                }
+
+                if let failure = importFailure ?? AutoEQLibrary.shared.lastImportFailure {
+                    Text(failure)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } header: {
+                Label("Headphone Corrections", systemImage: "headphones")
+            } footer: {
+                Text("Import a measured correction here, then choose it for an app in the notch's Mixer. Corrections are per app rather than per device, because the one that applies is the one for the headphones that app is playing into.")
+            }
         }
         .formStyle(.grouped)
+        .fileImporter(
+            isPresented: $isImportingProfile,
+            allowedContentTypes: [.plainText, .text]
+        ) { result in
+            switch result {
+            case .success(let url):
+                _ = AutoEQLibrary.shared.importProfile(from: url)
+            case .failure(let error):
+                importFailure = error.localizedDescription
+            }
+        }
+    }
+
+    /// Read in `body`, so an import or a removal redraws the list without the
+    /// pane holding the library itself.
+    private var profiles: [AutoEQProfile] { AutoEQLibrary.shared.profiles }
+
+    private func profileRow(_ profile: AutoEQProfile) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "headphones")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(profile.name)
+                    .fontWeight(.medium)
+
+                Text(detail(for: profile))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 8)
+
+            Button("Remove") {
+                AutoEQLibrary.shared.remove(profile.id)
+                importFailure = nil
+            }
+        }
+    }
+
+    private func detail(for profile: AutoEQProfile) -> String {
+        let filters = "\(profile.filters.count) filter\(profile.filters.count == 1 ? "" : "s")"
+        let preamp = String(format: "%+.1f dB preamp", profile.preampDB)
+        return profile.source.isEmpty
+            ? "\(filters) · \(preamp)"
+            : "\(filters) · \(preamp) · \(profile.source)"
+    }
+
+    private func revealLibraryFolder() {
+        let url = AutoEQLibrary.shared.directoryURL
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 }
 

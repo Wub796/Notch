@@ -481,6 +481,12 @@ struct DevicesScreenView: View {
                     isActive: state.devicesSection == section,
                     geometryID: "sectionPill"
                 ) {
+                    #if DEBUG
+                    // The last line before a frozen panel names the culprit when
+                    // one of these surfaces hangs; nothing else is cheap enough
+                    // to leave in and this is the entry point for both.
+                    print("[Notch] media: section → \(section.title)")
+                    #endif
                     withAnimation(NotchAnimations.content) {
                         state.devicesSection = section
                     }

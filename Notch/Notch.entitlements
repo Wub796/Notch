@@ -6,7 +6,26 @@
 	<false/>
 	<key>com.apple.security.automation.apple-events</key>
 	<true/>
+	<!-- Hardened Runtime gates the camera behind this, exactly as it gates
+	     calendars behind the key below. Without it Face ID and the camera
+	     screen cannot open a device at all: the request is refused before the
+	     user is ever asked, which looks like a permission that was denied in
+	     System Settings but never appears there because it was never
+	     requested. -->
+	<key>com.apple.security.device.camera</key>
+	<true/>
 	<key>com.apple.security.personal-information.calendars</key>
 	<true/>
+	<!-- Deliberately no `keychain-access-groups`. Face ID's session key would
+	     rather be an access-controlled Keychain item — the Keychain then
+	     refuses the bytes until Touch ID has been answered — but those items
+	     live in the data-protection Keychain, which a macOS app can only reach
+	     with that entitlement, and only with a provisioning profile that lists
+	     it. Without it `SecItemAdd` fails with errSecMissingEntitlement, which
+	     `FaceIDCredentials.unlockSession(reason:)` catches and answers with an
+	     explicit LAContext prompt over a plain, app-gated item instead. Adding
+	     the key here (as $(AppIdentifierPrefix)com.notchapp.Notch) plus the
+	     matching profile entry makes the stronger shape get used on the next
+	     mint; nothing else has to change. -->
 </dict>
 </plist>

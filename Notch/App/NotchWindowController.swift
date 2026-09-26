@@ -191,6 +191,40 @@ final class NotchWindowController: NSWindowController {
         isApplyingFrame = true
         panel.setFrame(frame, display: true)
         isApplyingFrame = false
+        markWindowSettling()
+    }
+
+    /// True from the moment a frame is applied until the size animation it began
+    /// has had time to land.
+    ///
+    /// A window animating between two sizes is *between* two sizes on purpose,
+    /// and measuring it against the final target on every resize notification
+    /// turns that animation into a loop: the repair re-applies the final frame,
+    /// the animation restarts, it lands mid-way again — and each application
+    /// marks the window as needing another layout pass while the previous one is
+    /// still running. AppKit allows one pass per view in the window and then
+    /// raises `NSGenericException`, which is uncaught: the app dies. Growing from
+    /// the media page's fitted height to the audio slab's was enough to do it.
+    ///
+    /// This does not weaken the repair, it defers it: the settle itself re-runs
+    /// the check once the animation is over, outside any layout pass, so a frame
+    /// the window server moved is still corrected — just not mid-flight.
+    private var isWindowSettling = false
+    private var settleWork: DispatchWorkItem?
+
+    private func markWindowSettling() {
+        settleWork?.cancel()
+        isWindowSettling = true
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.isWindowSettling = false
+            self.repairFrameIfDrifted()
+        }
+        settleWork = work
+        // The same settle the shrink path waits for, because it is the same
+        // animation: `closeSettle` is how long a notch size change takes to
+        // finish, and the deferred repair above is the only thing that needs it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + NotchAnimations.closeSettle, execute: work)
     }
 
     /// Puts the panel back on the notch after a frame change this controller
@@ -207,6 +241,9 @@ final class NotchWindowController: NSWindowController {
     /// moment it moves, not only when this code happens to run next.
     private func repairFrameIfDrifted() {
         guard !isApplyingFrame, let panel = window, let screen = trackedScreen else { return }
+        // A frame in flight is not a frame that drifted: `isWindowSettling`'s own
+        // completion calls this again once the animation has landed.
+        guard !isWindowSettling else { return }
         let notchCentre = NotchGeometry(screen: screen).notchCenterX
         let offCentre = abs(panel.frame.midX - notchCentre) > 0.5
         let target = state.mode == .expanded ? expandedWindowSize() : collapsedWindowSize()
@@ -479,16 +516,28 @@ final class NotchWindowController: NSWindowController {
 
     /// The hover probe's screen rect: centered on the slab and anchored to the
     /// top of the screen, exactly where the SwiftUI probe view in
-    /// NotchContainerView is drawn. It is the closed pill's hover target — the
-    /// entry edge, and once hovering, the exit edge as well, because it is
-    /// grown by the same amount the probe view is (see `hoverProbeSize`).
+    /// NotchContainerView is drawn — plus the overshoot band above it.
+    ///
+    /// It is the closed pill's hover target: the entry edge, and once hovering,
+    /// the exit edge as well, because it is grown by the same amount the probe
+    /// view is (see `hoverProbeSize`). Both edges read this one rect, so the
+    /// growth cannot open a gap between them.
+    ///
+    /// The band above the top edge is the whole point of the last few lines,
+    /// and it costs nothing: the pointer clamped at that edge is exactly the
+    /// overshoot the probe used to miss, and the SwiftUI probe view cannot
+    /// reach above its own window, so this is the one place the region can be
+    /// made to include it. Both paths that latch hover from here — the cursor
+    /// poll and the global click monitor — read this rect, which is why a
+    /// fast flick up under the notch opens it even though neither AppKit nor
+    /// SwiftUI ever delivers that pointer position to the panel.
     private func probeScreenRect(on screen: NSScreen) -> NSRect {
         let probe = state.hoverProbeSize
         return NSRect(
             x: NotchGeometry(screen: screen).notchCenterX - probe.width / 2,
             y: screen.frame.maxY - probe.height,
             width: probe.width,
-            height: probe.height
+            height: probe.height + NotchSizing.hoverOvershootGrace
         )
     }
 
@@ -589,7 +638,25 @@ final class NotchHostingView: NSHostingView<NotchContainerView> {
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        true
+        #if DEBUG
+        // The click path, traced. A click in a window that is not key is either
+        // delivered to the view or spent bringing the window forward, and the
+        // one place to tell those apart is here — this override is only ever
+        // asked when AppKit is deciding exactly that.
+        print("[Notch] click: AppKit asked for first mouse")
+        #endif
+        return true
+    }
+
+    /// Second half of the same trace: if this prints, the event survived hit
+    /// testing and reached the hosting view, so anything that still does not
+    /// happen belongs to the SwiftUI side or to the action itself.
+    override func mouseDown(with event: NSEvent) {
+        #if DEBUG
+        print("[Notch] click: hosting view got mouseDown at "
+            + "\(Int(event.locationInWindow.x)),\(Int(event.locationInWindow.y))")
+        #endif
+        super.mouseDown(with: event)
     }
 
     override var acceptsFirstResponder: Bool {

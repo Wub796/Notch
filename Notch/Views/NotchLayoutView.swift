@@ -162,6 +162,8 @@ struct NotchLayoutView: View {
             TelemetryView(telemetry: state.telemetry)
         case .camera:
             CameraView(state: state)
+        case .faceID:
+            FaceIDScreen(state: state)
         }
     }
 }

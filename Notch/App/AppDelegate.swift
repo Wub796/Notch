@@ -24,6 +24,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotchSettings.shared.onScreenPreferenceChanged = { [weak self] in
             self?.attachToBestScreen()
         }
+        // Face ID watches the screen locking and the display waking, which is
+        // exactly when this app is doing nothing else — so it is handed to the
+        // main actor here and left listening for the life of the process. It is
+        // inert while the feature is switched off.
+        Task { @MainActor [weak self] in
+            self?.state.faceID.start()
+        }
+        // Shortcuts reaches the mixer through this, and it has to be the
+        // mixer this app is already running — see `MixerBridge`.
+        MixerBridge.shared.register(
+            mixer: state.mixer,
+            audioApps: state.audioApps
+        )
         presentOnboardingIfNeeded()
 
         NotificationCenter.default.addObserver(

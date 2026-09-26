@@ -59,14 +59,20 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     static let shared = SettingsWindowController()
 
     private init() {
+        let size = SettingsMetrics.windowSize
         let window = SettingsWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 820, height: 620),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: size.width, height: size.height),
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         super.init(window: window)
 
+        // The chrome itself is Glance's (`WindowConfiguringView`, attached by
+        // `SettingsView`): transparent titlebar, hidden title, an item-less
+        // `.unified` toolbar for the traffic-light band and the native corner
+        // radius, and a fixed frame. Only what has to be true before the first
+        // render is set here.
         window.title = "Notch Settings"
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false

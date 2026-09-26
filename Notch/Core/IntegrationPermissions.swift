@@ -94,11 +94,14 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         var detail: String {
             switch self {
             case .accessibility:
-                "Enables hardware media key interception, volume/brightness HUDs, and hotkeys."
+                "Enables hardware media key interception, volume/brightness HUDs, hotkeys, and "
+                    + "letting Face ID type your password at the lock screen."
             case .screenCapture:
-                "Not used — Notch never captures your screen. The audio visualizer "
-                    + "reads output levels without it. Listed so the system's own "
-                    + "record is visible here."
+                "Not used to capture your screen: Notch never records pixels, so "
+                    + "this row mirrors the system's own record rather than a "
+                    + "request it makes. The part that matters is audio access, "
+                    + "which the real-time visualizer and per-app volume use to "
+                    + "read the output mix through a CoreAudio tap."
             case .filesAndFolders:
                 "Lets the notch catch finished downloads and new screenshots as they land."
             case .music:
@@ -108,7 +111,8 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
             case .calendar:
                 "Shows your schedule, upcoming events, and meeting links."
             case .camera:
-                "Shows a live preview on the camera screen, and only while it is open."
+                "Shows a live preview on the camera screen while it is open, and reads your face "
+                    + "during a Face ID scan. Frames are processed in memory and never written to disk."
             case .bluetooth:
                 "Lists your paired audio accessories, with battery levels."
             case .notifications:
@@ -123,7 +127,9 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
             case .accessibility:
                 "Without it, system media keys and global hotkeys use default macOS routing."
             case .screenCapture:
-                "Nothing here needs it; Notch works fully without it."
+                "Without it, the visualizer's bars follow the output volume instead "
+                    + "of the music's own three frequency ranges, and per-app volume "
+                    + "cannot take an app over."
             case .filesAndFolders:
                 "Without it, files you drop on the notch still work; arrivals in those "
                     + "folders are not announced."
@@ -740,7 +746,8 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         case .accessibility:
             return "Enable Notch in Privacy & Security → Accessibility to unlock all hardware and global controls."
         case .screenCapture:
-            return "Enable Notch in Privacy & Security → Screen Recording for real-time sound metering."
+            return "Enable Notch under Privacy & Security → Screen & System Audio Recording "
+                + "(Screen Recording on older macOS) for real-time sound metering."
         case .filesAndFolders:
             return "Allow Notch for these folders under Privacy & Security → Files and Folders."
         case .camera:

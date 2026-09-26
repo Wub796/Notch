@@ -2,17 +2,22 @@ import SwiftUI
 
 /// Three bars beside the notch that follow the audio.
 ///
-/// Two sources, in order of honesty:
+/// Each bar is one range of frequencies — low, mid, high — and the three are
+/// meant to be read as a meter rather than as a shape: a kick fills the first
+/// and leaves the third alone, cymbals do the opposite, and a track that is
+/// all vocal puts everything in the middle. Two sources, in order of honesty:
 ///
-/// 1. **The output mix.** With "Real-time audio meter" on, `bands` carries
-///    the low/mid/high energy of what is actually playing, measured from the
-///    system's own output through `SystemAudioMeter`. The bars are then the
-///    music — they punch on a kick, thin out in a quiet passage, and stop
-///    dead in a gap, because that is what the samples say.
-/// 2. **The output level.** Without that permission the loudest real signal
-///    available is the volume itself, which is genuine but static, so the
+/// 1. **The output mix.** With "Real-time audio meter" on, `bands` carries the
+///    measured magnitude of each of those three ranges, split out of the
+///    output mix by a CoreAudio tap through `SystemAudioMeter`. The bars are
+///    then the music — they punch on a kick, thin out in a quiet passage, and
+///    stop dead in a gap, because that is what the samples say. Needs macOS
+///    14.2 and audio access; without either, this is nil and case 2 runs.
+/// 2. **The output level.** The loudest real signal left is the volume
+///    itself, which is genuine but static and has no frequencies in it, so the
 ///    motion is a shaped oscillation scaled by it. The bars still shrink when
-///    the volume drops and flatten on mute; they just cannot know the track.
+///    the volume drops and flatten on mute; they just cannot know the track,
+///    and they cannot differ from each other by anything but their own phase.
 struct MusicVisualizerView: View {
     let accent: Color
     let isPlaying: Bool
@@ -20,14 +25,23 @@ struct MusicVisualizerView: View {
     /// System output level, 0...1. Zero when muted.
     let level: Float
 
-    /// Measured band energies, 0...1, when the real meter is running.
+    /// Measured band energies, 0...1, in low/mid/high order, when the real
+    /// meter is running.
     var bands: [Float]?
 
-    /// Each bar keeps its own period and reach, so they never march in step.
+    /// Each bar keeps its own period, so the fallback's oscillation never
+    /// marches in step.
     private static let periods: [Double] = [0.62, 0.44, 0.53]
-    private static let reach: [Double] = [0.78, 1.0, 0.86]
     private static let barWidth: CGFloat = 4
     private static let maxHeight: CGFloat = 15
+
+    /// A per-band lift, applied only on the measured path. A mix's energy
+    /// falls off with frequency almost by definition — a kick carries tens of
+    /// dB more than the air on a vocal — so an untrimmed meter reads as a
+    /// permanent staircase: a lively first bar and a nearly dead third. This
+    /// lifts the top two so the third has travel to show, without touching
+    /// what each bar is measuring.
+    private static let bandTrim: [CGFloat] = [1.0, 1.12, 1.32]
 
     private var isMetered: Bool {
         (bands?.count ?? 0) >= 3
@@ -51,8 +65,20 @@ struct MusicVisualizerView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Output level")
-        .accessibilityValue("\(Int((level * 100).rounded())) percent")
+        .accessibilityLabel(isMetered ? "Output bands" : "Output level")
+        .accessibilityValue(accessibilityValue)
+    }
+
+    /// The measured path speaks in three numbers, because that is what it is
+    /// drawing; the fallback has one.
+    private var accessibilityValue: String {
+        guard isMetered, let bands else {
+            return "\(Int((level * 100).rounded())) percent"
+        }
+        let names = ["low", "mid", "high"]
+        return zip(names, bands)
+            .map { "\($0) \(Int(($1 * 100).rounded())) percent" }
+            .joined(separator: ", ")
     }
 
     private func bars(_ height: @escaping (Int) -> CGFloat) -> some View {
@@ -72,19 +98,26 @@ struct MusicVisualizerView: View {
         .frame(height: Self.maxHeight)
     }
 
-    /// Measured: the band's own real audio energy, scaled by the actual output level.
+    /// Measured: this bar's own band, and nothing else.
+    ///
+    /// The magnitude arrives already normalized against fixed dBFS limits and
+    /// already enveloped (`AudioBandAnalyzer`), so all that is left here is the
+    /// trim and the bar's travel. In particular it is *not* scaled by the
+    /// output volume a second time: the tap is upstream of the volume, so the
+    /// mix these numbers came from is what is playing, and multiplying it by
+    /// the slider would leave the third bar pinned to the floor on quiet
+    /// listening — which is the shape this change exists to remove.
     private func meteredHeight(_ index: Int) -> CGFloat {
-        guard isPlaying else { return Self.barWidth }
-        guard let bands, bands.indices.contains(index) else { return Self.barWidth }
-        let volume = CGFloat(min(max(level, 0), 1))
-        let energy = CGFloat(min(max(bands[index], 0), 1))
-        guard energy > 0.005 else { return Self.barWidth }
+        guard isPlaying, let bands, bands.indices.contains(index) else { return Self.barWidth }
+        // Mute is the one thing the samples cannot show, because the tap sits
+        // ahead of the mute. The bars go flat with the speakers.
+        guard level > 0.001 else { return Self.barWidth }
 
-        let effectiveEnergy = min(energy * 1.6, 1.0)
-        let effectiveVolume = volume > 0.01 ? max(volume, 0.35) : 0
+        let magnitude = CGFloat(min(max(bands[index], 0), 1)) * Self.bandTrim[index]
+        guard magnitude > 0.01 else { return Self.barWidth }
         let range = Self.maxHeight - Self.barWidth
-        let dynamicHeight = Self.barWidth + range * effectiveEnergy * effectiveVolume
-        return min(max(dynamicHeight, Self.barWidth), Self.maxHeight)
+        let height = Self.barWidth + range * min(magnitude, 1)
+        return min(max(height, Self.barWidth), Self.maxHeight)
     }
 
     /// Output-driven fallback: directly follows the actual system volume level of the Mac with dynamic wave motion when playing.

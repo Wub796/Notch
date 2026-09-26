@@ -1,43 +1,41 @@
 import AppKit
 import SwiftUI
 
-/// The building blocks of the Settings panes, styled after the Sapphire
-/// reference: grouped cards with a small-caps title, rows separated by
-/// hairlines, a coloured rounded-square icon tile leading each row, and the
-/// control trailing.
+/// The building blocks the app's own settings panes are written against.
 ///
-/// These replace `Form`/`Section`, which renders as a stock macOS inspector —
-/// correct, but nothing like the reference's cards.
+/// These are the same shapes Glance's pages use — `SettingsCard` is its
+/// "section title + `SettingsGroup`" pair, `SettingsRow` is its
+/// `SettingsRowContent`, `SettingsSliderRow` is its `SettingsSlider` — but
+/// spelled with the parameter names this app's panes already pass, so all
+/// eight of them picked up the new window's look without being rewritten.
+/// Home of the tokens is `SettingsMetrics`.
+///
+/// One deliberate difference from Glance's rows: this app's rows carry a
+/// leading icon and a tint, and those are kept (minus the coloured tile the
+/// old design drew behind them) because they are content — which row is which
+/// — rather than chrome.
 
-/// A titled card. Rows inside are separated automatically.
+/// A titled section: Glance's `SettingsSectionTitle` above a `SettingsGroup`.
+/// Rows inside are separated by the hairlines each row draws itself.
 struct SettingsCard<Content: View>: View {
     let title: String
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 4)
-
-            VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsSectionTitle(text: title)
+            SettingsGroup {
                 content()
-            }
-            .padding(.vertical, 4)
-            .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.quaternary.opacity(0.45))
             }
         }
     }
 }
 
-/// A row: optional icon tile, a title with optional subtitle, and a trailing
+/// A row: optional icon, a title with optional subtitle, and a trailing
 /// control. `divider` draws the hairline beneath, which the last row omits.
 struct SettingsRow<Trailing: View>: View {
     var systemImage: String?
-    var tint: Color = .gray
+    var tint: Color = .secondary
     let title: String
     var subtitle: String?
     var showsDivider: Bool = true
@@ -45,49 +43,31 @@ struct SettingsRow<Trailing: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(tint)
-                        .frame(width: 28, height: 28)
-                        .background {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(tint.opacity(0.18))
-                        }
+                        // Fixed box so rows with and without an icon line up.
+                        .frame(width: 18)
                 }
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .medium))
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                Spacer(minLength: 12)
-
-                trailing()
+                SettingsRowContent(title: title, subtitle: subtitle, trailing: trailing)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
 
             if showsDivider {
-                Divider()
-                    .padding(.leading, systemImage == nil ? 14 : 54)
+                SettingsGroupDivider()
+                    .padding(.leading, systemImage == nil ? 0 : 28)
             }
         }
     }
 }
 
-/// A slider row with the value shown at the trailing edge, as in the
-/// reference's Hover Delay control.
+/// A slider row with the value shown at the trailing edge, as in Glance's
+/// `SettingsSlider`.
 struct SettingsSliderRow: View {
     var systemImage: String?
-    var tint: Color = .gray
+    var tint: Color = .secondary
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>
@@ -97,34 +77,33 @@ struct SettingsSliderRow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
                     if let systemImage {
                         Image(systemName: systemImage)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(tint)
-                            .frame(width: 28, height: 28)
-                            .background {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(tint.opacity(0.18))
-                            }
+                            .frame(width: 18)
                     }
                     Text(title)
-                        .font(.system(size: 13, weight: .medium))
-                    Spacer(minLength: 12)
+                        .font(SettingsMetrics.rowFont)
+                        .foregroundStyle(SettingsMetrics.textPrimary)
+                    Spacer(minLength: 8)
                     Text(format(value))
-                        .font(.system(size: 12).monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundStyle(SettingsMetrics.textSecondary)
                 }
 
                 Slider(value: $value, in: range, step: step)
-                    .padding(.leading, systemImage == nil ? 0 : 40)
+                    .tint(SettingsMetrics.accent)
+                    .padding(.leading, systemImage == nil ? 0 : 28)
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, SettingsMetrics.rowHorizontalInset)
             .padding(.vertical, 10)
 
             if showsDivider {
-                Divider().padding(.leading, systemImage == nil ? 14 : 54)
+                SettingsGroupDivider()
+                    .padding(.leading, systemImage == nil ? 0 : 28)
             }
         }
     }
@@ -138,7 +117,7 @@ struct SettingsSliderRow: View {
 /// each lead time is a yes/no of its own — needs the row's full width.
 struct SettingsChipRow<Chip: View>: View {
     var systemImage: String?
-    var tint: Color = .gray
+    var tint: Color = .secondary
     let title: String
     var subtitle: String?
     var showsDivider: Bool = true
@@ -147,46 +126,46 @@ struct SettingsChipRow<Chip: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     if let systemImage {
                         Image(systemName: systemImage)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(tint)
-                            .frame(width: 28, height: 28)
-                            .background {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(tint.opacity(0.18))
-                            }
+                            .frame(width: 18)
                     }
 
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(title)
-                            .font(.system(size: 13, weight: .medium))
+                            .font(SettingsMetrics.rowFont)
+                            .foregroundStyle(SettingsMetrics.textPrimary)
                         if let subtitle {
                             Text(subtitle)
                                 .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(SettingsMetrics.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
 
-                    Spacer(minLength: 12)
+                    Spacer(minLength: 8)
                 }
 
                 chips()
-                    .padding(.leading, systemImage == nil ? 0 : 40)
+                    .padding(.leading, systemImage == nil ? 0 : 28)
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, SettingsMetrics.rowHorizontalInset)
             .padding(.vertical, 10)
 
             if showsDivider {
-                Divider().padding(.leading, systemImage == nil ? 14 : 54)
+                SettingsGroupDivider()
+                    .padding(.leading, systemImage == nil ? 0 : 28)
             }
         }
     }
 }
 
-/// The reference's tinted explanatory box.
+/// A tinted explanatory box. Glance has no equivalent component — its pages
+/// put explanation in row subtitles and captions — so this keeps its shape but
+/// takes the ported window's radii and text ramp.
 struct SettingsCallout: View {
     let text: String
     var systemImage: String = "questionmark.circle.fill"
@@ -199,28 +178,30 @@ struct SettingsCallout: View {
                 .foregroundStyle(tint)
             Text(text)
                 .font(.system(size: 12))
+                .foregroundStyle(SettingsMetrics.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius - 4, style: .continuous)
                 .fill(tint.opacity(0.14))
         }
     }
 }
 
-/// Scrolling container that gives every pane the same margins.
+/// A pane's content, in the new window's vocabulary.
+///
+/// The window owns the scrolling and the insets now — its page sits in one
+/// `ScrollView` beneath a floating header and above the tab bar, exactly as in
+/// Glance — so a pane is just its rows, spaced like the rows of a Glance page.
 struct SettingsPane<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 20) {
-                content()
-            }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
+            content()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

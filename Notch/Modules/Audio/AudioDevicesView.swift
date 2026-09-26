@@ -10,6 +10,8 @@ import SwiftUI
 enum AudioScreenTab: String, CaseIterable, Identifiable {
     /// Processes making sound on this Mac (Chrome, Safari, Spotify, Music, YouTube, etc.).
     case apps
+    /// The per-app mixer: volume past unity, mute, routing, EQ and loudness.
+    case mixer
     /// Every local CoreAudio output.
     case system
     /// Local outputs CoreAudio reports as AirPlay.
@@ -20,6 +22,7 @@ enum AudioScreenTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .apps: "Apps & Web"
+        case .mixer: "Mixer"
         case .system: "System"
         case .airplay: "AirPlay"
         }
@@ -28,20 +31,23 @@ enum AudioScreenTab: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .apps: "waveform"
+        case .mixer: "slider.horizontal.3"
         case .system: "speaker.wave.2.fill"
         case .airplay: "airplayaudio"
         }
     }
 }
 
-/// The Audio screen's body: whichever of the four output surfaces is
-/// selected. The switch itself lives in `DevicesScreenView`, alongside the
-/// section pills, because the reference draws both in one capsule.
+/// The Audio screen's body: whichever of the four output surfaces is selected,
+/// with the pill strip that switches between them sitting above the content
+/// (`DevicesScreenView` is what draws the header this hangs under).
 ///
 /// Every tab reports real state, all of it this Mac's own. AirPlay and System
 /// are its CoreAudio outputs, fully interactive; Apps lists every process
-/// CoreAudio says is running output and exposes each process's independent
-/// volume level.
+/// CoreAudio says is running output; Mixer is where an app is actually taken
+/// over, because moving one app's level above the others' needs a tap —
+/// current macOS no longer lets a client set another process's volume, which
+/// is what the sliders on the Apps tab were written against.
 struct AudioDevicesView: View {
     let state: NotchState
 
@@ -53,40 +59,113 @@ struct AudioDevicesView: View {
     @State private var pairedBluetoothDevices: [BluetoothAudioDevices.PairedDevice] = []
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: NotchTheme.Space.s) {
-                meterFailureNotice
+        VStack(spacing: NotchTheme.Space.s) {
+            // Outside the scroll view on purpose: which surface you are on is
+            // chrome, and chrome that scrolls away with the list is how a
+            // four-way switch becomes a one-way trip.
+            tabSwitch
 
-                nowPlayingBanner
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: NotchTheme.Space.s) {
+                    meterFailureNotice
 
-                switch state.audioTab {
-                case .apps: appRows
-                case .system: deviceRows
-                case .airplay: airplayRows
+                    nowPlayingBanner
+
+                    switch state.audioTab {
+                    case .apps: appRows
+                    case .mixer: MixerView(state: state)
+                    case .system: deviceRows
+                    case .airplay: airplayRows
+                    }
+
+                    inputSection
+
+                    bluetoothSection
                 }
-
-                inputSection
-
-                bluetoothSection
+                .padding(.bottom, 6)
+                // Rows arrive and leave as an app starts or stops making sound,
+                // which now happens the instant CoreAudio says so — so they slide
+                // rather than appear.
+                .animation(.notchSpring, value: state.audioApps.apps)
+                .animation(.notchSpring, value: state.audio.devices)
             }
-            .padding(.bottom, 6)
-            // Rows arrive and leave as an app starts or stops making sound,
-            // which now happens the instant CoreAudio says so — so they slide
-            // rather than appear.
-            .animation(.notchSpring, value: state.audioApps.apps)
-            .animation(.notchSpring, value: state.audio.devices)
+            .notchScrollFade(12)
         }
-        .notchScrollFade(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
+            #if DEBUG
+            print("[Notch] audio: surface appeared (tab=\(state.audioTab.rawValue))")
+            #endif
             state.audio.refresh()
             state.audioInput.refresh()
             refreshPairedBluetooth()
         }
     }
 
-    /// The data-only meter has no permission-gated failure path; retain this
-    /// hook for compatibility with the shared layout.
+    // MARK: - Which output surface
+
+    /// The audio surface's own switch.
+    ///
+    /// These four existed as data before they existed as a control: the picker
+    /// that drove `audioTab` was gone, which left System and AirPlay written but
+    /// unreachable, and left the per-app mixer with nowhere to live. One row
+    /// answers both, and it is deliberately not a `Picker` — the notch's
+    /// controls are its own, and a segmented control here would sit a system
+    /// grey capsule next to the app's own pills.
+    private var tabSwitch: some View {
+        HStack(spacing: 3) {
+            ForEach(AudioScreenTab.allCases) { tab in
+                tabPill(tab)
+            }
+        }
+        .padding(3)
+        .background(Capsule().fill(Color.white.opacity(0.06)))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func tabPill(_ tab: AudioScreenTab) -> some View {
+        let isActive = state.audioTab == tab
+        return Button {
+            withAnimation(NotchAnimations.content) {
+                state.audioTab = tab
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: tab.symbol)
+                    .font(.system(size: 10.5, weight: .semibold))
+                Text(tab.title)
+                    .font(.notchCaption.weight(.bold))
+                    .fixedSize()
+            }
+            .foregroundStyle(isActive ? .white : NotchTheme.inkSecondary)
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            .background {
+                if isActive {
+                    // Deliberately *not* a `matchedGeometryEffect`. That pill was
+                    // geometry-matched across a panel whose window is resized and
+                    // animated around it, so its frame was re-resolved on every
+                    // layout pass — half of how a resize becomes an endless
+                    // "needs another Layout Window pass" loop, which AppKit ends
+                    // by raising. A plain capsule says the same thing without
+                    // asking the layout engine a question per pass.
+                    Capsule().fill(Color.accentColor)
+                }
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .accessibilityAddTraits(isActive ? [.isSelected] : [])
+        .accessibilityLabel("\(tab.title) audio surface")
+    }
+
+    /// Why the visualiser is not measuring, when it isn't.
+    ///
+    /// The meter is a CoreAudio tap, and a tap is a permission-gated object:
+    /// macOS can refuse to create it (and macOS before 14.2 has no API at
+    /// all). That refusal is the difference between bars that follow the music
+    /// and bars that only follow the volume, so it belongs on the audio
+    /// surface the user is already looking at rather than in a log.
     @ViewBuilder
     private var meterFailureNotice: some View {
         if let reason = state.audioMeter.failureReason {
@@ -102,7 +181,9 @@ struct AudioDevicesView: View {
 
                 Spacer(minLength: NotchTheme.Space.s)
 
-                Button("Open Settings") {
+                // Audio access lives in the same pane as screen recording on
+                // current macOS, which is why one link covers both.
+                Button("Open Audio Access") {
                     let path = "x-apple.systempreferences:com.apple.preference"
                         + ".security?Privacy_ScreenCapture"
                     if let url = URL(string: path) {

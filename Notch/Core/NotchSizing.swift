@@ -53,7 +53,7 @@ enum NotchSizing {
     /// the slab wide enough to hold the whole rail beside the hardware notch.
     static func usesFullTopRail(for tab: NotchTab) -> Bool {
         switch tab {
-        case .home, .shelf, .notes, .tools, .telemetry, .camera: true
+        case .home, .shelf, .notes, .tools, .telemetry, .camera, .faceID: true
         default: false
         }
     }
@@ -215,6 +215,22 @@ enum NotchSizing {
     /// rounds the pill's own hover growth up to this.
     static let hoverExitHysteresis: CGFloat = 5
 
+    /// How far past the top of the display the hover probe reaches, and with
+    /// it the click region.
+    ///
+    /// The probe is pinned to the top edge, and the pointer flicked up at the
+    /// notch does not stop politely inside it: the cursor is clamped *at* that
+    /// edge — which is where the hardware cutout is, on a Mac that has one —
+    /// and a rectangle that ended exactly at the display's top reports "not
+    /// hovering" for that point, because a rect excludes its own maximum edge.
+    /// The fastest, most deliberate approach there is was therefore the one
+    /// that missed. This band is what makes an overshoot land as a hover: the
+    /// probe covers the top few points of the notch itself, so arriving too
+    /// fast still opens it, and the region the pointer has been aimed at is a
+    /// little taller than the shape it is aimed at — the same forgiveness the
+    /// side tolerances give the flanks.
+    static let hoverOvershootGrace: CGFloat = 8
+
     /// How far the closed shape's visible body sits inside its layout frame.
     /// Its top corners flare outward into the menu bar, so the black starts
     /// this far in from each side of the frame.
@@ -289,6 +305,12 @@ enum NotchSizing {
         // Taller than the rest: the preview is the content, and a 16:9 feed in
         // a short panel is a letterboxed sliver.
         case .camera: CGSize(width: 620, height: 380)
+        // The fixed height is the point: this screen carries a preview column,
+        // an enrollment flow, and a list plus a diagnostics readout, and every
+        // one of them changes height as it runs. The tallest state is the
+        // enrollment card with the capture preview, the pose ring, and the save
+        // row all showing.
+        case .faceID: CGSize(width: 880, height: 430)
         }
     }
 

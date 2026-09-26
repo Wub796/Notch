@@ -204,9 +204,10 @@ final class MediaRemoteAdapter {
     /// state, which the stream demonstrably fails to push on pause — and it
     /// needs no user consent, unlike the Apple Events fallback.
     func getNowPlaying(_ completion: @escaping ([String: Any]?) -> Void) {
-        Self.oneShotQueue.async { [weak self] in
-            guard let self,
-                  let script = Self.scriptURL(),
+        // No `self` to capture: everything below is on `Self`, so the closure
+        // deliberately holds no reference to the adapter at all.
+        Self.oneShotQueue.async {
+            guard let script = Self.scriptURL(),
                   let framework = Self.frameworkURL() else {
                 DispatchQueue.main.async { completion(nil) }
                 return

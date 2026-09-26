@@ -21,6 +21,7 @@ struct NotchTopBarView: View {
         (.telemetry, "chart.xyaxis.line", "System Stats"),
         (.notes, "doc.text", "Notes"),
         (.camera, "video", "Camera"),
+        (.faceID, "faceid", "Face ID"),
     ]
 
     /// The left rail's control count: Home and every module. `NotchSizing`
