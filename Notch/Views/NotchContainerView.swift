@@ -25,11 +25,18 @@ struct NotchContainerView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        GeometryReader { geometry in
+            // The backing panel widens before the open spring starts. Make the
+            // notch layout fill that host explicitly: its top-aligned ZStack
+            // keeps the visible slab centered on the hardware cutout instead
+            // of letting it follow a changing intrinsic-width edge.
             notchBody
-            Spacer(minLength: 0)
+                .frame(
+                    width: geometry.size.width,
+                    height: geometry.size.height,
+                    alignment: .top
+                )
         }
-        .frame(maxWidth: .infinity, alignment: .top)
         .fontDesign(.rounded)
         .preferredColorScheme(.dark)
     }

@@ -157,22 +157,37 @@ final class FaceIDCredentialController {
         }
     }
 
-    /// Forgets the password *and* the session key. The enrolled faces go with
-    /// them, because they are sealed under that same key — leaving them would
-    /// leave an encrypted file nothing can ever read again.
-    func deleteEverything() {
+    /// Forgets the password, enrolled faces and session key. The face file is
+    /// removed first, while its key is still available, so a failed file removal
+    /// cannot strand encrypted identities behind a key that has just been erased.
+    @discardableResult
+    func deleteEverything() -> Bool {
+        // Don't try to recover or remove identities using an untrusted in-memory
+        // cache. The file cannot be decrypted by a replacement key, so keep the
+        // existing session key intact and ask the user to resolve the store issue.
+        guard FaceEnrollmentStore.shared.loadFailure == nil,
+              FaceEnrollmentStore.shared.hasLoadedSuccessfully else {
+            statusMessage = FaceEnrollmentStore.shared.loadFailure
+                ?? "Enrolled faces couldn't be verified. Unlock the session and try again."
+            return false
+        }
         do {
+            // Remove face data before deleting the key that can decrypt it. If
+            // the filesystem refuses, keep the keychain items so the existing
+            // enrollment is not stranded behind a key that has just been erased.
+            try FaceEnrollmentStore.shared.deleteAll()
             try FaceIDCredentials.deletePassword()
         } catch {
-            statusMessage = "Couldn't clear the stored password: \(error.localizedDescription)"
-            return
+            refreshCredentialStatus()
+            statusMessage = "Couldn't clear Face ID data: \(error.localizedDescription)"
+            return false
         }
-        FaceEnrollmentStore.shared.deleteAll()
         hasStoredPassword = false
         isSessionUnlocked = false
         sessionError = nil
         needsResetBeforeUse = false
         statusMessage = "Stored password and enrolled faces removed."
+        return true
     }
 
     // MARK: - Injection

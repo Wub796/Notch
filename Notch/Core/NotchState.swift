@@ -35,6 +35,20 @@ enum NotchTab: String {
     case faceID
 }
 
+/// A one-shot request from Settings to start adding or replacing an enrollment
+/// as soon as the Face ID screen is ready.
+struct FaceEnrollmentRequest: Equatable {
+    let id: UUID
+    let replacingIdentityID: UUID?
+    let name: String
+
+    init(replacing identity: FaceIdentity? = nil) {
+        id = UUID()
+        replacingIdentityID = identity?.id
+        name = identity?.name ?? ""
+    }
+}
+
 /// Root observable state for the notch UI. Owns every feature module and
 /// starts/stops their polling so the app does no periodic work while the
 /// notch is collapsed — the live-activity sources are all push-based.
@@ -43,6 +57,10 @@ final class NotchState {
     var mode: NotchMode = .collapsed
     var tab: NotchTab = .home
     var isDropTargeted = false
+
+    /// Pending Settings action to start an add or recapture flow when the Face ID
+    /// screen appears. The screen clears this once it takes ownership.
+    var faceEnrollmentRequest: FaceEnrollmentRequest?
 
     /// While pinned, the expanded panel ignores hover-out and outside clicks.
     var isPinned = false
@@ -344,7 +362,7 @@ final class NotchState {
 
     @MainActor var faceID: FaceIDController {
         if let cachedFaceID { return cachedFaceID }
-        let controller = FaceIDController()
+        let controller = FaceIDController(mediaController: media)
         cachedFaceID = controller
         return controller
     }

@@ -53,6 +53,7 @@ final class FaceIDOverlayController {
     private var onActivate: (() -> Void)?
 
     private let windowController = FaceIDOverlayWindowController()
+    private let nowPlayingWindowController = FaceIDNowPlayingWindowController()
     private var resolveTask: Task<Void, Never>?
     private var scanTimeoutTask: Task<Void, Never>?
 
@@ -81,7 +82,19 @@ final class FaceIDOverlayController {
         windowController.onScreenParametersChanged = { [weak self] in
             guard let self else { return }
             self.geometry = self.windowController.currentGeometry
+            self.nowPlayingWindowController.repositionIfVisible()
         }
+    }
+
+    /// Connects the one app-owned player to its separate lock-screen window.
+    func configureNowPlaying(mediaController: MediaController) {
+        nowPlayingWindowController.configure(mediaController: mediaController)
+        nowPlayingWindowController.setArmed(isArmed)
+    }
+
+    /// Updates player visibility when the shared media session gains or loses a track.
+    func refreshNowPlayingInteractivity() {
+        nowPlayingWindowController.refresh()
     }
 
     // MARK: - Armed mode (the lock and wake triggers)
@@ -90,6 +103,7 @@ final class FaceIDOverlayController {
     /// until `disarm()`. `onActivate` restarts a scan when the user hovers.
     func arm(onActivate: @escaping () -> Void) {
         isArmed = true
+        nowPlayingWindowController.setArmed(true)
         self.onActivate = onActivate
         geometry = windowController.currentGeometry
         phase = .closed
@@ -126,6 +140,7 @@ final class FaceIDOverlayController {
     /// `collapse()` re-checks it once the hold expires and hides for real then.
     func disarm() {
         isArmed = false
+        nowPlayingWindowController.setArmed(false)
         onActivate = nil
         // Undocked before the guard: if a success collapse is in flight, this turns
         // it into a full slide off-screen rather than a shrink to a resting pill.
@@ -216,6 +231,7 @@ final class FaceIDOverlayController {
         scanTimeoutTask = nil
         geometry = windowController.currentGeometry
         activeUnlockStyle = styleOverride ?? FaceIDSettings.shared.effectiveUnlockAnimationStyle
+        nowPlayingWindowController.setArmed(false)
         primeWindowIfNeeded { [weak self] in
             guard let self else { return }
             self.media = .idle
@@ -317,13 +333,15 @@ final class FaceIDOverlayController {
         phase = .closed
         media = .idle
         isPillDocked = false
+        nowPlayingWindowController.setArmed(false)
         windowController.setInteractive(false)
         windowController.hide()
     }
 
     private func updateInteractivity() {
         // Click-through otherwise, so the overlay never intercepts anything it
-        // doesn't need to. A held failure needs the mouse so hover-to-retry works.
+        // doesn't need. A held failure needs the mouse so hover-to-retry works;
+        // the music controls use their own window and hit-testing.
         windowController.setInteractive(isArmed || phase == .failure)
     }
 

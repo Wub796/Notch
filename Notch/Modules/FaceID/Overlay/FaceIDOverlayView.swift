@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+
 /// The visible panel's current frame, relative to the fixed window's full bounds.
 /// Read by `FaceIDOverlayWindowController.updateMousePassthrough()`, which uses it
 /// to keep the window's click-through state matching what is actually drawn.
@@ -10,13 +11,13 @@ private struct InteractivePanelFramePreferenceKey: PreferenceKey {
         value = nextValue() ?? value
     }
 }
-
 /// SwiftUI's root inside the fixed-size overlay window — only content moves and
 /// resizes, never the window.
 ///
 /// Ported from Glance (`NotchOverlay/NotchOverlayView.swift`, MIT © Jonathan
 /// Zhou), minus its onboarding step machine: enrollment lives in the notch panel
-/// here, so this view only ever draws a scan.
+/// here, so this view draws only the Face ID scan; now playing lives in a
+/// separate window above macOS's native account and password card.
 ///
 /// Enter and exit choreography, in pill style, staggers the slide against the
 /// expansion using real `Task.sleep` delays on separate `@State` mirrors rather
@@ -89,10 +90,6 @@ struct FaceIDOverlayView: View {
         }
     }
 
-    private var openBodySize: CGSize {
-        isMinimalScan ? minimalOpenBodySize : scanOpenSize
-    }
-
     private var closedBodySize: CGSize {
         controller.geometry.closedSize
     }
@@ -132,7 +129,12 @@ struct FaceIDOverlayView: View {
     /// exactly on the physical notch's width instead of coming up short by the
     /// flare.
     private var currentSize: CGSize {
-        let body = visualIsExpanded ? openBodySize : closedBodySize
+        let body: CGSize
+        if visualIsExpanded {
+            body = isMinimalScan ? minimalOpenBodySize : scanOpenSize
+        } else {
+            body = closedBodySize
+        }
         let bump: CGFloat = isHovering ? FaceIDGeometry.hoverBump : 0
         return CGSize(
             width: body.width + FaceIDGeometry.flareAllowance(topRadius: topRadius, style: style) + bump,
@@ -173,20 +175,12 @@ struct FaceIDOverlayView: View {
     /// Direction only — an enter-side delay is a real `Task.sleep` applied before
     /// this, never baked into the curve.
     private func expansionAnimation(entering: Bool) -> Animation {
-        entering
-            ? .spring(
-                response: FaceIDGeometry.openSpringResponse,
-                dampingFraction: FaceIDGeometry.openSpringDamping
-            )
-            : .spring(
-                response: FaceIDGeometry.closeSpringResponse,
-                dampingFraction: FaceIDGeometry.closeSpringDamping
-            )
+        entering ? NotchAnimations.open : NotchAnimations.close
     }
 
     /// A straight-line move, not a bouncy resize.
     private var slideAnimation: Animation {
-        .easeOut(duration: FaceIDGeometry.pillSlideDuration)
+        FaceIDGeometry.slideAnimation
     }
 
     // MARK: - Scan pulse
@@ -198,11 +192,13 @@ struct FaceIDOverlayView: View {
     }
 
     private var scanPulseScale: CGFloat {
-        isScanPulseDimmed ? FaceIDGeometry.scanPulseScale : 1
+        guard !NotchAnimations.prefersReducedMotion else { return 1 }
+        return isScanPulseDimmed ? FaceIDGeometry.scanPulseScale : 1
     }
 
     private var scanPulseOpacity: Double {
-        isScanPulseDimmed ? FaceIDGeometry.scanPulseOpacity : 1
+        guard !NotchAnimations.prefersReducedMotion else { return 1 }
+        return isScanPulseDimmed ? FaceIDGeometry.scanPulseOpacity : 1
     }
 
     @ViewBuilder
@@ -236,19 +232,36 @@ struct FaceIDOverlayView: View {
         }
     }
 
-    var body: some View {
+    private func scanSurface(height: CGFloat) -> some View {
         ZStack {
             scanContent
                 // The content dissolves as the panel shrinks rather than being
                 // abruptly clipped by the collapsing shape. It rides the animation
                 // already active on `visualIsExpanded`.
-                .blur(radius: visualIsExpanded ? 0 : 40)
+                .blur(radius: visualIsExpanded || NotchAnimations.prefersReducedMotion ? 0 : 40)
                 .opacity(visualIsExpanded ? 1 : 0)
-                .scaleEffect(visualIsExpanded ? 1 : 0.3)
+                .allowsHitTesting(visualIsExpanded)
+                .scaleEffect(visualIsExpanded || NotchAnimations.prefersReducedMotion ? 1 : 0.3)
+        }
+        .frame(width: currentSize.width, height: height)
+        .onHover { hovering in
+            isHovering = hovering
+            if hovering {
+                performHapticFeedback(.generic)
+                controller.activate()
+            }
+        }
+    }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            scanSurface(height: currentSize.height)
         }
         .frame(width: currentSize.width, height: currentSize.height)
         .background(Color.black)
         .clipShape(FaceIDShape(topRadius: topRadius, bottomRadius: bottomRadius, style: style))
+        .contentShape(FaceIDShape(topRadius: topRadius, bottomRadius: bottomRadius, style: style))
+        .allowsHitTesting(visualIsExpanded || controller.isArmed)
         // Reports this panel's own frame relative to the fixed window's bounds, so
         // the window's click capture can be restricted to the shape on screen
         // rather than to its whole maximum envelope.
@@ -268,15 +281,9 @@ struct FaceIDOverlayView: View {
         .blur(radius: panelBlur)
         // Applied after the shadow so both travel together, and before `.onHover`.
         .offset(y: verticalOffset)
-        .animation(.easeOut(duration: 0.18), value: isHovering)
-        .onHover { hovering in
-            isHovering = hovering
-            if hovering {
-                performHapticFeedback(.generic)
-                controller.activate()
-            }
-        }
+        .animation(FaceIDGeometry.hoverAnimation, value: isHovering)
         .onAppear {
+            controller.refreshNowPlayingInteractivity()
             // Synced without animating: on first appearance there is nothing to
             // animate from.
             visualIsExpanded = targetIsExpanded
@@ -284,26 +291,33 @@ struct FaceIDOverlayView: View {
             updateScanPulse()
             updateMinimalLock()
         }
+        .onChange(of: controller.phase) { _, newPhase in
+            scheduleChoreography()
+            updateScanPulse()
+            updateMinimalLock()
+            controller.refreshNowPlayingInteractivity()
+            if newPhase == .success {
+                performHapticFeedback(.levelChange)
+            }
+        }
+        .onChange(of: controller.isArmed) { _, _ in
+            controller.refreshNowPlayingInteractivity()
+        }
+        .onChange(of: controller.geometry) { _, _ in
+            scheduleChoreography()
+        }
         .onDisappear {
             scanPulseTask?.cancel()
             scanPulseTask = nil
             lockUnlockTask?.cancel()
             lockUnlockTask = nil
         }
-        .onChange(of: controller.phase) { _, newPhase in
-            scheduleChoreography()
-            updateScanPulse()
-            updateMinimalLock()
-            if newPhase == .success {
-                performHapticFeedback(.levelChange)
-            }
-        }
         .onChange(of: controller.isPillDocked) { _, _ in
             scheduleChoreography()
         }
         .frame(
-            width: FaceIDGeometry.windowSize(for: style).width,
-            height: FaceIDGeometry.windowSize(for: style).height,
+            width: FaceIDGeometry.windowSize(for: controller.geometry).width,
+            height: FaceIDGeometry.windowSize(for: controller.geometry).height,
             alignment: .top
         )
         // Anchored on this outermost, full-window-sized frame so the panel's
@@ -399,11 +413,11 @@ struct FaceIDOverlayView: View {
         scanPulseTask = Task {
             try? await Task.sleep(for: .seconds(entryDelay))
             while !Task.isCancelled {
-                withAnimation(.easeInOut(duration: half)) { isScanPulseDimmed = true }
+                withAnimation(FaceIDGeometry.scanPulseAnimation) { isScanPulseDimmed = true }
                 try? await Task.sleep(for: .seconds(half + hold))
                 guard !Task.isCancelled else { break }
 
-                withAnimation(.easeInOut(duration: half)) { isScanPulseDimmed = false }
+                withAnimation(FaceIDGeometry.scanPulseAnimation) { isScanPulseDimmed = false }
                 try? await Task.sleep(for: .seconds(half + hold))
             }
         }
@@ -415,7 +429,7 @@ struct FaceIDOverlayView: View {
         scanPulseTask?.cancel()
         scanPulseTask = nil
         guard isScanPulseDimmed else { return }
-        withAnimation(.easeOut(duration: FaceIDGeometry.scanPulseSettleDuration)) {
+        withAnimation(FaceIDGeometry.scanPulseSettleAnimation) {
             isScanPulseDimmed = false
         }
     }

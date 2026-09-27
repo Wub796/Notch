@@ -9,7 +9,7 @@ import SwiftUI
 /// only addition is `accent`, which Glance keeps in its own theme file — the
 /// value is theirs.
 enum SettingsMetrics {
-    static let windowSize = CGSize(width: 500, height: 620)
+    static let windowSize = CGSize(width: 600, height: 620)
 
     /// Glance's accent (`0x3499FF`), applied window-wide as the `.tint` so
     /// every control — switches, sliders, the action buttons — agrees.
@@ -46,7 +46,7 @@ enum SettingsMetrics {
     static let tabBarHeight: CGFloat = 54
     static let tabBarBottomInset: CGFloat = 14
     /// Gap between the bar's edge and the first/last item's own padding.
-    static let tabBarHorizontalPadding: CGFloat = 6
+    static let tabBarHorizontalPadding: CGFloat = 20
     static let tabBarTint = adaptiveColor(
         dark: NSColor(white: 1, alpha: 0.15),
         light: NSColor(white: 1, alpha: 0.5)
@@ -56,9 +56,10 @@ enum SettingsMetrics {
         light: NSColor(white: 0, alpha: 0.08)
     )
     static let tabItemHeight: CGFloat = 42
-    static let tabItemHorizontalPadding: CGFloat = 11
-    static let selectedTabItemHorizontalPadding: CGFloat = 14
-    static let tabGlyphSize: CGFloat = 15
+    static let tabItemSpacing: CGFloat = 4
+    static let tabItemHorizontalPadding: CGFloat = 12
+    static let selectedTabItemHorizontalPadding: CGFloat = 16
+    static let tabGlyphSize: CGFloat = 20
     static let tabTitleFont = Font.system(size: 13, weight: .medium)
     static let selectedPillColor = adaptiveColor(
         dark: NSColor(white: 1, alpha: 0.1),
@@ -70,7 +71,11 @@ enum SettingsMetrics {
         dark: NSColor(white: 1, alpha: 0.12),
         light: NSColor(white: 0, alpha: 0.06)
     )
-    static let tabSelectionAnimation = Animation.spring(response: 0.35, dampingFraction: 0.82)
+    static var tabSelectionAnimation: Animation {
+        NotchAnimations.prefersReducedMotion
+            ? NotchAnimations.reduced
+            : .spring(response: 0.35, dampingFraction: 0.88)
+    }
     /// How far a tab's label slides toward its icon as it collapses away
     /// (or unfurls back out), in points.
     static let tabLabelRevealOffset: CGFloat = 10
@@ -98,6 +103,8 @@ enum SettingsMetrics {
 
     static let rowHeight: CGFloat = 44
     static let rowRadius: CGFloat = 16
+    static let rowIconSize: CGFloat = 20
+    static let rowIconBoxSize: CGFloat = 34
     /// Light mode goes slightly darker than the page instead of lighter,
     /// since a white tint is invisible over the light material.
     static let rowColor = adaptiveColor(
@@ -111,7 +118,7 @@ enum SettingsMetrics {
     static let rowBorderWidth: CGFloat = 1
     static let rowFont = Font.system(size: 13, weight: .regular)
     static let rowSpacing: CGFloat = 12
-    static let rowHorizontalInset: CGFloat = 14
+    static let rowHorizontalInset: CGFloat = 22
     /// Shared cap on a row's subtitle width — keeps a longer explanatory
     /// line from stretching toward the trailing control/tiles, and keeps
     /// every subtitle (plain rows and `SettingsLabeledOptionRow` alike)
@@ -134,8 +141,10 @@ enum SettingsMetrics {
     static let emptyStateIconSize: CGFloat = 34
     static let emptyStateSpacing: CGFloat = 12
     static let emptyStateMinHeight: CGFloat = 340
-    /// Crossfade between the locked and unlocked states of the Password page.
-    static let stateTransitionAnimation = Animation.easeInOut(duration: 0.28)
+    /// Crossfade between locked/unlocked and other asynchronous settings states.
+    static var stateTransitionAnimation: Animation {
+        NotchAnimations.prefersReducedMotion ? NotchAnimations.reduced : .easeInOut(duration: 0.22)
+    }
 
     /// Taller card used by multi-option pickers (e.g. Unlock Animation).
     static let optionCardVerticalPadding: CGFloat = 14
@@ -179,7 +188,7 @@ enum SettingsMetrics {
 
     /// Page content's inset from the window's side edges; the header's
     /// trailing button lines up with it.
-    static let contentHorizontalPadding: CGFloat = 16
+    static let contentHorizontalPadding: CGFloat = 20
 
     // MARK: - Capture-quality tick strip (Face ID)
     //

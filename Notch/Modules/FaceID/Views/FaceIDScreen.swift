@@ -13,8 +13,11 @@ struct FaceIDScreen: View {
     let state: NotchState
 
     @State private var enrollmentName = ""
+    @State private var replacingIdentityID: UUID?
     @State private var isEnrolling = false
     @State private var enrollmentError: String?
+    @State private var shouldCloseAfterEnrollment = false
+    @State private var closeAfterEnrollmentTask: Task<Void, Never>?
 
     private var faceID: FaceIDController { state.faceID }
     private var settings: FaceIDSettings { .shared }
@@ -67,6 +70,17 @@ struct FaceIDScreen: View {
             credentials.refreshAccessibilityStatus()
             credentials.refreshCredentialStatus()
             store.reloadIfUnlocked()
+            handleEnrollmentRequestIfNeeded()
+        }
+        .onChange(of: state.faceEnrollmentRequest) { _, _ in
+            handleEnrollmentRequestIfNeeded()
+        }
+        .onChange(of: settings.isEnabled) { _, _ in
+            handleEnrollmentRequestIfNeeded()
+        }
+        .onDisappear {
+            cancelPendingEnrollmentClose()
+            shouldCloseAfterEnrollment = false
         }
     }
 
@@ -108,9 +122,10 @@ struct FaceIDScreen: View {
             }
 
             ScreenTextButton(title: "I understand — turn on Face ID", systemImage: "faceid", isProminent: true) {
-                settings.hasAcknowledgedSetup = true
-                settings.isEnabled = true
-                withAnimation(NotchAnimations.content) {}
+                withAnimation(NotchAnimations.content) {
+                    settings.hasAcknowledgedSetup = true
+                    settings.isEnabled = true
+                }
                 state.showToast("Face ID is on — enroll a face next", symbol: "faceid")
             }
         }
@@ -377,25 +392,126 @@ struct FaceIDScreen: View {
         }
     }
 
-    private func beginEnrollment() {
+    private func handleEnrollmentRequestIfNeeded() {
+        // Keep the request pending until the user has explicitly enabled Face ID
+        // from its introduction screen; settings actions must not silently turn
+        // on the login feature as a side effect.
+        guard settings.isEnabled, let request = state.faceEnrollmentRequest else { return }
+        state.faceEnrollmentRequest = nil
+        cancelPendingEnrollmentClose()
+        shouldCloseAfterEnrollment = true
+        replacingIdentityID = request.replacingIdentityID
+        enrollmentName = request.name
         enrollmentError = nil
-        enrollmentName = ""
+
+        guard credentials.isSessionUnlocked else {
+            Task {
+                await credentials.unlockSession()
+                guard credentials.isSessionUnlocked else {
+                    shouldCloseAfterEnrollment = false
+                    enrollmentError = credentials.sessionError
+                        ?? "Touch ID didn't unlock the session, so the capture can't start."
+                    return
+                }
+                store.reloadIfUnlocked()
+                beginEnrollmentRequest()
+            }
+            return
+        }
+
+        store.reloadIfUnlocked()
+        beginEnrollmentRequest()
+    }
+
+    /// A click from the screen itself always starts a new identity; the request
+    /// path above is the only one that carries a replacement target.
+    private func beginEnrollment() {
+        cancelPendingEnrollmentClose()
+        shouldCloseAfterEnrollment = false
+        guard store.loadFailure == nil else {
+            enrollmentError = store.loadFailure
+            return
+        }
+        // A failed Touch ID request leaves its recapture target in place, so
+        // retrying from this screen still replaces that identity instead of
+        // unexpectedly creating a duplicate.
+        if replacingIdentityID == nil {
+            enrollmentName = ""
+        }
+        startEnrollment()
+    }
+
+    private func beginEnrollmentRequest() {
+        guard store.loadFailure == nil else {
+            shouldCloseAfterEnrollment = false
+            enrollmentError = store.loadFailure
+            return
+        }
+        startEnrollment()
+    }
+
+    private func startEnrollment() {
+        enrollmentError = nil
         isEnrolling = true
         enrollment.start()
     }
 
     private func cancelEnrollment() {
         enrollment.cancel()
+        cancelPendingEnrollmentClose()
+        shouldCloseAfterEnrollment = false
         isEnrolling = false
+        replacingIdentityID = nil
+        enrollmentName = ""
+    }
+
+    /// Keeps the success confirmation on screen before closing a Settings-started
+    /// enrollment. Direct enrollments started from this screen remain open.
+    private func scheduleCloseAfterSettingsEnrollment() {
+        guard shouldCloseAfterEnrollment else { return }
+        shouldCloseAfterEnrollment = false
+        cancelPendingEnrollmentClose()
+
+        let state = self.state
+        closeAfterEnrollmentTask = Task { @MainActor in
+            // The in-panel success toast lasts 1.6 seconds; leave a small beat
+            // after it disappears before returning to the Settings page.
+            try? await Task.sleep(for: .milliseconds(1_800))
+            guard !Task.isCancelled,
+                  state.mode == .expanded,
+                  state.tab == .faceID
+            else { return }
+            state.collapse()
+        }
+    }
+
+    private func cancelPendingEnrollmentClose() {
+        closeAfterEnrollmentTask?.cancel()
+        closeAfterEnrollmentTask = nil
     }
 
     private func saveEnrollment() {
+        let name = enrollmentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let replacing = replacingIdentityID
+        guard !name.isEmpty else {
+            enrollmentError = "Enter a name for this face before saving."
+            return
+        }
+        guard !store.nameIsTaken(name, excluding: replacing) else {
+            enrollmentError = "An identity with that name already exists. Choose a different name."
+            return
+        }
+
         do {
-            let name = enrollmentName
-            try enrollment.commit(name: name, replacing: nil)
+            try enrollment.commit(name: name, replacing: replacing)
             isEnrolling = false
+            replacingIdentityID = nil
             enrollmentName = ""
-            state.showToast("Enrolled \(name)", symbol: "faceid")
+            state.showToast(
+                replacing == nil ? "Enrolled \(name)" : "Recaptured \(name)",
+                symbol: "faceid"
+            )
+            scheduleCloseAfterSettingsEnrollment()
         } catch {
             enrollmentError = error.localizedDescription
         }
@@ -458,8 +574,11 @@ struct FaceIDScreen: View {
                     // otherwise leave these buttons permanently inert.
                     if credentials.needsResetBeforeUse {
                         ScreenTextButton(title: "Reset Face ID data", systemImage: "trash", tint: .orange) {
-                            credentials.deleteEverything()
-                            enrollmentError = nil
+                            if credentials.deleteEverything() {
+                                enrollmentError = nil
+                            } else {
+                                enrollmentError = credentials.statusMessage
+                            }
                             store.reloadIfUnlocked()
                         }
                     }
@@ -491,8 +610,13 @@ struct FaceIDScreen: View {
             ) {
                 if credentials.hasStoredPassword {
                     ScreenTextButton(title: "Remove", systemImage: "trash", tint: .orange) {
-                        credentials.deleteEverything()
-                        state.showToast("Face ID data removed", symbol: "trash")
+                        if credentials.deleteEverything() {
+                            enrollmentError = nil
+                            state.showToast("Face ID data removed", symbol: "trash")
+                        } else {
+                            enrollmentError = credentials.statusMessage
+                            state.showToast("Couldn't remove Face ID data", symbol: "exclamationmark.triangle")
+                        }
                     }
                 }
             }
@@ -652,7 +776,11 @@ struct FaceIDScreen: View {
                 help: identity.isEnabled ? "Stop this face unlocking" : "Let this face unlock",
                 activeTint: NotchTheme.battery
             ) {
-                try? store.setEnabled(!identity.isEnabled, for: identity.id)
+                do {
+                    try store.setEnabled(!identity.isEnabled, for: identity.id)
+                } catch {
+                    state.showToast("Couldn't update \(identity.name)", symbol: "exclamationmark.triangle")
+                }
             }
 
             NotchIconButton(
@@ -660,8 +788,12 @@ struct FaceIDScreen: View {
                 help: "Delete \(identity.name)",
                 activeTint: .orange
             ) {
-                try? store.delete(identity)
-                state.showToast("Deleted \(identity.name)", symbol: "trash")
+                do {
+                    try store.delete(identity)
+                    state.showToast("Deleted \(identity.name)", symbol: "trash")
+                } catch {
+                    state.showToast("Couldn't delete \(identity.name)", symbol: "exclamationmark.triangle")
+                }
             }
         }
         .padding(.horizontal, NotchTheme.Space.s)

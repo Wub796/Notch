@@ -94,16 +94,10 @@ enum FaceIDKeychain {
         }
     }
 
-    /// Replaces any existing item. Pass `accessControl` to gate future reads
-    /// behind Touch ID, or nothing for a device-local, unlock-only item.
+    /// Replaces an existing item without deleting the old value until the new
+    /// value has been accepted. Pass `accessControl` to gate future reads behind
+    /// Touch ID, or nothing for a device-local, unlock-only item.
     static func save(account: String, data: Data, accessControl: SecAccessControl? = nil) throws {
-        let deleteQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(deleteQuery as CFDictionary)
-
         var addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -125,6 +119,16 @@ enum FaceIDKeychain {
         if status == errSecParam, addQuery[kSecAttrAccessible as String] != nil {
             addQuery[kSecAttrAccessible as String] = nil
             status = SecItemAdd(addQuery as CFDictionary, nil)
+        }
+
+        if status == errSecDuplicateItem {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+            ]
+            let attributes: [String: Any] = [kSecValueData as String: data]
+            status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         }
         guard status == errSecSuccess else { throw KeychainError.osStatus(status) }
     }

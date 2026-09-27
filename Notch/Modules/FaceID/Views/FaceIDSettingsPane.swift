@@ -31,6 +31,8 @@ struct FaceIDSettingsPane: View {
     @State private var screens: [NSScreen] = NSScreen.screens
     @State private var cameras: [FaceIDCameraDevice] = FaceIDCameraCatalog.availableDevices()
     @State private var previewCamera = FaceIDCamera()
+    @State private var previewStartTask: Task<Void, Never>?
+    @State private var previewStartGeneration = 0
     @State private var isPreviewShown = false
 
     private var isSessionUnlocked: Bool { credentials.isSessionUnlocked }
@@ -272,7 +274,7 @@ struct FaceIDSettingsPane: View {
                     icon: "faceid",
                     message: "Face enrollment",
                     buttonTitle: "Set up Face ID",
-                    action: openFaceIDScreen
+                    action: { openFaceIDScreen() }
                 )
             } else {
                 faceEncryptedCard
@@ -283,7 +285,7 @@ struct FaceIDSettingsPane: View {
                         identity: identity,
                         isStale: identity.isStale(comparedTo: FaceRecognitionPipeline.shared.embedder),
                         isEnabled: enabledBinding(for: identity),
-                        recapture: { openFaceIDScreen() },
+                        recapture: { openFaceIDScreen(replacing: identity) },
                         delete: { identityPendingDeletion = identity }
                     )
                 }
@@ -329,7 +331,7 @@ struct FaceIDSettingsPane: View {
         HStack(spacing: 0) {
             SettingsSectionTitle(text: "Identities")
 
-            Button(action: openFaceIDScreen) {
+            Button(action: { openFaceIDScreen() }) {
                 Image(systemName: "plus")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(SettingsMetrics.textTertiary)
@@ -500,13 +502,34 @@ struct FaceIDSettingsPane: View {
 
     private func showPreview() {
         isPreviewShown = true
-        Task { await previewCamera.start() }
+        startPreview()
     }
 
     private func hidePreview() {
+        previewStartGeneration &+= 1
+        previewStartTask?.cancel()
+        previewStartTask = nil
         guard isPreviewShown else { return }
         previewCamera.stop()
         isPreviewShown = false
+    }
+
+    private func startPreview() {
+        previewStartGeneration &+= 1
+        let generation = previewStartGeneration
+        previewStartTask?.cancel()
+        let task = Task {
+            await previewCamera.start()
+        }
+        previewStartTask = task
+        Task { @MainActor in
+            await task.value
+            guard generation == previewStartGeneration else { return }
+            previewStartTask = nil
+            if !isPreviewShown {
+                previewCamera.stop()
+            }
+        }
     }
 
     /// The camera only re-resolves its device on `start()`, so restart it to
@@ -515,7 +538,7 @@ struct FaceIDSettingsPane: View {
     private func restartPreview() {
         guard isPreviewShown else { return }
         previewCamera.stop()
-        Task { await previewCamera.start() }
+        startPreview()
     }
 
     /// Fired by the header's refresh control (see `HeaderTrailingActionKey`).
@@ -617,12 +640,19 @@ struct FaceIDSettingsPane: View {
         identityPendingDeletion = nil
     }
 
-    /// Enrollment and re-capture happen in the notch, so these hand the user
-    /// across: select the Face ID screen and open the panel.
-    private func openFaceIDScreen() {
-        guard let state = (NSApp.delegate as? AppDelegate)?.state else { return }
-        state.select(.faceID)
-        state.expand()
+    /// Enrollment and re-capture happen in the notch; carry the request there
+    /// and explicitly present its panel rather than relying on the current key
+    /// window changing as a side effect of a state update.
+    private func openFaceIDScreen(replacing identity: FaceIdentity? = nil) {
+        guard let appDelegate = AppDelegate.shared else {
+            statusMessage = "Couldn't open Face ID enrollment from Settings. Quit and reopen Notch, then try again."
+            #if DEBUG
+            print("[FaceID] settings: app delegate unavailable for enrollment request")
+            #endif
+            return
+        }
+        statusMessage = nil
+        appDelegate.openFaceIDEnrollment(replacing: identity)
     }
 
     private func unlock() {
@@ -649,9 +679,11 @@ struct FaceIDSettingsPane: View {
     }
 
     private func removePassword() {
-        credentials.deleteEverything()
+        let removed = credentials.deleteEverything()
         statusMessage = credentials.statusMessage
-        writeError = nil
+        if removed {
+            writeError = nil
+        }
     }
 }
 

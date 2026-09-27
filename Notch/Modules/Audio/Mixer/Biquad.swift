@@ -165,10 +165,25 @@ final class BiquadCascade {
         defer { os_unfair_lock_unlock(&lock) }
         self.channelCount = max(channelCount, 0)
         self.sections = sections
-        // Four state slots per section per channel: x[n-1], x[n-2], y[n-1],
-        // y[n-2]. Reallocated only when the shape actually changes, so a gain
-        // tweak does not clear the filters' history and click.
-        let needed = sections.count * self.channelCount * 4
+        resizeHistoryIfNeeded()
+    }
+
+    /// Updates the stream's channel layout without discarding the filter chain.
+    /// `MixerStrip.apply` can run before CoreAudio reports the tap format; the
+    /// format callback must resize history after that report, not replace the
+    /// configured EQ with an empty chain.
+    func updateChannelCount(_ channelCount: Int) {
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
+        self.channelCount = max(channelCount, 0)
+        resizeHistoryIfNeeded()
+    }
+
+    /// Four state slots per section per channel: x[n-1], x[n-2], y[n-1],
+    /// y[n-2]. Reallocated only when the shape actually changes, so a gain
+    /// tweak does not clear the filters' history and click.
+    private func resizeHistoryIfNeeded() {
+        let needed = sections.count * channelCount * 4
         if history.count != needed {
             history = [Float](repeating: 0, count: needed)
         }

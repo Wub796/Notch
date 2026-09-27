@@ -24,6 +24,9 @@ struct FaceIDMinimalUnlockView: View {
     /// Applied to the video only; identity by default, so most callers ignore it.
     var pulseScale: CGFloat = 1
     var pulseOpacity: Double = 1
+    private var lockAnimation: Animation {
+        NotchAnimations.prefersReducedMotion ? NotchAnimations.reduced : .smooth(duration: 0.4)
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -35,10 +38,7 @@ struct FaceIDMinimalUnlockView: View {
                 // `.replace` only: the magic-move variant of the symbol transition
                 // needs macOS 15, and the app targets macOS 14.
                 .contentTransition(.symbolEffect(.replace))
-                .animation(
-                    .smooth(duration: FaceIDGeometry.minimalLockAnimationDuration),
-                    value: isUnlocked
-                )
+                .animation(lockAnimation, value: isUnlocked)
                 .frame(width: mediaWidth)
 
             Spacer(minLength: 0)

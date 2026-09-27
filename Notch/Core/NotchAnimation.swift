@@ -110,6 +110,18 @@ enum NotchAnimations {
         return .spring(response: 0.24, dampingFraction: 0.78)
     }
 
+    /// A crisp control press and a soft, springy release shared by all custom
+    /// controls. Under Reduce Motion the scale is removed, leaving only feedback.
+    static var press: Animation {
+        guard !prefersReducedMotion else { return reduced }
+        return .spring(response: 0.12, dampingFraction: 0.9)
+    }
+
+    static var release: Animation {
+        guard !prefersReducedMotion else { return reduced }
+        return .spring(response: 0.26, dampingFraction: 0.7)
+    }
+
     /// The HUD bar's own settle, matching `DraggableProgressBar`. Computed,
     /// not stored: a `let` could collapse under neither Reduce Motion nor the
     /// Animation Style picker.
@@ -227,8 +239,8 @@ extension NotchAnimations {
             return .opacity.animation(reduced)
         }
         return .asymmetric(
-            insertion: .opacity.animation(.easeOut(duration: 0.2).delay(0.16)),
-            removal: .opacity.animation(.easeOut(duration: 0.08))
+            insertion: .opacity.animation(activity.delay(0.16)),
+            removal: .opacity.animation(content)
         )
     }
 }

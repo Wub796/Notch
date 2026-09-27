@@ -84,6 +84,9 @@ final class FaceIDController {
     /// keep the camera on for the whole lock session.
     private var hasAutoRetriedForCurrentLock = false
     private var autoRetryTask: Task<Void, Never>?
+    /// Reconciles the early distributed lock notification with CGSession, whose
+    /// authoritative lock bit can lag it by several hundred milliseconds.
+    private var triggerReconciliationTask: Task<Void, Never>?
     /// When the last cycle was armed — collapses a single lid-open, which fires
     /// several wake signals within a few hundred milliseconds, into one arm.
     private var lastArmedAt: ContinuousClock.Instant?
@@ -108,9 +111,10 @@ final class FaceIDController {
     /// on this rather than each one remembering to skip the video.
     private var showsUI: Bool { settings.showUnlockAnimation }
 
-    init() {
+    init(mediaController: MediaController) {
         credentials = .shared
         pipeline = .shared
+        FaceIDOverlayController.shared.configureNowPlaying(mediaController: mediaController)
         spaceKeyMonitor.onSpaceKeyDown = { [weak self] in
             self?.handleSpaceKeyPress()
         }
@@ -127,7 +131,16 @@ final class FaceIDController {
         guard !hasObservedLockEvents else { return }
         hasObservedLockEvents = true
         autoLocker = FaceIDSessionAutoLocker(credentials: credentials)
+        #if DEBUG
+        print("[FaceID] lifecycle: started enabled=\(settings.isEnabled) "
+            + "triggers=\(settings.unlockTriggers.map(\.title).sorted()) "
+            + "sessionUnlocked=\(FaceIDCredentials.isSessionUnlocked) "
+            + "hasPassword=\(FaceIDCredentials.hasStoredPassword())")
+        #endif
         observeLockAndWakeEvents()
+        // Recover a lock that happened before this process registered its
+        // distributed observer (or while macOS had suspended the app).
+        reconcileTriggerState(after: nil)
         // Paid here, at launch, so that it can never be paid by a scan instead —
         // see `FaceRecognitionPipeline.warmUp()`. Backgrounded, because nothing
         // is waiting for it and the app has a menu bar to draw.
@@ -139,6 +152,8 @@ final class FaceIDController {
     /// Tears everything down: no triggers, no camera, no panel.
     func stop() {
         hasObservedLockEvents = false
+        triggerReconciliationTask?.cancel()
+        triggerReconciliationTask = nil
         disarmOverlay()
         spaceKeyMonitor.stop()
         credentials.lockSession()
@@ -149,6 +164,7 @@ final class FaceIDController {
     private func observeLockAndWakeEvents() {
         withObservationTracking {
             _ = lockMonitor.isScreenLocked
+            _ = lockMonitor.latestTriggerEvent
             _ = lockMonitor.wakeEventCount
             _ = lockMonitor.isSleeping
             // Also tracked so a stopped screensaver and a display-only wake still
@@ -158,11 +174,90 @@ final class FaceIDController {
             Task { @MainActor [weak self] in
                 self?.observeLockAndWakeEvents()
                 guard let self, self.hasObservedLockEvents else { return }
-                // A brief settle delay: CGSession's reported state can lag the
-                // true state right after a wake.
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                self.evaluateTrigger()
+                self.reconcileTriggerState(after: self.lockMonitor.lastEvent)
             }
+        }
+    }
+
+    /// The lock notification is intentionally early — it arrives before the
+    /// login window finishes locking — so a single CGSession check can miss the
+    /// state transition and leave Face ID idle for the entire lock session. Keep
+    /// reconciling the signal for two seconds; launch also runs this once to
+    /// recover a lock that predates our observer.
+    private func reconcileTriggerState(after event: LockEventKind?) {
+        if event == .willSleep {
+            triggerReconciliationTask?.cancel()
+            triggerReconciliationTask = nil
+            #if DEBUG
+            print("[FaceID] trigger: deferring lock reconciliation until wake")
+            #endif
+            return
+        }
+
+        triggerReconciliationTask?.cancel()
+        triggerReconciliationTask = Task { [weak self] in
+            guard let self else { return }
+            if event == .screenUnlocked {
+                _ = self.lockMonitor.refreshFromSystem(reconcileUnlocked: true)
+                // A login-window unlock is only used to shut down the panel;
+                // it never authorizes typing. Hide immediately, even if the
+                // session server's state bit is a moment behind the notification.
+                self.hasArmedForCurrentLock = false
+                self.hasAutoRetriedForCurrentLock = false
+                self.disarmOverlay()
+                return
+            }
+
+            var shouldReconcileUnlock = false
+            for attempt in 0 ..< 20 {
+                guard !Task.isCancelled, self.hasObservedLockEvents else { return }
+                let locked = self.lockMonitor.refreshFromSystem()
+                if let locked {
+                    #if DEBUG
+                    if attempt == 0 {
+                        print("[FaceID] trigger: reconcile event=\(event?.debugName ?? "launch") "
+                            + "CGSession=\(locked ? "locked" : "unlocked") "
+                            + "pending=\(self.lockMonitor.latestTriggerEvent?.debugName ?? "none")")
+                    }
+                    #endif
+                    if locked {
+                        guard !self.lockMonitor.isSleeping else {
+                            try? await Task.sleep(for: .milliseconds(100))
+                            continue
+                        }
+                        self.evaluateTrigger()
+                        return
+                    }
+                    shouldReconcileUnlock = shouldReconcileUnlock || self.lockMonitor.isScreenLocked
+
+                    // A launch, screen-off or sleep event does not claim the
+                    // session is locked, so it has no lock transition to await.
+                    if event != .screenLocked, event != .wake {
+                        self.evaluateTrigger()
+                        return
+                    }
+                } else {
+                    #if DEBUG
+                    if attempt == 0 {
+                        print("[FaceID] trigger: CGSession state unavailable; failing closed")
+                    }
+                    #endif
+                    self.statusMessage = "Face ID couldn't read the macOS lock state, so it did not start a scan."
+                    return
+                }
+
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+
+            guard !Task.isCancelled else { return }
+            if shouldReconcileUnlock {
+                _ = self.lockMonitor.refreshFromSystem(reconcileUnlocked: true)
+            }
+            #if DEBUG
+            print("[FaceID] trigger: CGSession never confirmed the lock signal")
+            #endif
+            self.statusMessage = "macOS announced a lock, but its session state never confirmed it. Face ID did not scan."
+            self.evaluateTrigger()
         }
     }
 
@@ -181,7 +276,7 @@ final class FaceIDController {
         // explicit "let me back in", so it clears the one-shot guard. The debounce
         // keeps the several wake signals from one lid-open from each re-arming and
         // fighting over the camera.
-        if lockMonitor.lastEvent == .wake, !isWithinRecentArmBurst {
+        if lockMonitor.latestTriggerEvent == .wake, !isWithinRecentArmBurst {
             hasArmedForCurrentLock = false
         }
 
@@ -189,29 +284,49 @@ final class FaceIDController {
         // "locked and opted in", not to whether a scan has already run.
         updateSpaceMonitor()
 
-        guard settings.isEnabled, !hasArmedForCurrentLock else { return }
-        guard let signal = requiredTrigger(for: lockMonitor.lastEvent) else { return }
+        guard settings.isEnabled else {
+            #if DEBUG
+            print("[FaceID] trigger: ignored — Face ID is disabled; "
+                + "pending=\(lockMonitor.latestTriggerEvent?.debugName ?? "none")")
+            #endif
+            return
+        }
+        guard !hasArmedForCurrentLock else { return }
+        guard let signal = requiredTrigger(for: lockMonitor.latestTriggerEvent) else { return }
         // A pinned display that isn't connected bails entirely rather than showing
         // up somewhere else — but it says so rather than failing silently, because
         // from the outside an unlit lock screen is indistinguishable from a broken
         // camera or a forgotten password.
         guard FaceIDGeometry.preferredScreen() != nil else {
             statusMessage = FaceIDGeometry.pinnedDisplayMissingMessage
+            #if DEBUG
+            print("[FaceID] trigger: blocked — preferred display is disconnected")
+            #endif
             return
         }
 
         guard FaceIDCredentials.isSessionUnlocked else {
             statusMessage = "Face ID is on, but the session is locked — authenticate once from the Face ID screen."
+            #if DEBUG
+            print("[FaceID] trigger: blocked — session key hasn't been unlocked with Touch ID")
+            #endif
             return
         }
         guard FaceIDCredentials.hasStoredPassword() else {
             statusMessage = "Face ID is on, but no password is stored yet."
+            #if DEBUG
+            print("[FaceID] trigger: blocked — no saved password")
+            #endif
             return
         }
 
         // A deselected trigger means "don't scan for this signal automatically",
         // not "do nothing": the user can still hover the notch to start one.
         let shouldAutoScan = settings.unlockTriggers.contains(signal)
+        #if DEBUG
+        print("[FaceID] trigger: \(signal.title) accepted — autoScan=\(shouldAutoScan) "
+            + "showUI=\(showsUI)")
+        #endif
 
         hasArmedForCurrentLock = true
         lastArmedAt = .now
@@ -230,7 +345,7 @@ final class FaceIDController {
         return ContinuousClock.now - lastArmedAt < rearmDebounce
     }
 
-    /// `nil` for signals that should arm nothing, including a nil `lastEvent` —
+    /// `nil` for signals that should arm nothing, including a nil pending trigger —
     /// otherwise the first observation after launch would fire regardless of what
     /// the user selected.
     private func requiredTrigger(for event: LockEventKind?) -> UnlockTrigger? {
@@ -306,7 +421,15 @@ final class FaceIDController {
     /// Either way the panel still arms: a deselected trigger only skips the
     /// automatic scan, leaving hover-to-start available.
     private func arm(autoScan: Bool) async {
-        guard LockMonitor.isScreenActuallyLocked() else { return }
+        guard LockMonitor.isScreenActuallyLocked() else {
+            #if DEBUG
+            print("[FaceID] trigger: arm cancelled — session is no longer locked")
+            #endif
+            return
+        }
+        #if DEBUG
+        print("[FaceID] trigger: arming overlay — autoScan=\(autoScan)")
+        #endif
         guard showsUI else {
             // Headless: `evaluateTrigger()` already established that autoScan is
             // true here, so this is simply "start scanning".
@@ -353,6 +476,9 @@ final class FaceIDController {
 
     /// Called on arm, and again whenever the panel's hover activation fires.
     private func startScanCycle(mode: ScanMode) {
+        #if DEBUG
+        print("[FaceID] scan: requested mode=\(mode == .unlock ? "unlock" : "measure")")
+        #endif
         scanTask?.cancel()
         scanGeneration &+= 1
         let generation = scanGeneration
@@ -378,6 +504,9 @@ final class FaceIDController {
 
         if let error = camera.errorMessage {
             statusMessage = error
+            #if DEBUG
+            print("[FaceID] scan: camera unavailable — \(error)")
+            #endif
             camera.stop()
             isScanning = false
             return

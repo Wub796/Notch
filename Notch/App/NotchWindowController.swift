@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import SwiftUI
 
 /// Owns the NotchPanel, dynamically sizes it to fit the active UI mode, and pins
@@ -7,6 +8,9 @@ import SwiftUI
 final class NotchWindowController: NSWindowController {
     private let state: NotchState
     private weak var trackedScreen: NSScreen?
+    private var observesFaceIDOverlayPhase = true
+    private var isFaceIDOverlayActive = false
+    private var shouldShowPanelAfterFaceID = false
     private var spaceObserver: NSObjectProtocol?
     private var mouseMoveGlobalMonitor: Any?
     private var mouseMoveLocalMonitor: Any?
@@ -64,6 +68,7 @@ final class NotchWindowController: NSWindowController {
         setupScreenParametersObserver()
         setupMouseTracking()
         syncWindowSize()
+        observeFaceIDOverlayPhase()
     }
 
     deinit {
@@ -71,6 +76,7 @@ final class NotchWindowController: NSWindowController {
     }
 
     func cleanup() {
+        observesFaceIDOverlayPhase = false
         // Release the state's hook on this controller. A replaced controller
         // (a display change rebuilds one) otherwise stays reachable through it
         // until the next one happens to overwrite the same slot.
@@ -117,7 +123,7 @@ final class NotchWindowController: NSWindowController {
                 guard let self, let panel = self.window else { return }
                 if mode == .expanded {
                     panel.ignoresMouseEvents = false
-                    panel.orderFrontRegardless()
+                    self.orderPanelFrontIfAllowed(panel)
                 } else {
                     self.updateIgnoreMouseEvents()
                 }
@@ -125,6 +131,47 @@ final class NotchWindowController: NSWindowController {
                 self.syncCursorTracking()
             }
         }
+    }
+
+    /// Tracks only active Face ID scan/resolve animations; the armed idle overlay
+    /// is `.closed` and should not hide the app's normal notch panel.
+    private func observeFaceIDOverlayPhase() {
+        guard observesFaceIDOverlayPhase else { return }
+        withObservationTracking {
+            _ = FaceIDOverlayController.shared.phase
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.observeFaceIDOverlayPhase()
+            }
+        }
+        setFaceIDOverlayActive(FaceIDOverlayController.shared.phase != .closed)
+    }
+
+    private func setFaceIDOverlayActive(_ active: Bool) {
+        guard active != isFaceIDOverlayActive else { return }
+        isFaceIDOverlayActive = active
+        guard let panel = window else { return }
+
+        if active {
+            shouldShowPanelAfterFaceID = panel.isVisible
+            panel.orderOut(nil)
+        } else {
+            let shouldShow = shouldShowPanelAfterFaceID
+            shouldShowPanelAfterFaceID = false
+            if shouldShow {
+                panel.orderFrontRegardless()
+            }
+        }
+    }
+
+    /// Defers any request to front the app panel until Face ID finishes resolving.
+    private func orderPanelFrontIfAllowed(_ panel: NSWindow) {
+        guard !isFaceIDOverlayActive else {
+            shouldShowPanelAfterFaceID = true
+            panel.orderOut(nil)
+            return
+        }
+        panel.orderFrontRegardless()
     }
 
     // MARK: - Window sizing
@@ -560,7 +607,8 @@ final class NotchWindowController: NSWindowController {
     /// so it reappears after lock-screen transitions; the panel is
     /// nonactivating, so this does not steal focus from the login UI.
     func showPanel() {
-        window?.orderFrontRegardless()
+        guard let panel = window else { return }
+        orderPanelFrontIfAllowed(panel)
     }
 }
 

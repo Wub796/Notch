@@ -1,8 +1,9 @@
 import AppKit
 import CoreGraphics
+import SwiftUI
 
 /// Which silhouette the Face ID panel wears on a given screen.
-enum FaceIDPanelStyle {
+enum FaceIDPanelStyle: Equatable {
     /// Inverted top corners, flush with the screen's top edge, sitting on the
     /// physical notch. The scan hides behind hardware that is already there.
     case notch
@@ -15,11 +16,9 @@ enum FaceIDPanelStyle {
 ///
 /// Ported from Glance (`NotchOverlay/NotchGeometry.swift`, MIT © Jonathan Zhou).
 /// Deliberately separate from this app's `NotchGeometry`, which describes the
-/// interactive panel: that one is sized so content can be laid out beside the
-/// hardware cutout, while this one is sized for a single centred scan animation
-/// that must sit exactly on the cutout, at the lock screen, with no content
-/// beside it in either state.
-struct FaceIDGeometry {
+/// interactive panel: this one sizes the scan around the hardware cutout and
+/// places a separate now-playing surface above macOS's lock-screen account UI.
+struct FaceIDGeometry: Equatable {
     /// The physical notch's own dimensions, or `pillClosedSize`.
     let closedSize: CGSize
     /// Whether this screen has a real physical notch rather than the pill fallback.
@@ -31,6 +30,29 @@ struct FaceIDGeometry {
     /// square scan animation plus breathing room. The pill has its own size.
     static let notchOpenSize = CGSize(width: 220, height: 200)
     static let pillOpenSize = CGSize(width: 180, height: 180)
+
+    /// Larger, detached music surface positioned above the native login card.
+    /// Its own window keeps it out of the notch's scan animation and gives it
+    /// enough room for artwork, transport controls, and a seekable progress bar.
+    static let nowPlayingPlayerWidth: CGFloat = 384
+    static let nowPlayingPlayerHeight: CGFloat = 164
+    /// macOS doesn't expose a stable public frame for the lock-screen account
+    /// card. Place the player a little above the screen midpoint, then clamp it
+    /// below the menu-bar/notch safe area on shorter displays.
+    static func nowPlayingOrigin(for screen: NSScreen, size: CGSize) -> NSPoint {
+        let frame = screen.frame
+        let verticalOffset = min(max(frame.height * 0.12, 96), 170)
+        let minX = frame.minX + 16
+        let maxX = max(minX, frame.maxX - size.width - 16)
+        let x = min(max(frame.midX - size.width / 2, minX), maxX)
+        let minY = frame.minY + 24
+        let topInset = max(screen.safeAreaInsets.top, 28) + 24
+        let maxY = max(minY, frame.maxY - topInset - size.height)
+        let y = min(max(frame.midY + verticalOffset, minY), maxY)
+        return NSPoint(x: x, y: y)
+    }
+
+    static let nowPlayingPanelCornerRadius: CGFloat = 28
 
     /// Corner radii for the notch silhouette. The top radius doubles as the width
     /// of the outward flare on each side — see `FaceIDShape`.
@@ -81,16 +103,9 @@ struct FaceIDGeometry {
     static let pillContentPaddingTrailing: CGFloat = 32
     static let pillContentPaddingBottom: CGFloat = 32
 
-    // MARK: - Panel open/close springs
-    //
-    // Shared by both styles. Opening overshoots slightly; closing is critically
-    // damped, so a panel that fails to recognize anything closes without a bounce
-    // that reads as a shrug.
-
-    static let openSpringResponse: Double = 0.45
-    static let openSpringDamping: Double = 0.7
-    static let closeSpringResponse: Double = 0.45
-    static let closeSpringDamping: Double = 1.0
+    // Panel opening and closing use the shared animation profile, so the
+    // lock-screen overlay stays in step with the rest of the notch and respects
+    // Reduce Motion.
 
     // MARK: - Pill enter/exit choreography
     //
@@ -98,6 +113,11 @@ struct FaceIDGeometry {
     // first and then grows; exiting, it shrinks first and then slides away.
 
     static let pillSlideDuration: Double = 0.25
+    static var slideAnimation: Animation {
+        NotchAnimations.prefersReducedMotion
+            ? NotchAnimations.reduced
+            : .easeOut(duration: pillSlideDuration)
+    }
     /// Expansion starts this long after the slide begins.
     static let pillEnterExpansionDelay: Double = 0.16
     /// Slide starts this long after the shrink begins.
@@ -138,7 +158,6 @@ struct FaceIDGeometry {
 
     /// So the lock glyph can be nudged to land with the video's own resolve beat.
     static let minimalLockUnlockDelay: Double = 0
-    static let minimalLockAnimationDuration: Double = 0.4
 
     // MARK: - Scan "breathing" pulse
     //
@@ -150,10 +169,20 @@ struct FaceIDGeometry {
     static let scanPulseOpacity: Double = 0.65
     /// One half-cycle: full to dimmed, or dimmed to full.
     static let scanPulseHalfCycleDuration: Double = 0.4
+    static var scanPulseAnimation: Animation {
+        NotchAnimations.prefersReducedMotion
+            ? NotchAnimations.reduced
+            : .easeInOut(duration: scanPulseHalfCycleDuration)
+    }
     static let scanPulseHoldDuration: Double = 0.05
     /// Deliberately quicker than a half-cycle, so content is back at full while the
     /// success or failure animation is still early in its playback.
     static let scanPulseSettleDuration: Double = 0.2
+    static var scanPulseSettleAnimation: Animation {
+        NotchAnimations.prefersReducedMotion
+            ? NotchAnimations.reduced
+            : .easeOut(duration: scanPulseSettleDuration)
+    }
     /// Wait before the first pulse, so breathing starts only once the panel has
     /// finished expanding. Hand-tuned: springs have no hard end time.
     static let scanPulseStartDelay: Double = 0.6
@@ -161,29 +190,37 @@ struct FaceIDGeometry {
     /// Cosmetic size bump on hover. Included here so the fixed window has margin
     /// for it instead of clipping the bump.
     static let hoverBump: CGFloat = 6
+    static var hoverAnimation: Animation { NotchAnimations.hover }
 
     // MARK: - Window size, per style
     //
     // Created once and never resized afterwards — see `FaceIDOverlayWindow`. Each
-    // style is floored to its own scan footprint and gets its own shadow margin.
+    // style reserves the scan footprint and its shadow margin.
 
     /// Extra margin so the in-content `.shadow()` isn't clipped: the window itself
     /// has `hasShadow = false`.
     static let notchShadowPadding: CGFloat = 24
     static let pillShadowPadding: CGFloat = 24
 
-    static func windowSize(for style: FaceIDPanelStyle) -> CGSize {
-        switch style {
+    static func windowSize(for geometry: FaceIDGeometry) -> CGSize {
+        switch geometry.style {
         case .notch:
+            // The minimal style is the widest: reserve the measured notch,
+            // flanking wings and their flare. The regular scan is narrower.
+            let minimalWidth = geometry.closedSize.width
+                + minimalNotchFlankWidth * 2
+                + flareAllowance(topRadius: minimalNotchTopRadius, style: .notch)
+            let regularWidth = notchOpenSize.width
+                + flareAllowance(topRadius: openTopRadius, style: .notch)
+            let minimumHeight = geometry.closedSize.height + minimalNotchHeightBump
             return CGSize(
-                width: notchOpenSize.width + notchShadowPadding * 2 + hoverBump,
-                height: notchOpenSize.height + notchShadowPadding + hoverBump
+                width: max(minimalWidth, regularWidth) + notchShadowPadding * 2 + hoverBump,
+                height: max(notchOpenSize.height, minimumHeight)
+                    + notchShadowPadding + hoverBump
             )
         case .pill:
             return CGSize(
                 width: pillOpenSize.width + pillShadowPadding * 2 + hoverBump,
-                // `pillTopGap` because the detached pill's panel is pushed down by
-                // that much.
                 height: pillOpenSize.height + pillShadowPadding + hoverBump + pillTopGap
             )
         }

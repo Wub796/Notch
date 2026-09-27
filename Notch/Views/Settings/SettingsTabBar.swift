@@ -37,15 +37,17 @@ struct SettingsTabBar: View {
                     .frame(width: frame.width, height: frame.height)
                     .offset(x: frame.minX, y: frame.minY)
                     .transition(.opacity)
+                    .allowsHitTesting(false)
             }
 
-            HStack(spacing: 0) {
+            HStack(spacing: SettingsMetrics.tabItemSpacing) {
                 ForEach(SettingsTab.visibleTabs) { tab in
                     item(tab)
                 }
             }
         }
         .coordinateSpace(name: Self.coordinateSpace)
+        .scrollClipDisabled()
         .padding(.horizontal, SettingsMetrics.tabBarHorizontalPadding)
         .frame(height: SettingsMetrics.tabBarHeight)
         .background {

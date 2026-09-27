@@ -156,6 +156,31 @@ final class MixerEngine {
         store(mix)
     }
 
+    /// Reconciles stored profile IDs after a library rename/replacement/removal.
+    /// Missing references are cleared instead of leaving an active, invisible
+    /// correction ID that silently stops affecting audio.
+    func reconcileAutoEQProfileReferences(
+        replacements: [UUID: UUID],
+        validProfileIDs: Set<UUID>
+    ) {
+        var didChange = false
+        for appID in mixes.keys {
+            guard var mix = mixes[appID], let profileID = mix.autoEQProfileID else { continue }
+            if let replacement = replacements[profileID] {
+                mix.autoEQProfileID = replacement
+            } else if !validProfileIDs.contains(profileID) {
+                mix.autoEQProfileID = nil
+            } else {
+                continue
+            }
+            mixes[appID] = mix
+            didChange = true
+        }
+        guard didChange else { return }
+        persist()
+        reconcile()
+    }
+
     /// Forgets an app's settings and gives it its own audio back.
     func reset(_ appID: String) {
         mixes.removeValue(forKey: appID)
@@ -236,8 +261,11 @@ final class MixerEngine {
                 strip.markStarting()
                 build(strip, replacing: previous, for: appID)
             }
+            let appMix = mix(for: appID)
+            let preampFactor = appMix.autoEQProfileID
+                .flatMap { AutoEQLibrary.shared.profile(id: $0)?.preampFactor } ?? 1
             strip.apply(
-                gain: mix(for: appID).isMuted ? 0 : mix(for: appID).gain,
+                gain: appMix.isMuted ? 0 : appMix.gain * preampFactor,
                 filters: filters(for: appID, outputDevice: target),
                 channelCount: 2
             )

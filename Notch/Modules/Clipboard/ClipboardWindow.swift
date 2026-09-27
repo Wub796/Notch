@@ -142,7 +142,7 @@ struct ClipboardWindowView: View {
                     Spacer()
                     if hasUnpinned {
                         Button("Clear Unpinned") {
-                            withAnimation { clipboard.clearUnpinned() }
+                            withAnimation(NotchAnimations.content) { clipboard.clearUnpinned() }
                         }
                         .buttonStyle(.borderless)
                     }
@@ -152,7 +152,7 @@ struct ClipboardWindowView: View {
             }
         }
         .formStyle(.grouped)
-        .animation(.default, value: clipboard.entries)
+        .animation(NotchAnimations.content, value: clipboard.entries)
         .frame(minWidth: 380, minHeight: 360)
     }
 
@@ -216,10 +216,10 @@ private struct ClipboardHistoryRow: View {
                     tint: entry.isPinned ? .orange : nil,
                     help: entry.isPinned ? "Unpin" : "Pin"
                 ) {
-                    withAnimation { clipboard.togglePin(entry) }
+                    withAnimation(NotchAnimations.content) { clipboard.togglePin(entry) }
                 }
                 actionButton("trash", help: "Remove") {
-                    withAnimation { clipboard.remove(entry) }
+                    withAnimation(NotchAnimations.content) { clipboard.remove(entry) }
                 }
             }
             // Quiet until the row is pointed at, so a long list reads as text
@@ -232,11 +232,11 @@ private struct ClipboardHistoryRow: View {
         .contextMenu {
             Button("Copy") { copy() }
             Button(entry.isPinned ? "Unpin" : "Pin") {
-                withAnimation { clipboard.togglePin(entry) }
+                withAnimation(NotchAnimations.content) { clipboard.togglePin(entry) }
             }
             Divider()
             Button("Remove", role: .destructive) {
-                withAnimation { clipboard.remove(entry) }
+                withAnimation(NotchAnimations.content) { clipboard.remove(entry) }
             }
         }
         .help("Click to copy")

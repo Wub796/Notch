@@ -1,6 +1,10 @@
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Explicit app-lifetime route for views hosted in standalone AppKit windows.
+    /// Settings actions use the same delegate and root state as the notch panel.
+    private(set) static var shared: AppDelegate?
+
     /// Root app state; exposed so the menu bar scene can drive commands
     /// (open notch, play/pause, keep awake) against the same instance.
     let state = NotchState()
@@ -13,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenChangeWork: DispatchWorkItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.shared = self
         NSApp.setActivationPolicy(.accessory)
         _ = UpdateController.shared
         clearRetiredSpotifyCookie()
@@ -318,6 +323,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKeyManager.shared.apply(
             HotKeyManager.Shortcut(rawValue: NotchSettings.shared.hotKey) ?? .disabled
         )
+    }
+
+    /// Called by Face ID settings to start an enrollment in the notch. Select
+    /// and expand first; both state transitions settle asynchronously, so the
+    /// queued show also guarantees the panel is explicitly brought forward.
+    func openFaceIDEnrollment(replacing identity: FaceIdentity? = nil) {
+        state.faceEnrollmentRequest = FaceEnrollmentRequest(replacing: identity)
+        state.isPinned = true
+        state.select(.faceID)
+        state.expand()
+        DispatchQueue.main.async { [weak self] in
+            self?.windowController?.showPanel()
+        }
     }
 
     private func presentOnboardingIfNeeded() {

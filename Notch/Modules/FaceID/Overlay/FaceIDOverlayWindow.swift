@@ -60,6 +60,9 @@ final class FaceIDOverlayWindowController {
     /// The visible panel's frame inside the window, in the hosting view's top-down
     /// coordinates — reported by `FaceIDOverlayView`.
     private var interactiveContentRect: CGRect?
+    /// Only allow hits over the scan panel's drawn shape, including while the
+    /// lock-screen window is in SkyLight's elevated space.
+    private var restrictClicksToContent = false
     /// Re-checks the cursor while `wantsInteractive`; see `updateMousePassthrough()`.
     private var cursorPollTimer: Timer?
 
@@ -130,6 +133,7 @@ final class FaceIDOverlayWindowController {
     /// something on it has to receive keystrokes.
     func setInteractive(_ interactive: Bool, key: Bool = false) {
         wantsInteractive = interactive
+        restrictClicksToContent = true
         window?.acceptsKey = interactive
         updateCursorPolling()
         guard interactive, key, let window else { return }
@@ -164,20 +168,25 @@ final class FaceIDOverlayWindowController {
             window.ignoresMouseEvents = true
             return
         }
-        // The lock screen keeps the original whole-window behaviour: nothing there
-        // sits under the notch to click on, and hover-to-retry must not regress.
-        guard !isSkyLightDelegated, let rect = interactiveContentRect, let hostView = window.contentView else {
+        // No input when we are in passive mode; it is armed only for scan or
+        // hover-to-retry interactions above the native login window.
+        guard restrictClicksToContent, let rect = interactiveContentRect,
+              let hostView = window.contentView
+        else {
             window.ignoresMouseEvents = false
             return
         }
         let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
         let local = hostView.convert(windowPoint, from: nil)
+        // SwiftUI lays this view out across the fixed host to keep its center
+        // aligned with the physical notch. Test the panel's *own* frame, not the
+        // full-width hosting view, so a click on native unlock UI passes through.
         // `rect` is top-down, from SwiftUI; normalise the AppKit point to match.
         let topDown = CGPoint(
             x: local.x,
             y: hostView.isFlipped ? local.y : hostView.bounds.height - local.y
         )
-        let isOverPanel = rect
+        let isOverPanel = !isSkyLightDelegated || rect
             .insetBy(dx: -Self.interactiveRectOutset, dy: -Self.interactiveRectOutset)
             .contains(topDown)
         if window.ignoresMouseEvents == isOverPanel {
@@ -207,7 +216,7 @@ final class FaceIDOverlayWindowController {
         if let window { return window }
         // Never resized afterwards, so a style change mid-session keeps whatever
         // margin the window was created with.
-        let size = FaceIDGeometry.windowSize(for: currentGeometry.style)
+        let size = FaceIDGeometry.windowSize(for: currentGeometry)
         let rect = NSRect(x: 0, y: 0, width: size.width, height: size.height)
         let newWindow = FaceIDOverlayWindow(contentRect: rect)
         newWindow.contentView = contentView

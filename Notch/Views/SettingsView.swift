@@ -103,17 +103,22 @@ struct SettingsView: View {
     @ViewBuilder
     private var pageBody: some View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
-            switch selection {
-            case .general: GeneralSettingsPane()
-            case .notch: NotchSettingsPane()
-            case .media: MediaSettingsPane()
-            case .weather: WeatherSettingsPane()
-            case .activities: ActivitiesSettingsPane()
-            case .system: SystemSettingsPane()
-            case .faceID: FaceIDSettingsPane()
-            case .privacy: PrivacySettingsPane()
-            case .about: AboutSettingsPane()
+            Group {
+                switch selection {
+                case .general: GeneralSettingsPane()
+                case .notch: NotchSettingsPane()
+                case .media: MediaSettingsPane()
+                case .weather: WeatherSettingsPane()
+                case .activities: ActivitiesSettingsPane()
+                case .system: SystemSettingsPane()
+                case .faceID: FaceIDSettingsPane()
+                case .privacy: PrivacySettingsPane()
+                case .about: AboutSettingsPane()
+                }
             }
+            .id(selection)
+            .transition(.opacity.combined(with: .offset(y: 4)))
+            .animation(SettingsMetrics.tabSelectionAnimation, value: selection)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -443,7 +448,7 @@ private struct NotchSettingsPane: View {
                 Toggle("", isOn: Binding(
                     get: { isOn },
                     set: { on in
-                        withAnimation {
+                        withAnimation(NotchAnimations.content) {
                             if on {
                                 settings.dashboardWidgets.append(widget)
                             } else {
@@ -468,7 +473,7 @@ private struct NotchSettingsPane: View {
         let to = from + offset
         guard list.indices.contains(to) else { return }
         list.swapAt(from, to)
-        withAnimation { settings.dashboardWidgets = list }
+        withAnimation(NotchAnimations.content) { settings.dashboardWidgets = list }
     }
 
     private func sliderRow(
@@ -1477,6 +1482,7 @@ private struct SystemSettingsPane: View {
         ) { result in
             switch result {
             case .success(let url):
+                importFailure = nil
                 _ = AutoEQLibrary.shared.importProfile(from: url)
             case .failure(let error):
                 importFailure = error.localizedDescription
@@ -1509,8 +1515,12 @@ private struct SystemSettingsPane: View {
             Spacer(minLength: 8)
 
             Button("Remove") {
-                AutoEQLibrary.shared.remove(profile.id)
-                importFailure = nil
+                do {
+                    try AutoEQLibrary.shared.remove(profile.id)
+                    importFailure = nil
+                } catch {
+                    importFailure = error.localizedDescription
+                }
             }
         }
     }
@@ -1525,8 +1535,13 @@ private struct SystemSettingsPane: View {
 
     private func revealLibraryFolder() {
         let url = AutoEQLibrary.shared.directoryURL
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        do {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+            importFailure = nil
+        } catch {
+            importFailure = "Couldn't open the profile folder: \(error.localizedDescription)"
+        }
     }
 }
 

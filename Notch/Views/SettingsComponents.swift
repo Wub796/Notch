@@ -46,18 +46,31 @@ struct SettingsRow<Trailing: View>: View {
             HStack(spacing: 10) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: SettingsMetrics.rowIconSize, weight: .medium))
                         .foregroundStyle(tint)
                         // Fixed box so rows with and without an icon line up.
-                        .frame(width: 18)
+                        .frame(
+                            width: SettingsMetrics.rowIconBoxSize,
+                            height: SettingsMetrics.rowIconBoxSize
+                        )
                 }
 
-                SettingsRowContent(title: title, subtitle: subtitle, trailing: trailing)
+                SettingsRowContent(
+                    title: title,
+                    subtitle: subtitle,
+                    horizontalInset: 0
+                ) {
+                    trailing()
+                }
             }
+            .padding(.horizontal, SettingsMetrics.rowHorizontalInset)
 
             if showsDivider {
                 SettingsGroupDivider()
-                    .padding(.leading, systemImage == nil ? 0 : 28)
+                    .padding(
+                        .leading,
+                        systemImage == nil ? 0 : SettingsMetrics.rowIconBoxSize + 10
+                    )
             }
         }
     }
@@ -81,9 +94,12 @@ struct SettingsSliderRow: View {
                 HStack(spacing: 10) {
                     if let systemImage {
                         Image(systemName: systemImage)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: SettingsMetrics.rowIconSize, weight: .medium))
                             .foregroundStyle(tint)
-                            .frame(width: 18)
+                            .frame(
+                                width: SettingsMetrics.rowIconBoxSize,
+                                height: SettingsMetrics.rowIconBoxSize
+                            )
                     }
                     Text(title)
                         .font(SettingsMetrics.rowFont)
@@ -96,14 +112,20 @@ struct SettingsSliderRow: View {
 
                 Slider(value: $value, in: range, step: step)
                     .tint(SettingsMetrics.accent)
-                    .padding(.leading, systemImage == nil ? 0 : 28)
+                    .padding(
+                        .leading,
+                        systemImage == nil ? 0 : SettingsMetrics.rowIconBoxSize + 10
+                    )
             }
             .padding(.horizontal, SettingsMetrics.rowHorizontalInset)
             .padding(.vertical, 10)
 
             if showsDivider {
                 SettingsGroupDivider()
-                    .padding(.leading, systemImage == nil ? 0 : 28)
+                    .padding(
+                        .leading,
+                        systemImage == nil ? 0 : SettingsMetrics.rowIconBoxSize + 10
+                    )
             }
         }
     }
@@ -129,9 +151,12 @@ struct SettingsChipRow<Chip: View>: View {
                 HStack(spacing: 10) {
                     if let systemImage {
                         Image(systemName: systemImage)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: SettingsMetrics.rowIconSize, weight: .medium))
                             .foregroundStyle(tint)
-                            .frame(width: 18)
+                            .frame(
+                                width: SettingsMetrics.rowIconBoxSize,
+                                height: SettingsMetrics.rowIconBoxSize
+                            )
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -150,14 +175,20 @@ struct SettingsChipRow<Chip: View>: View {
                 }
 
                 chips()
-                    .padding(.leading, systemImage == nil ? 0 : 28)
+                    .padding(
+                        .leading,
+                        systemImage == nil ? 0 : SettingsMetrics.rowIconBoxSize + 10
+                    )
             }
             .padding(.horizontal, SettingsMetrics.rowHorizontalInset)
             .padding(.vertical, 10)
 
             if showsDivider {
                 SettingsGroupDivider()
-                    .padding(.leading, systemImage == nil ? 0 : 28)
+                    .padding(
+                        .leading,
+                        systemImage == nil ? 0 : SettingsMetrics.rowIconBoxSize + 10
+                    )
             }
         }
     }
@@ -174,14 +205,14 @@ struct SettingsCallout: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: systemImage)
-                .font(.system(size: 14))
+                .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(tint)
             Text(text)
                 .font(.system(size: 12))
                 .foregroundStyle(SettingsMetrics.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(12)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius - 4, style: .continuous)

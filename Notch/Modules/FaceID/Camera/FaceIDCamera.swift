@@ -56,12 +56,14 @@ final class FaceIDCamera: NSObject {
     /// Opens the device, asking for permission if it has never been asked.
     /// Idempotent, so a scan cycle can call it without checking first.
     func start() async {
+        guard !Task.isCancelled else { return }
         let status = AVCaptureDevice.authorizationStatus(for: .video)
         switch status {
         case .authorized:
             permission = .granted
         case .notDetermined:
             let granted = await AVCaptureDevice.requestAccess(for: .video)
+            guard !Task.isCancelled else { return }
             permission = granted ? .granted : .denied
         default:
             permission = .denied
@@ -77,14 +79,23 @@ final class FaceIDCamera: NSObject {
             return
         }
 
+        guard !Task.isCancelled else { return }
         errorMessage = nil
         configureSessionIfNeeded()
         reconcileDeviceIfNeeded()
+        guard errorMessage == nil else { return }
 
-        sessionQueue.async { [session] in
-            if !session.isRunning {
-                session.startRunning()
+        await withCheckedContinuation { continuation in
+            sessionQueue.async { [session] in
+                if !session.isRunning {
+                    session.startRunning()
+                }
+                continuation.resume()
             }
+        }
+        guard !Task.isCancelled else {
+            stop()
+            return
         }
         isRunning = true
     }
@@ -149,14 +160,20 @@ final class FaceIDCamera: NSObject {
         session.beginConfiguration()
         if let currentInput {
             session.removeInput(currentInput)
+            self.currentInput = nil
         }
-        if let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) {
+        do {
+            let input = try AVCaptureDeviceInput(device: device)
+            guard session.canAddInput(input) else {
+                errorMessage = "macOS couldn't add the selected camera to the capture session."
+                session.commitConfiguration()
+                return
+            }
             session.addInput(input)
             currentInput = input
             selectHighestResolutionFormat(for: device)
-        } else {
-            currentInput = nil
-            errorMessage = "No camera device found."
+        } catch {
+            errorMessage = "Couldn't open the selected camera: \(error.localizedDescription)"
         }
         session.commitConfiguration()
     }

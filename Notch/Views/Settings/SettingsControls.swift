@@ -53,6 +53,9 @@ struct SettingsInfoButton: View {
 struct SettingsRowContent<Trailing: View>: View {
     let title: String
     var subtitle: String? = nil
+    /// Lets an icon-bearing row own the outer inset without double-padding its
+    /// title and trailing control.
+    var horizontalInset: CGFloat = SettingsMetrics.rowHorizontalInset
     /// Caps the subtitle's width so it wraps instead of stretching toward
     /// the trailing control; `nil` (the default) leaves it unconstrained.
     var subtitleMaxWidth: CGFloat? = nil
@@ -82,7 +85,7 @@ struct SettingsRowContent<Trailing: View>: View {
             Spacer(minLength: 8)
             trailing()
         }
-        .padding(.horizontal, SettingsMetrics.rowHorizontalInset)
+        .padding(.horizontal, horizontalInset)
         // `minHeight`, not a fixed `height` — every existing (subtitle-less)
         // row still sizes to exactly `rowHeight`, but a wrapped subtitle can
         // grow the row taller instead of getting clipped.
@@ -652,6 +655,8 @@ struct UnlockAnimationPicker: View {
     /// How long the live preview holds on the success animation before collapsing.
     private static let previewHoldDuration: Duration = .seconds(1.5)
 
+    @State private var previewTask: Task<Void, Never>?
+
     var body: some View {
         SettingsLabeledOptionRow(
             title: "Style",
@@ -671,16 +676,29 @@ struct UnlockAnimationPicker: View {
         }
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.4)
+        .onDisappear {
+            previewTask?.cancel()
+            previewTask = nil
+            FaceIDOverlayController.shared.dismissImmediately()
+        }
     }
 
     /// Picks the tile (a re-tap replays the preview too) and plays that
     /// style's real animation on the notch/pill via `styleOverride`.
     private func selectAndPreview(_ style: UnlockAnimationStyle) {
+        previewTask?.cancel()
         selection = style
-        FaceIDOverlayController.shared.present(styleOverride: style)
-        Task {
-            try? await Task.sleep(for: Self.previewHoldDuration)
-            FaceIDOverlayController.shared.finish(success: true)
+        let overlay = FaceIDOverlayController.shared
+        overlay.present(styleOverride: style)
+        previewTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: Self.previewHoldDuration)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            overlay.finish(success: true)
+            previewTask = nil
         }
     }
 

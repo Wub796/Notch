@@ -10,10 +10,11 @@ enum FaceIDSecureFaceStore {
     /// Distinct filename and extension so plaintext can never be mistaken for
     /// ciphertext — and so a stray `.json` with the same stem is never read.
     private static var fileURL: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let directory = appSupport.appendingPathComponent("Notch", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory.appendingPathComponent("face-identities.enc")
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
+        return appSupport
+            .appendingPathComponent("Notch", isDirectory: true)
+            .appendingPathComponent("face-identities.enc")
     }
 
     /// True if a store exists on disk, regardless of whether the session is
@@ -28,9 +29,17 @@ enum FaceIDSecureFaceStore {
         guard FaceIDCredentials.isSessionUnlocked else {
             throw FaceIDSecureFaceStoreError.sessionLocked
         }
-        guard let ciphertext = try? Data(contentsOf: fileURL) else { return [] }
-        let plaintext = try FaceIDCredentials.decrypt(ciphertext)
-        return try JSONDecoder().decode([FaceIdentity].self, from: plaintext)
+        // Only a genuinely missing file means "no faces yet". Treat I/O errors
+        // and malformed ciphertext as load failures so a later save cannot
+        // overwrite an enrollment store that this build failed to read. Avoid
+        // `fileExists` here: it also returns false when the path is inaccessible.
+        do {
+            let ciphertext = try Data(contentsOf: fileURL)
+            let plaintext = try FaceIDCredentials.decrypt(ciphertext)
+            return try JSONDecoder().decode([FaceIdentity].self, from: plaintext)
+        } catch CocoaError.fileReadNoSuchFile {
+            return []
+        }
     }
 
     static func save(_ identities: [FaceIdentity]) throws {
@@ -39,11 +48,19 @@ enum FaceIDSecureFaceStore {
         }
         let plaintext = try JSONEncoder().encode(identities)
         let ciphertext = try FaceIDCredentials.encrypt(plaintext)
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         try ciphertext.write(to: fileURL, options: .atomic)
     }
 
-    static func deleteAll() {
-        try? FileManager.default.removeItem(at: fileURL)
+    static func deleteAll() throws {
+        do {
+            try FileManager.default.removeItem(at: fileURL)
+        } catch CocoaError.fileNoSuchFile {
+            // Already absent is the desired final state.
+        }
     }
 }
 

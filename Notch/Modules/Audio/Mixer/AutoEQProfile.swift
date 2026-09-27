@@ -167,6 +167,19 @@ enum AutoEQParser {
 /// loaded once at launch — nothing here is on the audio path.
 @Observable
 final class AutoEQLibrary {
+    enum LibraryError: LocalizedError {
+        case storeUnreadable
+        case saveFailed(Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .storeUnreadable:
+                "The profile library couldn't be read, so saving is blocked to avoid overwriting it."
+            case .saveFailed(let error):
+                "Couldn't save the profile library: \(error.localizedDescription)"
+            }
+        }
+    }
     static let shared = AutoEQLibrary()
 
     private(set) var profiles: [AutoEQProfile] = []
@@ -176,6 +189,9 @@ final class AutoEQLibrary {
 
     private let directory: URL
     private let indexURL: URL
+    /// Distinguishes a valid empty library from a file that exists but could
+    /// not be decoded; writes must not replace the latter with an empty list.
+    private var hasLoadedSuccessfully = false
 
     private init() {
         let base = FileManager.default
@@ -193,6 +209,7 @@ final class AutoEQLibrary {
     /// Where the imported corrections live, so Settings can show the folder
     /// rather than describing it.
     var directoryURL: URL { directory }
+    var isStoreReadable: Bool { hasLoadedSuccessfully }
 
     /// The profile whose name best matches an output device, used to
     /// pre-select a correction when a pair of headphones is first seen.
@@ -210,14 +227,19 @@ final class AutoEQLibrary {
     @discardableResult
     func importProfile(from url: URL) -> AutoEQProfile? {
         do {
+            let didStartAccessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if didStartAccessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
             let text = try String(contentsOf: url, encoding: .utf8)
             let name = displayName(for: url)
             guard let profile = AutoEQParser.parse(text, name: name, source: url.lastPathComponent) else {
                 lastImportFailure = "\(url.lastPathComponent) isn't an AutoEQ parametric or graphic profile."
                 return nil
             }
-            add(profile)
-            return profile
+            return try add(profile)
         } catch {
             lastImportFailure = error.localizedDescription
             return nil
@@ -239,25 +261,58 @@ final class AutoEQLibrary {
                 lastImportFailure = "That file isn't an AutoEQ parametric or graphic profile."
                 return nil
             }
-            add(profile)
-            return profile
+            return try add(profile)
         } catch {
             lastImportFailure = error.localizedDescription
             return nil
         }
     }
 
-    func remove(_ id: UUID) {
-        profiles.removeAll { $0.id == id }
-        persist()
+    func remove(_ id: UUID) throws {
+        guard profiles.contains(where: { $0.id == id }) else { return }
+        var updated = profiles
+        updated.removeAll { $0.id == id }
+        try persist(updated)
+        profiles = updated
+        lastImportFailure = nil
+        MixerBridge.shared.mixer?.reconcileAutoEQProfileReferences(
+            replacements: [:],
+            validProfileIDs: Set(updated.map(\.id))
+        )
     }
 
-    private func add(_ profile: AutoEQProfile) {
-        profiles.removeAll { $0.name.lowercased() == profile.name.lowercased() }
-        profiles.append(profile)
-        profiles.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    @discardableResult
+    private func add(_ profile: AutoEQProfile) throws -> AutoEQProfile {
+        let matchingProfiles = profiles.filter {
+            $0.name.compare(profile.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+        let committed = AutoEQProfile(
+            id: matchingProfiles.first?.id ?? profile.id,
+            name: profile.name,
+            source: profile.source,
+            preampDB: profile.preampDB,
+            filters: profile.filters,
+            graphicBands: profile.graphicBands
+        )
+        var updated = profiles.filter {
+            $0.name.compare(profile.name, options: [.caseInsensitive, .diacriticInsensitive]) != .orderedSame
+        }
+        updated.append(committed)
+        updated.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        try persist(updated)
+        profiles = updated
         lastImportFailure = nil
-        persist()
+
+        let replacements = Dictionary(
+            uniqueKeysWithValues: matchingProfiles
+                .filter { $0.id != committed.id }
+                .map { ($0.id, committed.id) }
+        )
+        MixerBridge.shared.mixer?.reconcileAutoEQProfileReferences(
+            replacements: replacements,
+            validProfileIDs: Set(updated.map(\.id))
+        )
+        return committed
     }
 
     private func displayName(for url: URL) -> String {
@@ -271,19 +326,31 @@ final class AutoEQLibrary {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: indexURL),
-              let stored = try? JSONDecoder().decode([AutoEQProfile].self, from: data)
-        else { return }
-        profiles = stored
+        do {
+            let data = try Data(contentsOf: indexURL)
+            profiles = try JSONDecoder().decode([AutoEQProfile].self, from: data)
+            hasLoadedSuccessfully = true
+        } catch CocoaError.fileReadNoSuchFile {
+            // A missing index is the normal empty-library state.
+            hasLoadedSuccessfully = true
+        } catch {
+            hasLoadedSuccessfully = false
+            lastImportFailure = "Couldn't read the profile library: \(error.localizedDescription)"
+        }
     }
 
-    private func persist() {
+    private func persist(_ updated: [AutoEQProfile]) throws {
+        guard hasLoadedSuccessfully else {
+            throw LibraryError.storeUnreadable
+        }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let data = try JSONEncoder().encode(profiles)
+            let data = try JSONEncoder().encode(updated)
             try data.write(to: indexURL, options: .atomic)
         } catch {
-            lastImportFailure = "Couldn't save the profile: \(error.localizedDescription)"
+            let failure = LibraryError.saveFailed(error)
+            lastImportFailure = failure.localizedDescription
+            throw failure
         }
     }
 }

@@ -463,8 +463,15 @@ private struct EqualizerPanel: View {
                             ),
                             in: -12...12
                         )
+                        // Give the native horizontal slider its full track width
+                        // before rotating it. Framing to 14pt before rotation
+                        // squeezed the actual control to a tiny hotspot while its
+                        // transformed drawing overflowed into neighboring bands.
+                        .frame(width: 66)
                         .rotationEffect(.degrees(-90))
                         .frame(width: 14, height: 66)
+                        .accessibilityLabel("\(frequencyLabel(band.frequency)) Hz equalizer band")
+                        .accessibilityValue(String(format: "%+.1f dB", band.gain))
 
                         Text(frequencyLabel(band.frequency))
                             .font(.system(size: 9))
@@ -486,9 +493,9 @@ private struct EqualizerPanel: View {
         .fileImporter(isPresented: $isImportingProfile, allowedContentTypes: [.plainText, .text]) { result in
             switch result {
             case .success(let url):
+                importMessage = nil
                 if let profile = AutoEQLibrary.shared.importProfile(from: url) {
                     mixer.setAutoEQProfile(profile.id, for: appID)
-                    importMessage = nil
                 } else {
                     importMessage = AutoEQLibrary.shared.lastImportFailure
                 }

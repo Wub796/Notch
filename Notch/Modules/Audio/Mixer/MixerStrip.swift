@@ -277,7 +277,7 @@ final class MixerStrip {
         let channels = max(Int(format.mChannelsPerFrame), 1)
         channelCount = channels
         isNonInterleaved = (format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0
-        filters.prepare(sections: [], channelCount: channels)
+        filters.updateChannelCount(channels)
     }
 
     private func teardown() {

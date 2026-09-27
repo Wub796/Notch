@@ -106,8 +106,6 @@ extension NSImage {
 /// Symmetric timing made both halves feel equally deliberate, which reads as
 /// lag on the half the user is actually watching.
 struct PressableButtonStyle: ButtonStyle {
-    private static let press = Animation.spring(response: 0.12, dampingFraction: 0.9)
-    private static let release = Animation.spring(response: 0.26, dampingFraction: 0.7)
 
     func makeBody(configuration: Configuration) -> some View {
         // Reduce Motion keeps the feedback but drops the movement: the opacity
@@ -117,9 +115,7 @@ struct PressableButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed && !reduced ? 0.96 : 1)
             .opacity(configuration.isPressed ? 0.88 : 1)
             .animation(
-                reduced
-                    ? NotchAnimations.reduced
-                    : (configuration.isPressed ? Self.press : Self.release),
+                configuration.isPressed ? NotchAnimations.press : NotchAnimations.release,
                 value: configuration.isPressed
             )
     }
@@ -149,7 +145,7 @@ struct HoverLiftModifier: ViewModifier {
             // Reduce Motion drops the scale, not the interaction: the hover
             // still registers, it just stops moving things around.
             .scaleEffect(hovering && !NotchAnimations.prefersReducedMotion ? scale : 1)
-            .animation(.spring(response: 0.22, dampingFraction: 0.78), value: hovering)
+            .animation(NotchAnimations.hover, value: hovering)
             .onHover { hovering = $0 }
     }
 }
@@ -181,8 +177,8 @@ struct TileHoverModifier: ViewModifier {
             // way every Button here does. Reduce Motion keeps the brightening
             // and drops the movement.
             .scaleEffect(scale)
-            .animation(NotchAnimations.content, value: hovering)
-            .animation(.spring(response: 0.16, dampingFraction: 0.85), value: pressed)
+            .animation(NotchAnimations.hover, value: hovering)
+            .animation(NotchAnimations.press, value: pressed)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { _ in if !pressed { pressed = true } }

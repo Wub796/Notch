@@ -105,12 +105,15 @@ struct FaceIdentity: Codable, Identifiable, Equatable {
 
 enum FaceEnrollmentStoreError: LocalizedError {
     case storeUnreadable
+    case duplicateName
 
     var errorDescription: String? {
         switch self {
         case .storeUnreadable:
             "Your enrolled faces couldn't be read, so nothing was saved — writing now would "
                 + "overwrite them."
+        case .duplicateName:
+            "An identity with that name already exists. Choose a different name."
         }
     }
 }
@@ -138,9 +141,10 @@ final class FaceEnrollmentStore {
     /// read. Unlike `isLocked`, unlocking again won't fix this.
     private(set) var loadFailure: String?
 
-    /// False until a load succeeds. Guards `persist()`, so an unreadable store
-    /// is never silently replaced by an empty array.
-    private var hasLoadedSuccessfully = false
+    /// True only while the current decrypted snapshot is authoritative. A lock
+    /// or failed reload clears it, preventing stale identities from being written
+    /// over a store that could not be read.
+    private(set) var hasLoadedSuccessfully = false
 
     /// Everyone the user hasn't switched off — what recognition actually
     /// scores against. `identities` stays the full list.
@@ -167,9 +171,13 @@ final class FaceEnrollmentStore {
     /// `isLocked = true`, if the session isn't unlocked yet.
     func reloadIfUnlocked() {
         guard FaceIDCredentials.isSessionUnlocked else {
+            identities = []
             isLocked = true
+            hasLoadedSuccessfully = false
+            loadFailure = nil
             return
         }
+        hasLoadedSuccessfully = false
         do {
             identities = try FaceIDSecureFaceStore.load()
             hasLoadedSuccessfully = true
@@ -196,6 +204,12 @@ final class FaceEnrollmentStore {
     ) throws -> FaceIdentity? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !samples.isEmpty else { return nil }
+        guard hasLoadedSuccessfully, loadFailure == nil else {
+            throw FaceEnrollmentStoreError.storeUnreadable
+        }
+        guard !nameIsTaken(trimmed, excluding: existingID) else {
+            throw FaceEnrollmentStoreError.duplicateName
+        }
 
         // A local copy, assigned only once the write succeeds — otherwise a
         // locked session would show a save that never reached disk.
@@ -222,6 +236,9 @@ final class FaceEnrollmentStore {
         }
         try FaceIDSecureFaceStore.save(updated)
         identities = updated
+        loadFailure = nil
+        hasLoadedSuccessfully = true
+        isLocked = false
         return committed
     }
 
@@ -266,24 +283,32 @@ final class FaceEnrollmentStore {
     }
 
     func delete(_ identity: FaceIdentity) throws {
+        let previous = identities
         identities.removeAll { $0.id == identity.id }
-        try persist()
+        do {
+            try persist()
+        } catch {
+            identities = previous
+            throw error
+        }
     }
 
     /// Removes the file outright rather than writing an empty array — the
     /// teardown path when the session key itself is going away, so no orphaned
-    /// encrypted file is left behind for the next setup to trip over.
-    func deleteAll() {
+    /// encrypted file is left behind for the next setup to trip over. State is
+    /// cleared only after the file removal succeeds.
+    func deleteAll() throws {
+        try FaceIDSecureFaceStore.deleteAll()
         identities.removeAll()
-        FaceIDSecureFaceStore.deleteAll()
+        isLocked = !FaceIDCredentials.isSessionUnlocked
         loadFailure = nil
-        hasLoadedSuccessfully = true
+        hasLoadedSuccessfully = !isLocked
     }
 
     private func persist() throws {
         // Refuses to write when the last load failed, so an unreadable store
         // can't be silently replaced by an empty array.
-        guard hasLoadedSuccessfully else {
+        guard hasLoadedSuccessfully, loadFailure == nil else {
             throw FaceEnrollmentStoreError.storeUnreadable
         }
         try FaceIDSecureFaceStore.save(identities)
