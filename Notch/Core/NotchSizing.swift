@@ -129,6 +129,23 @@ enum NotchSizing {
     /// scaled display; `maxAllowedOpenWidth` is that rule.
     static let minimumOpenWidth: Double = 520
     static let defaultOpenWidth: Double = 900
+    /// The Home dashboard's width floor: what the compact arrangement of its
+    /// cards needs, so the panel can always be drawn at a width that holds
+    /// them whole.
+    ///
+    /// Derived rather than picked. The dashboard draws itself in two
+    /// arrangements — the size its cards were tuned at, and a stepped-down one
+    /// for slabs that cannot hold that — and switches between them at the
+    /// roomy one's own minimum. This floor is the compact one's, which is why
+    /// a reduced "Open width" preference now steps the cards down instead of
+    /// being ignored on Home: below the roomy minimum the dashboard has an
+    /// arrangement that fits, so there is nothing left to refuse the width for.
+    /// See `HomeDashboardSizing`.
+    static var minimumHomeWidth: CGFloat {
+        HomeDashboardSizing.compact.minimumSlabWidth(
+            contentSideInset: contentSideInset(for: .home)
+        )
+    }
     static let minimumOpenHeight: Double = 150
     static let defaultOpenHeight: Double = 215
     static let maximumOpenHeight: Double = 500
@@ -285,11 +302,14 @@ enum NotchSizing {
         // to +24pt for the other-audio chips, plus the 5pt bottom gutter),
         // so the base height simply needs to leave that tallest case room
         // to fit.
-        // 900, not 860: the dashboard's three columns are surfaces now, and a
-        // surface costs its own horizontal padding — 54pt across the row. The
-        // extra 40 gives that back, so the columns keep the breathing room
-        // they had before the tiles were added.
-        case .home: CGSize(width: 900, height: 236)
+        // Home's three dashboard cards need more width than the detail tabs,
+        // and this is the width they were tuned at: the roomy arrangement's
+        // own requirement (`HomeDashboardSizing.roomy.minimumSlabWidth`) plus
+        // the headroom that lets the weather card keep its metrics column and
+        // the player card take what is left without either being squeezed.
+        // The floor below is the compact arrangement's requirement, so this
+        // is a starting size and not a minimum.
+        case .home: CGSize(width: 1000, height: 236)
         case .audio: CGSize(width: 880, height: 390)
         case .weather: CGSize(width: 600, height: 320)
         // 660, not 620: the header's trailing cluster (grid toggle, prev,

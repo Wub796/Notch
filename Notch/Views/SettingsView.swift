@@ -858,8 +858,8 @@ private struct MediaSettingsPane: View {
                 tint: .indigo,
                 title: "Real-Time Audio Meter",
                 subtitle: settings.realtimeAudioMeter
-                    ? "Bars follow the low, mid and high energy of the output mix."
-                    : "Bars follow the output volume.",
+                    ? "Bars show measured low, mid and high frequency magnitudes."
+                    : "Off: the waveform stays idle instead of faking frequency motion.",
                 showsDivider: settings.realtimeAudioMeter
             ) {
                 Toggle("", isOn: $settings.realtimeAudioMeter)
@@ -898,15 +898,14 @@ private struct MediaSettingsPane: View {
     /// than being averaged away with the others.
     private var meterAccessSubtitle: String {
         guard SystemAudioMeter.isSupported else {
-            return "Measuring the output mix needs macOS 14.2 or later. Below that "
-                + "the bars follow the output volume instead."
+            return "Measured frequency bands need macOS 14.2 or later."
         }
         if let reason = SystemAudioMeter.lastFailureReason {
             return reason
         }
-        return "macOS gates reading other apps' audio behind this permission. While "
-            + "something is playing, the meter taps the output mix, measures three "
-            + "frequency ranges, keeps nothing and stops with the music."
+        return "macOS gates reading audio behind this permission. While sound is "
+            + "playing, the meter measures the output's low, mid and high bands in "
+            + "memory and stops with playback."
     }
 
     private func toggleRow(

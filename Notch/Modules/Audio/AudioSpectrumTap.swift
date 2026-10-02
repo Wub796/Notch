@@ -31,7 +31,7 @@ import Foundation
 /// ask for audio-capture permission the first time one is created —
 /// `NSAudioCaptureUsageDescription` in Info.plist is what that prompt shows.
 /// If either is missing, `start()` fails with a reason and the visualiser
-/// keeps its volume-driven motion rather than showing a dead bar.
+/// stays still rather than substituting a volume animation for the bands.
 final class AudioSpectrumTap {
     /// How many frames one callback will ever be measured with. The scratch
     /// buffer is sized once, so a longer callback is truncated to this rather
@@ -103,7 +103,7 @@ final class AudioSpectrumTap {
 
     /// Creates the tap and its aggregate device and starts measuring. False
     /// with `failureReason` set when the platform or CoreAudio says no; the
-    /// caller is expected to fall back rather than to retry in a loop.
+    /// caller can surface the failure rather than retrying in a loop.
     ///
     /// Called from the meter's serial control queue, never from the main
     /// thread: building a tap asks the system to authorise audio capture and to

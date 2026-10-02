@@ -161,7 +161,11 @@ final class AudioAppMonitor {
 
     /// `nowPlayingBundleID` is only used on the fallback path, and to keep the
     /// current player listed even while it is momentarily silent.
-    func refresh(nowPlayingBundleID: String? = nil, isPlaying: Bool = false) {
+    func refresh(
+        nowPlayingBundleID: String? = nil,
+        isPlaying: Bool = false,
+        completion: (([App]) -> Void)? = nil
+    ) {
         audioQueue.async { [weak self] in
             guard let self else { return }
             let apps: [App]
@@ -178,8 +182,10 @@ final class AudioAppMonitor {
             let canControl = Self.probeProcessVolumeSupport()
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.apps = self.withPinned(apps)
+                let refreshedApps = self.withPinned(apps)
+                self.apps = refreshedApps
                 self.canControlAppVolume = canControl
+                completion?(refreshedApps)
             }
         }
     }

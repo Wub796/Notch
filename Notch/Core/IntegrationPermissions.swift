@@ -127,9 +127,8 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
             case .accessibility:
                 "Without it, system media keys and global hotkeys use default macOS routing."
             case .screenCapture:
-                "Without it, the visualizer's bars follow the output volume instead "
-                    + "of the music's own three frequency ranges, and per-app volume "
-                    + "cannot take an app over."
+                "Without it, the visualizer cannot measure the output's three "
+                    + "frequency ranges, and per-app volume cannot take an app over."
             case .filesAndFolders:
                 "Without it, files you drop on the notch still work; arrivals in those "
                     + "folders are not announced."

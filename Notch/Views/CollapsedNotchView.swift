@@ -413,17 +413,7 @@ struct CollapsedNotchView: View {
             leadingInset: NotchSizing.closedArtworkInset,
             trailing: MusicVisualizerView(
                 accent: state.media.accent,
-                // When the notch is following a tracked source (a real player
-                // or a probed browser video), the visualiser must freeze the
-                // moment that source is paused — the player keeps its audio
-                // object alive while paused, so the CoreAudio any-app signal
-                // alone would keep the bars dancing. Only with no media at
-                // all does the visualiser fall back to "is anything at all
-                // making sound" to decide whether to move.
-                isPlaying: state.media.hasTrack || state.media.isBrowserVideo
-                    ? state.media.isPlaying
-                    : state.audioApps.isAnyAudioPlaying,
-                level: state.audio.isMuted ? 0 : state.audio.volume,
+                outputIsAudible: !state.audio.isMuted && state.audio.volume > 0.001,
                 bands: state.visualizerBands
             )
         )

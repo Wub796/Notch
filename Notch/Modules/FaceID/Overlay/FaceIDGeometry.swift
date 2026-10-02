@@ -31,28 +31,30 @@ struct FaceIDGeometry: Equatable {
     static let notchOpenSize = CGSize(width: 220, height: 200)
     static let pillOpenSize = CGSize(width: 180, height: 180)
 
-    /// Larger, detached music surface positioned above the native login card.
-    /// Its own window keeps it out of the notch's scan animation and gives it
-    /// enough room for artwork, transport controls, and a seekable progress bar.
-    static let nowPlayingPlayerWidth: CGFloat = 384
-    static let nowPlayingPlayerHeight: CGFloat = 164
+    /// Larger, detached lock-screen media surface positioned above the native
+    /// login card. Its own window keeps it out of the notch scan and fits artwork,
+    /// transport, seek, volume, and brightness controls.
+    static let nowPlayingPlayerWidth: CGFloat = 480
+    static let nowPlayingPlayerHeight: CGFloat = 270
     /// macOS doesn't expose a stable public frame for the lock-screen account
-    /// card. Place the player a little above the screen midpoint, then clamp it
-    /// below the menu-bar/notch safe area on shorter displays.
+    /// card. Keep the player in the lower half of the display with comfortable
+    /// space below the native account and password controls on short screens.
     static func nowPlayingOrigin(for screen: NSScreen, size: CGSize) -> NSPoint {
         let frame = screen.frame
-        let verticalOffset = min(max(frame.height * 0.12, 96), 170)
+        // AppKit's screen origin is bottom-left. Center at 35% of the screen height
+        // to move the panel a lot lower than the previous above-midpoint placement.
+        let verticalCenter = frame.minY + frame.height * 0.35
         let minX = frame.minX + 16
         let maxX = max(minX, frame.maxX - size.width - 16)
         let x = min(max(frame.midX - size.width / 2, minX), maxX)
         let minY = frame.minY + 24
         let topInset = max(screen.safeAreaInsets.top, 28) + 24
         let maxY = max(minY, frame.maxY - topInset - size.height)
-        let y = min(max(frame.midY + verticalOffset, minY), maxY)
+        let y = min(max(verticalCenter - size.height / 2, minY), maxY)
         return NSPoint(x: x, y: y)
     }
 
-    static let nowPlayingPanelCornerRadius: CGFloat = 28
+    static let nowPlayingPanelCornerRadius: CGFloat = 34
 
     /// Corner radii for the notch silhouette. The top radius doubles as the width
     /// of the outward flare on each side — see `FaceIDShape`.

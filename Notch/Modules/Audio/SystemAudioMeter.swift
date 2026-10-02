@@ -16,10 +16,10 @@ import Observation
 /// failure it surfaces is a CoreAudio status and a hint, never a guess at what
 /// the privacy database thinks.
 ///
-/// The meter is not the visualiser's only source and must not be treated as
-/// one: when the tap cannot start — an older macOS, or audio access refused —
-/// `isLive` stays false, the visualiser keeps its volume-driven motion, and
-/// `failureReason` says so in the settings and on the audio surface.
+/// When the tap cannot start — an older macOS, or audio access refused —
+/// `isLive` stays false and the visualiser stays still rather than pretending
+/// to show frequency data. `failureReason` says why in Settings and on the
+/// Audio surface.
 @Observable
 final class SystemAudioMeter {
     private(set) var bands: [Float] = [0, 0, 0]
@@ -34,8 +34,8 @@ final class SystemAudioMeter {
     private(set) var failureReason: String?
 
     /// Whether this Mac can measure the output mix at all. The tap API landed
-    /// in macOS 14.2, so on 14.0 and 14.1 the answer is a flat no and the bars
-    /// are volume-driven by design rather than by accident.
+    /// in macOS 14.2, so on 14.0 and 14.1 the waveform stays idle rather than
+    /// suggesting the volume setting contains frequency information.
     static var isSupported: Bool {
         if #available(macOS 14.2, *) { return true }
         return false
@@ -78,8 +78,7 @@ final class SystemAudioMeter {
     ///
     /// Returns immediately. `isLive` and `failureReason` are published on the
     /// main thread once the tap has actually been built (or refused), which is
-    /// why the visualiser keeps its volume-driven motion in the meantime rather
-    /// than showing three dead bars.
+    /// why the visualiser stays still until it can show real band magnitudes.
     func start() {
         guard timer == nil, !isStarting else { return }
         isStarting = true

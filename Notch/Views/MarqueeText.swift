@@ -115,31 +115,58 @@ struct MarqueeText: View {
         startedAt = Date()
     }
 
-    var body: some View {
-        Group {
-            if shouldScroll {
-                TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
-                    HStack(spacing: Self.gap) {
-                        measuredCopy
-                        copy
-                    }
-                    .offset(x: -distance(at: context.date))
+    /// The layout's own footprint: a hidden single-line copy of the text, so
+    /// the row sizes the marquee by a line of text — as wide as the text needs,
+    /// up to the cap.
+    ///
+    /// Hidden rather than drawn because the *drawing* has to stay out of the
+    /// layout. The copies below are `fixedSize` (they are what the marquee
+    /// measures and scrolls), and a fixed copy laid out in the body sets this
+    /// view's minimum to its own natural width — two copies plus the gap, while
+    /// it is scrolling. A long track name then asks the row it sits in for that
+    /// width instead of being clipped by it, which is how a dashboard card got
+    /// pushed past the edge of the panel. A truncatable line has no such
+    /// appetite: it reports the text's width, and takes whatever it is given.
+    private var placeholder: some View {
+        Text(text)
+            .font(font)
+            .tracking(tracking)
+            .lineLimit(1)
+            .frame(maxWidth: width, alignment: .leading)
+            .hidden()
+    }
+
+    @ViewBuilder
+    private var drawing: some View {
+        if shouldScroll {
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
+                HStack(spacing: Self.gap) {
+                    measuredCopy
+                    copy
                 }
-            } else {
-                measuredCopy
+                .offset(x: -distance(at: context.date))
             }
+        } else {
+            measuredCopy
         }
-        .onAppear { restart() }
-        // New text, or the same text measured for the first time: either way
-        // the run that is in flight was timed against a different width, so it
-        // starts again over.
-        .onChange(of: text) { _, _ in restart() }
-        .onChange(of: textWidth) { _, _ in restart() }
-        .onChange(of: shouldScroll) { _, _ in restart() }
-        .frame(maxWidth: width, alignment: .leading)
-        .clipped()
-        .background(widthReader)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(text)
+    }
+
+    var body: some View {
+        placeholder
+            // The copies are drawn in an overlay, where their fixed widths
+            // cannot reach the layout, and clipped to the width the marquee
+            // was actually given — the number `widthReader` reports.
+            .overlay(alignment: .leading) { drawing }
+            .clipped()
+            .background(widthReader)
+            .onAppear { restart() }
+            // New text, or the same text measured for the first time: either
+            // way the run that is in flight was timed against a different
+            // width, so it starts again over.
+            .onChange(of: text) { _, _ in restart() }
+            .onChange(of: textWidth) { _, _ in restart() }
+            .onChange(of: shouldScroll) { _, _ in restart() }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(text)
     }
 }

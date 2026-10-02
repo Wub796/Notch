@@ -29,10 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotchSettings.shared.onScreenPreferenceChanged = { [weak self] in
             self?.attachToBestScreen()
         }
-        // Face ID watches the screen locking and the display waking, which is
-        // exactly when this app is doing nothing else — so it is handed to the
-        // main actor here and left listening for the life of the process. It is
-        // inert while the feature is switched off.
+        // Lock state drives Face ID's optional unlock flow and the independent
+        // lock-screen now-playing panel, so keep its monitor alive for the life
+        // of the process even when Face ID itself is switched off.
         Task { @MainActor [weak self] in
             self?.state.faceID.start()
         }
@@ -247,8 +246,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         screenChangeWork?.cancel()
         screenChangeWork = nil
         guard let screen = NotchGeometry.preferredScreen else { return }
-        // Never carry an expanded panel across a display change — the new
-        // geometry starts from the resting state.
+        // Wake and display-parameter notifications also fire when the same
+        // display is still attached. Reuse its panel on an ordinary parameter
+        // refresh so an in-flight shape animation is not interrupted.
+        if let existing = windowController, existing.refreshIfAttached(to: screen) {
+            existing.showPanel()
+            return
+        }
+        // A scheduled wake/display reattach or a real display change starts
+        // from the resting state and uses fresh screen geometry.
         state.collapse()
         if let existing = windowController {
             existing.cleanup()

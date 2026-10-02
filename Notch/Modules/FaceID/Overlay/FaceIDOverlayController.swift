@@ -82,14 +82,23 @@ final class FaceIDOverlayController {
         windowController.onScreenParametersChanged = { [weak self] in
             guard let self else { return }
             self.geometry = self.windowController.currentGeometry
-            self.nowPlayingWindowController.repositionIfVisible()
+            self.nowPlayingWindowController.refresh()
         }
     }
 
     /// Connects the one app-owned player to its separate lock-screen window.
-    func configureNowPlaying(mediaController: MediaController) {
-        nowPlayingWindowController.configure(mediaController: mediaController)
-        nowPlayingWindowController.setArmed(isArmed)
+    func configureNowPlaying(
+        mediaController: MediaController,
+        lockMonitor: LockMonitor,
+        audioController: AudioOutputManager,
+        brightnessController: BrightnessController
+    ) {
+        nowPlayingWindowController.configure(
+            mediaController: mediaController,
+            lockMonitor: lockMonitor,
+            audioController: audioController,
+            brightnessController: brightnessController
+        )
     }
 
     /// Updates player visibility when the shared media session gains or loses a track.
@@ -103,7 +112,6 @@ final class FaceIDOverlayController {
     /// until `disarm()`. `onActivate` restarts a scan when the user hovers.
     func arm(onActivate: @escaping () -> Void) {
         isArmed = true
-        nowPlayingWindowController.setArmed(true)
         self.onActivate = onActivate
         geometry = windowController.currentGeometry
         phase = .closed
@@ -140,7 +148,6 @@ final class FaceIDOverlayController {
     /// `collapse()` re-checks it once the hold expires and hides for real then.
     func disarm() {
         isArmed = false
-        nowPlayingWindowController.setArmed(false)
         onActivate = nil
         // Undocked before the guard: if a success collapse is in flight, this turns
         // it into a full slide off-screen rather than a shrink to a resting pill.
@@ -231,7 +238,6 @@ final class FaceIDOverlayController {
         scanTimeoutTask = nil
         geometry = windowController.currentGeometry
         activeUnlockStyle = styleOverride ?? FaceIDSettings.shared.effectiveUnlockAnimationStyle
-        nowPlayingWindowController.setArmed(false)
         primeWindowIfNeeded { [weak self] in
             guard let self else { return }
             self.media = .idle
@@ -333,7 +339,6 @@ final class FaceIDOverlayController {
         phase = .closed
         media = .idle
         isPillDocked = false
-        nowPlayingWindowController.setArmed(false)
         windowController.setInteractive(false)
         windowController.hide()
     }

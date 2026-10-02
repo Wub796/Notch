@@ -10,12 +10,20 @@ enum FaceIDCameraPermission {
 
 /// One frame, with both the working copy and the source it came from.
 ///
-/// `source` is a `CIImage` — a lazy recipe rather than rendered pixels — so
-/// holding onto it costs nothing until `renderCrop` uses it.
+/// Both are `CIImage`s — lazy recipes rather than rendered pixels — so
+/// publishing a frame renders nothing: the downscale is a transform, and the
+/// pixels are produced by `workingImage(from:)` on the thread that wants them.
+/// The shape before that carried a rendered `CGImage`, built inside the sample
+/// buffer callback, which parked AVFoundation's delivery thread on Core
+/// Image's own workers (see `workingImage(from:)`); holding onto either recipe
+/// costs nothing, and both keep the pixel buffer alive the same way.
 struct FaceIDCameraFrame {
     let id: UInt64
     /// Downscaled working image, which is what Vision runs on.
-    let image: CGImage
+    let image: CIImage
+    /// Pixel size `image` renders to. The crop maths needs it before anything
+    /// has rendered, and asking the recipe's extent is exact.
+    let workingSize: CGSize
     let source: CIImage
     let sourceSize: CGSize
 }
@@ -51,6 +59,7 @@ final class FaceIDCamera: NSObject {
     override init() {
         super.init()
         framePublisher.owner = self
+        Self.warmRenderContext()
     }
 
     /// Opens the device, asking for permission if it has never been asked.
@@ -209,8 +218,8 @@ final class FaceIDCamera: NSObject {
         imageRect: CGRect,
         maxEdge: CGFloat = 448
     ) -> CGImage? {
-        let workingWidth = CGFloat(frame.image.width)
-        let workingHeight = CGFloat(frame.image.height)
+        let workingWidth = frame.workingSize.width
+        let workingHeight = frame.workingSize.height
         guard workingWidth > 0, workingHeight > 0 else { return nil }
         let scaleX = frame.sourceSize.width / workingWidth
         let scaleY = frame.sourceSize.height / workingHeight
@@ -240,17 +249,59 @@ final class FaceIDCamera: NSObject {
             cropped = cropped.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         }
 
-        return cropRenderContext.createCGImage(cropped, from: cropped.extent)
+        return renderContext.createCGImage(cropped, from: cropped.extent)
     }
 
-    /// `CIContext` is expensive to create and safe to reuse concurrently.
-    private static let cropRenderContext = CIContext()
+    /// Renders a frame's working copy — the downscaled image Vision runs on.
+    ///
+    /// Called by the scan loops, on the threads that own them, and never by the
+    /// capture callback. That is the whole point of the frame carrying a recipe:
+    /// a Core Image render is synchronous and dispatches to Core Image's own
+    /// workers, so doing it inside `captureOutput` parks AVFoundation's delivery
+    /// thread — which runs at a real-time quality of service — on threads at a
+    /// lower one, which the Thread Performance Checker reports as a priority
+    /// inversion. The conversion still has to happen; it belongs where the
+    /// pixels are wanted, and the scan loops already run their work off the main
+    /// thread.
+    static func workingImage(from frame: FaceIDCameraFrame) -> CGImage? {
+        renderContext.createCGImage(frame.image, from: frame.image.extent)
+    }
+
+    /// One `CIContext` for both renders in this file: the working copy every
+    /// frame needs, and the native-resolution crop the spoof cues ask for.
+    ///
+    /// Safe to reuse concurrently, and expensive to *create*: the initialiser
+    /// talks to the GPU stack and dispatches to Core Image's workers, so
+    /// building one parks the calling thread on them. It used to be a stored
+    /// property of `FramePublisher`, which meant every `FaceIDCamera()` built
+    /// one on whichever thread constructed it — the app's launch path and the
+    /// Face ID settings pane's preview both do that on the main thread, and the
+    /// Thread Performance Checker reported exactly that as a priority inversion
+    /// (a user-interactive thread waiting on Core Image's utility-QoS workers,
+    /// at this property's line). Created once now, off the main thread, by
+    /// `warmRenderContext()`.
+    private static let renderContext = CIContext()
+
+    /// Builds `renderContext` ahead of the first frame that wants it.
+    ///
+    /// Fire and forget, on a queue whose quality of service is no higher than
+    /// Core Image's own workers, so neither the main thread nor a scan's first
+    /// render ever pays for the build or waits on it.
+    private static func warmRenderContext() {
+        renderWarmupQueue.async { _ = renderContext }
+    }
+
+    private static let renderWarmupQueue = DispatchQueue(
+        label: "com.notchapp.Notch.faceID.renderWarmup",
+        qos: .utility
+    )
 
     /// Sample buffers arrive on `sessionQueue`, off the main thread; this
-    /// delegate converts there and then hops back to publish.
+    /// delegate builds the frame's two recipes there and hops back to publish.
+    /// It renders nothing: see `workingImage(from:)` for why that must not
+    /// happen on this thread.
     private final class FramePublisher: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         weak var owner: FaceIDCamera?
-        private let ciContext = CIContext()
         /// Detection only needs a modest resolution, and the live preview renders
         /// from the capture session directly so it is unaffected by this. The
         /// undownscaled `source` is kept alongside for `renderCrop`.
@@ -265,18 +316,20 @@ final class FaceIDCamera: NSObject {
             guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
             let sourceImage = CIImage(cvPixelBuffer: pixelBuffer)
             let sourceExtent = sourceImage.extent
+            // A transform on the recipe, not a render: the working copy is the
+            // same buffer at a smaller scale until somebody asks for pixels.
             var workingImage = sourceImage
             let longEdge = max(workingImage.extent.width, workingImage.extent.height)
             if longEdge > maxLongEdge {
                 let scale = maxLongEdge / longEdge
                 workingImage = workingImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
             }
-            guard let cgImage = ciContext.createCGImage(workingImage, from: workingImage.extent) else { return }
 
             nextFrameID &+= 1
             let frame = FaceIDCameraFrame(
                 id: nextFrameID,
-                image: cgImage,
+                image: workingImage,
+                workingSize: workingImage.extent.integral.size,
                 source: sourceImage,
                 sourceSize: sourceExtent.size
             )

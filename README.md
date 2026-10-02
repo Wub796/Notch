@@ -15,8 +15,8 @@ Notch runs as a menu bar application. It does not add an icon to the Dock, and i
   device, equalizer and headphone correction. See [Per-app audio](#per-app-audio) below.
 - **A three-band meter** beside the artwork on the closed notch: each of the three bars is the measured
   energy of its own range of frequencies — low, mid and high — taken from the output mix, so a kick fills
-  the first and cymbals the third. It needs macOS 14.2 and audio access; without either the bars fall
-  back to moving with the output volume.
+  the first and cymbals the third. It needs macOS 14.2 and audio access; without either the waveform
+  stays idle rather than suggesting that a volume setting is frequency data.
 - **Face ID** — recognizes your face from the notch on lock and wake, and can unlock the Mac by typing
 your password for you. Off by default; see [Face ID](#face-id) below before turning it on.
 - Displays compact live activities for music, volume, battery, meetings, focus changes, and other events.

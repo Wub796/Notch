@@ -353,14 +353,24 @@ struct DevicesScreenView: View {
     }
 
     private var progressRow: some View {
-        ScrubberBar(
-            duration: media.track?.duration ?? 0,
-            elapsed: media.displayedElapsed,
-            accent: media.accent,
-            onSeek: { media.seek(to: $0) },
-            onScrubPreview: { media.previewScrub(to: $0) },
-            onScrubEnd: { media.endScrubPreview() }
-        )
+        // Driven by `currentElapsed` — the live extrapolation — rather than
+        // the timer-refreshed display copy, and wrapped in a `TimelineView` so
+        // the bar advances on its own while playing instead of only when some
+        // other state change redraws the view. The lock-screen player already
+        // did it this way; this brings the in-app player into line.
+        TimelineView(.animation(minimumInterval: 0.1, paused: !media.isPlaying)) { _ in
+            ScrubberBar(
+                duration: media.track?.duration ?? 0,
+                elapsed: media.currentElapsed,
+                // Matches the timeline above: the fill glides between two of
+                // its ticks instead of stepping at each one.
+                sampleInterval: 0.1,
+                accent: media.accent,
+                onSeek: { media.seek(to: $0) },
+                onScrubPreview: { media.previewScrub(to: $0) },
+                onScrubEnd: { media.endScrubPreview() }
+            )
+        }
     }
 
     private var transportRow: some View {
@@ -406,7 +416,11 @@ struct DevicesScreenView: View {
 
     @ViewBuilder
     private var bottomActions: some View {
-        if !media.isBrowserVideo && media.hasTrack {
+        // Only for a player's own media: shuffle and the heart are Apple Events
+        // to Music or Spotify, so showing them while a YouTube video or another
+        // app's item is on screen would aim them at a player that has nothing
+        // to do with what the user is watching.
+        if media.musicPlayerOwnsSource, media.hasTrack {
             HStack(spacing: 28) {
                 transportIcon(
                     media.isShuffling ? "shuffle.circle.fill" : "shuffle",

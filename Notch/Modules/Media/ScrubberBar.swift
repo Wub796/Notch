@@ -8,6 +8,16 @@ import SwiftUI
 struct ScrubberBar: View {
     let duration: TimeInterval
     let elapsed: TimeInterval
+
+    /// Interval of the clock feeding `elapsed`, when the caller samples it on a
+    /// timeline rather than on every state change. With it, the fill glides
+    /// across the gap between two samples instead of jumping to each one: the
+    /// panel's player and the Devices screen both tick at 10Hz, and on a wide
+    /// bar that reads as visible stepping on a short track. Nil leaves the fill
+    /// exactly where it lands, for callers whose `elapsed` is already
+    /// frame-fresh.
+    var sampleInterval: TimeInterval? = nil
+
     let accent: Color
     let onSeek: (TimeInterval) -> Void
 
@@ -22,6 +32,11 @@ struct ScrubberBar: View {
     @State private var dragFraction: Double?
     @State private var hovering = false
     @State private var showRemaining = true
+
+    /// One linear segment per sampled interval — see `sampleInterval`.
+    private var fillAnimation: Animation? {
+        sampleInterval.map { NotchAnimations.clockStep($0) }
+    }
 
     private var playbackFraction: Double {
         guard duration > 0 else { return 0 }
@@ -63,6 +78,13 @@ struct ScrubberBar: View {
                     Capsule()
                         .fill(accent)
                         .frame(width: max(width * displayedFraction, 0))
+                        // Never while dragging: the fill under the thumb is the
+                        // user's own gesture, and it has to track the pointer
+                        // 1:1 rather than settle toward it.
+                        .animation(
+                            dragFraction == nil ? fillAnimation : nil,
+                            value: displayedFraction
+                        )
 
                     if isInteracting {
                         Circle()

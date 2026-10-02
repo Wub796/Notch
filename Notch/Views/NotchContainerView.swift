@@ -110,7 +110,10 @@ struct NotchContainerView: View {
                         height: state.hoverProbeSize.height
                     )
                     .contentShape(Rectangle())
-                    .onHover { state.hoverChanged($0) }
+                    // Hover is owned by the window controller's single
+                    // screen-space probe. A SwiftUI onHover callback can arrive
+                    // against pre-animation geometry and fight the controller's
+                    // entry/exit hysteresis; keep this view only for taps.
                     .onTapGesture { state.handleTap() }
             }
         }
@@ -138,7 +141,14 @@ struct NotchContainerView: View {
                     .transition(NotchAnimations.activitySwap)
             }
         }
+        // Give the slab's silhouette its own mode-driven size. Its dimensions
+        // then share the same animation transaction as the open/close switch,
+        // rather than following the header's independently transitioning
+        // intrinsic layout size.
         .frame(
+            width: state.mode == .expanded
+                ? state.expandedSize.width
+                : state.collapsedSize.width + (state.isHovering ? state.hoverExpansion * 2 : 0),
             height: state.mode == .expanded ? state.expandedTotalHeight : state.collapsedSize.height,
             alignment: .top
         )
@@ -162,10 +172,17 @@ struct NotchContainerView: View {
             // change for a frame, which is the jolt at the start of an
             // expansion. Hover only animates while the notch is closed.
             .animation(
-                state.mode == .expanded ? nil : NotchAnimations.hover,
+                state.mode == .expanded
+                    ? nil
+                    : (state.isClosing ? notchAnimation : NotchAnimations.hover),
                 value: state.isHovering
             )
-            .animation(notchAnimation, value: state.collapsedActivity)
+            // Collapsed content can keep changing while the open slab is
+            // animating (audio discovery and transient activity updates are
+            // asynchronous). Do not let those unrelated changes restart the
+            // open/close geometry spring; CollapsedNotchView animates its own
+            // activity swaps, and only the closed slab needs this size spring.
+            .animation(state.mode == .expanded ? nil : notchAnimation, value: state.collapsedActivity)
             // The HUD's drop band appears and disappears at a media-key's
             // transient pace, which is faster than the open/close spring — so
             // the slab's grow-and-shrink (and the bar popping in) settle with
@@ -176,12 +193,8 @@ struct NotchContainerView: View {
             // exception is a draggable HUD, which needs its bar to receive the
             // drag — it hangs below the notch, clear of the probe.
             .allowsHitTesting(state.mode == .expanded || state.collapsedActivityIsInteractive)
-            // Hover is the probe's job whenever the notch is closed; letting
-            // the slab report it too is what made the region grow.
-            .onHover { hovering in
-                guard state.mode == .expanded else { return }
-                state.hoverChanged(hovering)
-            }
+            // The window controller owns hover in both modes, using one
+            // screen-coordinate boundary for entry and exit.
             .onDrop(
                 of: ShelfController.acceptedTypes,
                 delegate: NotchDropDelegate(state: state)

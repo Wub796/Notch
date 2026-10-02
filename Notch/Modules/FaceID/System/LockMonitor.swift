@@ -54,6 +54,16 @@ final class LockMonitor: NSObject {
     /// Observers track `eventCount` — which changes on every event, even a
     /// repeat of the same kind — then read `lastEvent`.
     private(set) var lastEvent: LockEventKind?
+    /// Last authoritative CGSession result. `nil` means the system state could
+    /// not be read; consumers must not treat a distributed notification as proof.
+    private(set) var confirmedScreenLockState: Bool?
+
+    /// True only when CGSession confirms a lock and a lock/wake signal remains
+    /// pending. Notifications alone never mark the lock screen active.
+    var isConfirmedLockScreenActive: Bool {
+        confirmedScreenLockState == true && latestTriggerEvent != nil
+    }
+
     /// Latest lock or wake signal; `willSleep` must not overwrite a lock that
     /// arrived moments earlier, and unlock clears the pending trigger.
     private(set) var latestTriggerEvent: LockEventKind?
@@ -61,6 +71,7 @@ final class LockMonitor: NSObject {
 
     private var workspaceObservers: [NSObjectProtocol] = []
     private var lastUnlockSignalAt: Date?
+    private var isMonitoring = false
 
     override init() {
         super.init()
@@ -75,7 +86,9 @@ final class LockMonitor: NSObject {
         }
     }
 
-    private func startMonitoring() {
+    func startMonitoring() {
+        guard !isMonitoring else { return }
+        isMonitoring = true
         let distributed = DistributedNotificationCenter.default()
         // This accessory app can be suspended while it has no active windows.
         // The closure-based observer uses the default suspension policy, which
@@ -186,7 +199,11 @@ final class LockMonitor: NSObject {
     /// login window. Returns nil only when CGSession could not be read.
     @discardableResult
     func refreshFromSystem(reconcileUnlocked: Bool = false) -> Bool? {
-        guard let actuallyLocked = Self.screenLockState() else { return nil }
+        guard let actuallyLocked = Self.screenLockState() else {
+            confirmedScreenLockState = nil
+            return nil
+        }
+        confirmedScreenLockState = actuallyLocked
 
         if actuallyLocked {
             // `screenIsUnlocked` can arrive slightly before CGSession flips its
@@ -220,11 +237,31 @@ final class LockMonitor: NSObject {
     /// than a spoofable notification. Fails closed: if the session dictionary
     /// can't be read, the answer is "not locked", so nothing types a password
     /// on the strength of a missing answer.
+    ///
+    /// `CGSSessionScreenIsLocked` is published *only* while the screen is
+    /// locked: on an unlocked session the key is simply missing from an
+    /// otherwise complete dictionary (verified against a live session on
+    /// macOS 26/27). A missing key therefore means "unlocked", not "unknown" —
+    /// reading it as unknown made every unlocked poll look like an unreadable
+    /// session, which failed the launch reconciliation closed and reported a
+    /// lock-state error the user never had. Only a dictionary that does not
+    /// describe a finished login (the login window, a headless context) stays
+    /// unknown.
     static func screenLockState() -> Bool? {
-        guard let dictionary = CGSessionCopyCurrentDictionary() as? [String: Any] else {
+        screenLockState(from: CGSessionCopyCurrentDictionary() as? [String: Any])
+    }
+
+    /// Split from the `CGSession` call so the key-presence rule above stays
+    /// checkable against synthetic sessions as well as the live one.
+    static func screenLockState(from dictionary: [String: Any]?) -> Bool? {
+        guard let dictionary else { return nil }
+        if let locked = dictionary["CGSSessionScreenIsLocked"] as? Bool {
+            return locked
+        }
+        guard (dictionary["kCGSessionLoginDoneKey"] as? NSNumber)?.boolValue == true else {
             return nil
         }
-        return dictionary["CGSSessionScreenIsLocked"] as? Bool
+        return false
     }
 
     static func isScreenActuallyLocked() -> Bool {

@@ -153,6 +153,16 @@ final class NotchState {
             size.height = clamped + header
         }
 
+        // Home's cards have a wider minimum than the other tabs. Keep their
+        // columns inside the slab even if the global open-width preference is
+        // reduced, while respecting the available width on smaller displays.
+        if tab == .home {
+            size.width = max(
+                size.width,
+                min(NotchSizing.minimumHomeWidth, CGFloat(NotchSizing.maxAllowedOpenWidth()))
+            )
+        }
+
         // Tabs that draw the full module rail must never be narrower than the
         // rail + hardware notch + insets, or a switch to a narrow module (e.g.
         // Notes) would slide the rightmost rail icons under the notch. Floor
@@ -260,9 +270,16 @@ final class NotchState {
         withAnimation(NotchAnimations.content) {
             measuredHeights[tab] = rounded
         }
+        // The panel window is sized before the first frame of an open. Fitted
+        // screens can report a shorter (or changed) natural height only after
+        // that first layout; reconcile the backing window when its active tab's
+        // measurement lands so the view never clips against the old budget.
+        if mode == .expanded, tab == self.tab {
+            onModeChange?(mode)
+        }
     }
 
-    /// Room left for a module once the header and the slab's own insets are
+    /// Room left for a module once the header and its own insets are
     /// taken out. Module views are written to this budget.
     var moduleContentSize: CGSize {
         let open = expandedSize
@@ -362,7 +379,11 @@ final class NotchState {
 
     @MainActor var faceID: FaceIDController {
         if let cachedFaceID { return cachedFaceID }
-        let controller = FaceIDController(mediaController: media)
+        let controller = FaceIDController(
+            mediaController: media,
+            audioController: audio,
+            brightnessController: brightness
+        )
         cachedFaceID = controller
         return controller
     }
@@ -412,6 +433,19 @@ final class NotchState {
 
     /// An open scheduled by `expand()`; a collapse that lands first cancels it.
     private var pendingExpandWork: DispatchWorkItem?
+    /// A hover-triggered open can be cancelled if the pointer leaves before it starts.
+    private var pendingExpandFromHover = false
+    /// The start time of the current opening spring, used to avoid collapsing mid-expansion.
+    private var expandedAt: Date?
+    /// Invalidates delayed hover work even when a cancelled dispatch item has started running.
+    private var pendingHoverID: UUID?
+    /// Prevents an obsolete queued open from winning after a newer state transition.
+    private var pendingExpandID: UUID?
+    /// Prevents duplicate main-queue window-size requests while an open is queued.
+    private var isPreparingExpansion = false
+    /// Delays module startup until the opening frame has begun rendering.
+    private var pendingWakeWork: DispatchWorkItem?
+    private var pendingWakeID: UUID?
 
     /// A tab switch scheduled by `select(_:)`; a newer one replaces it.
     private var pendingSelectWork: DispatchWorkItem?
@@ -463,22 +497,26 @@ final class NotchState {
 
         activities.onActivityChange = { [weak self] in
             guard let self else { return }
+            self.syncMediaVisibility()
             self.onModeChange?(self.mode)
         }
 
         timer.onStateChange = { [weak self] in
             guard let self else { return }
+            self.syncMediaVisibility()
             self.onModeChange?(self.mode)
         }
 
         media.onTrackChange = { [weak self] track in
             guard let self else { return }
             self.activities.showTrackChange(title: track.title, artist: track.artist)
+            self.syncMediaVisibility()
         }
 
         // The visualizer is data-only and does not capture screen pixels.
         media.onPlaybackStateChange = { [weak self] _ in
             self?.syncAudioMeter()
+            self?.syncMediaVisibility()
         }
 
         // Audio activity is push, not polled: CoreAudio says the moment any
@@ -490,6 +528,7 @@ final class NotchState {
                 self.refreshAudioApps()
             }
             self.syncAudioMeter()
+            self.syncMediaVisibility()
         }
         // Pinning an app keeps it listed; the monitor re-reads the list with
         // the pinned set applied.
@@ -499,6 +538,7 @@ final class NotchState {
         audioApps.startObserving()
         settings.onRealtimeAudioMeterChanged = { [weak self] _ in
             self?.syncAudioMeter()
+            self?.syncMediaVisibility()
         }
         // The lyric line is the closed notch's only activity whose size the
         // user can switch off from Settings: without this the toggle only took
@@ -509,6 +549,7 @@ final class NotchState {
             // mode callback, grows or shrinks the closed pill around the line
             // the moment the switch is flipped.
             self.media.updateLyricActivityTimer()
+            self.syncMediaVisibility()
             self.onModeChange?(self.mode)
         }
         // Reminders are raised by one-shot timers rather than polled, so
@@ -588,8 +629,8 @@ final class NotchState {
         }
     }
 
-    /// What the collapsed visualiser should draw: the measured bands when the
-    /// meter is live, and nil when the volume-driven fallback should be used.
+    /// What the collapsed visualiser should draw: measured bands when the
+    /// meter is live, and nil while no frequency measurement is available.
     var visualizerBands: [Float]? {
         guard audioMeter.isLive else { return nil }
         return audioMeter.bands
@@ -647,13 +688,20 @@ final class NotchState {
         audioApps.refresh(
             nowPlayingBundleID: media.sourceAppBundleID,
             isPlaying: media.isPlaying
-        )
-        // The mixer needs the same list for a different reason: the process
-        // objects behind each app are what a tap names, and they change as apps
-        // start, quit and spawn helpers. It also re-reads the output device
-        // here, since its UID decides where an unrouted app's audio goes.
-        mixer.observe(apps: audioApps.apps)
-        mixer.refreshDevices()
+        ) { [weak self] apps in
+            guard let self else { return }
+            // The mixer needs the process objects from the refreshed result;
+            // observing `audioApps.apps` here used to hand it the stale list
+            // from before this asynchronous refresh completed.
+            self.mixer.observe(apps: apps)
+            self.mixer.refreshDevices()
+            // Home's fitted height includes an optional row for other active
+            // audio apps. Their first list can arrive after the panel has
+            // already opened, so let the window catch up with that content.
+            if self.mode == .expanded {
+                self.onModeChange?(self.mode)
+            }
+        }
     }
 
     /// The focus mode currently active, for the dashboard.
@@ -711,6 +759,22 @@ final class NotchState {
         if media.isPlaying { return true }
         if media.hasTrack, settings.showMediaWings { return true }
         return settings.showWingsForAnyAudio && audioApps.isAnyAudioPlaying
+    }
+
+    /// Whether the media surfaces that are visible right now want live
+    /// updates: the open panel (its Audio/Home tabs) or the closed notch's
+    /// music wings. When false, the media controller drops back to no polling
+    /// at all, so an idle notch still costs nothing.
+    var mediaIsVisible: Bool {
+        mode == .expanded || isAudioActive
+    }
+
+    /// Pushes `mediaIsVisible` into the media controller. Called wherever the
+    /// inputs to `isAudioActive` or the mode can change, so the Home tab and
+    /// the closed notch reflect a skip, a pause, or a browser tab change in
+    /// real time instead of only when the notch is next opened.
+    private func syncMediaVisibility() {
+        media.setMediaPresence(active: mode == .expanded, visible: mediaIsVisible)
     }
 
     /// Extra width added around the hardware notch for the active activity —
@@ -896,6 +960,7 @@ final class NotchState {
     /// first, and only then can a hover open it again.
     private(set) var isClosing = false
     private var rearmHoverWork: DispatchWorkItem?
+    private var rearmHoverID: UUID?
 
     func hoverChanged(_ hovering: Bool) {
         // A closing notch does not take hover entry. Note this returns without
@@ -906,6 +971,8 @@ final class NotchState {
         guard hovering != isHovering else { return }
         isHovering = hovering
         pendingHoverWork?.cancel()
+        pendingHoverWork = nil
+        pendingHoverID = nil
         #if DEBUG
         // The one funnel every hover transition passes through — the pointer's
         // own `onHover`, and the window controller's cursor samples alike. A
@@ -919,24 +986,60 @@ final class NotchState {
             // Linger past the open delay to expand fully (when enabled).
             // Expanding is the one thing an already-open panel has nothing to
             // do for.
-            guard settings.expandOnHover, mode != .expanded else { return }
+            guard settings.expandOnHover, mode != .expanded,
+                  pendingExpandWork == nil, !isPreparingExpansion
+            else { return }
+            let id = UUID()
+            pendingHoverID = id
             let work = DispatchWorkItem { [weak self] in
-                self?.expand()
+                guard let self, self.pendingHoverID == id else { return }
+                self.pendingHoverID = nil
+                self.pendingHoverWork = nil
+                guard self.settings.expandOnHover, self.isHovering,
+                      self.mode != .expanded, self.pendingExpandWork == nil,
+                      !self.isPreparingExpansion
+                else { return }
+                self.expand(fromHover: true)
             }
             pendingHoverWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + settings.openDelay, execute: work)
         } else {
             hoverStartedAt = nil
+            if mode != .expanded, isPreparingExpansion, pendingExpandFromHover {
+                // `expand()` deliberately waits one run-loop turn before it
+                // resizes the hosting window. If hover exits in that gap, the
+                // queued open must not outlive the pointer that requested it.
+                pendingExpandWork?.cancel()
+                pendingExpandWork = nil
+                pendingExpandID = nil
+                pendingExpandFromHover = false
+                isPreparingExpansion = false
+                return
+            }
             // Leaving the closed pill is nothing to act on: un-peeking is the
             // view reacting to `isHovering`, and there is no pending auto-open
             // left to cancel. Only the open panel follows the pointer out.
             guard mode == .expanded else { return }
             guard !isPinned, settings.autoCollapseOnMouseExit else { return }
+            let openingTimeRemaining = expandedAt.map {
+                max(0, NotchAnimations.openSettle - Date().timeIntervalSince($0))
+            } ?? 0
+            let closeDelay = max(settings.closeDelay, openingTimeRemaining)
+            let id = UUID()
+            pendingHoverID = id
             let work = DispatchWorkItem { [weak self] in
-                self?.collapse()
+                guard let self, self.pendingHoverID == id else { return }
+                self.pendingHoverID = nil
+                self.pendingHoverWork = nil
+                guard self.mode == .expanded,
+                      !self.isPinned,
+                      !self.isHovering,
+                      self.settings.autoCollapseOnMouseExit
+                else { return }
+                self.collapse()
             }
             pendingHoverWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + settings.closeDelay, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + closeDelay, execute: work)
         }
     }
 
@@ -958,34 +1061,60 @@ final class NotchState {
         expand()
     }
 
-    func expand() {
-        guard mode != .expanded, pendingExpandWork == nil else { return }
+    func expand(fromHover: Bool = false) {
+        guard mode != .expanded else { return }
+        if isPreparingExpansion {
+            // An intentional click or hotkey supersedes a queued hover-open;
+            // unlike a hover-open, it must survive the pointer leaving.
+            if !fromHover { pendingExpandFromHover = false }
+            return
+        }
+        isPreparingExpansion = true
         // An open outranks a close that is still settling: something asked for
         // the panel while it was on its way down, and the newer intent wins.
         rearmHoverWork?.cancel()
         rearmHoverWork = nil
+        rearmHoverID = nil
         isClosing = false
         pendingHoverWork?.cancel()
+        pendingHoverWork = nil
+        pendingHoverID = nil
         // Opened on the next turn of the run loop, never inline. Opening
         // resizes the panel window, and a click reaches here from inside
         // SwiftUI's tap handling: resizing the hosting window there re-entered
         // SwiftUI's update and corrupted its view graph, and the app crashed a
         // moment later with EXC_BAD_ACCESS while building the Home dashboard.
         // One turn later nothing is mid-update.
+        pendingExpandFromHover = fromHover
+        let id = UUID()
+        pendingExpandID = id
         let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
+            guard let self, self.pendingExpandID == id else { return }
+            let wasHoverTriggered = self.pendingExpandFromHover
+            guard self.mode != .expanded,
+                  !wasHoverTriggered || self.isHovering
+            else {
+                self.pendingExpandID = nil
+                self.pendingExpandWork = nil
+                self.pendingExpandFromHover = false
+                self.isPreparingExpansion = false
+                return
+            }
+            self.pendingExpandID = nil
             self.pendingExpandWork = nil
-            guard self.mode != .expanded else { return }
+            self.isPreparingExpansion = false
+            self.pendingExpandFromHover = false
             // The window is sized for the open slab *before* the flip renders.
             // Resizing from `onModeChange` let the spring's first frames draw
             // into the closed notch's window: a hard, flat edge that crossed
             // the panel for the first ~100ms of every open.
             self.onWillExpand?()
+            self.expandedAt = Date()
             // No withAnimation here: NotchContainerView drives the open/close
             // springs. Two animations on the same transition fight each other.
             self.mode = .expanded
             self.onModeChange?(self.mode)
-            self.wakeModules()
+            self.scheduleModuleWake()
         }
         pendingExpandWork = work
         DispatchQueue.main.async(execute: work)
@@ -996,7 +1125,17 @@ final class NotchState {
         // rather than the open landing afterwards.
         pendingExpandWork?.cancel()
         pendingExpandWork = nil
+        pendingExpandID = nil
+        pendingWakeWork?.cancel()
+        pendingWakeWork = nil
+        pendingWakeID = nil
+        isPreparingExpansion = false
+        pendingExpandFromHover = false
+        pendingHoverWork?.cancel()
+        pendingHoverWork = nil
+        pendingHoverID = nil
         guard mode == .expanded else { return }
+        expandedAt = nil
         mode = .collapsed
         isDropTargeted = false
         isPinned = false
@@ -1004,7 +1143,10 @@ final class NotchState {
         // pointer nowhere near the notch; leaving this set would make the next
         // genuine hover a no-op.
         isHovering = false
+        hoverStartedAt = nil
         pendingHoverWork?.cancel()
+        pendingHoverWork = nil
+        pendingHoverID = nil
         holdHoverUntilClosed()
         onModeChange?(mode)
         sleepModules()
@@ -1014,9 +1156,13 @@ final class NotchState {
     private func holdHoverUntilClosed() {
         isClosing = true
         rearmHoverWork?.cancel()
+        let id = UUID()
+        rearmHoverID = id
         let work = DispatchWorkItem { [weak self] in
-            self?.rearmHoverWork = nil
-            self?.isClosing = false
+            guard let self, self.rearmHoverID == id else { return }
+            self.rearmHoverID = nil
+            self.rearmHoverWork = nil
+            self.isClosing = false
         }
         rearmHoverWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + NotchAnimations.closeSettle, execute: work)
@@ -1128,6 +1274,7 @@ final class NotchState {
         fileCatcher.syncWatchers()
         syncAudioMeter()
         media.updateLyricActivityTimer()
+        syncMediaVisibility()
         if mode == .expanded {
             wakeModules()
         }
@@ -1135,8 +1282,28 @@ final class NotchState {
 
     // MARK: - Module lifecycle (zero background work while collapsed)
 
+    /// Starts data-heavy modules just after the opening transition is committed,
+    /// rather than doing all startup work in the hover/click event itself.
+    private func scheduleModuleWake() {
+        pendingWakeWork?.cancel()
+        let id = UUID()
+        pendingWakeID = id
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.pendingWakeID == id else { return }
+            self.pendingWakeID = nil
+            self.pendingWakeWork = nil
+            guard self.mode == .expanded else { return }
+            self.wakeModules()
+        }
+        pendingWakeWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
+    }
+
     private func wakeModules() {
-        media.setActive(true)
+        pendingWakeWork?.cancel()
+        pendingWakeWork = nil
+        pendingWakeID = nil
+        syncMediaVisibility()
         calendar.refresh()
         telemetry.start()
         weather.refresh()
@@ -1153,7 +1320,7 @@ final class NotchState {
         // that it runs when the notch is closed — and instead stops itself at the
         // end of every scan.
         camera.stop()
-        media.setActive(false)
+        syncMediaVisibility()
         telemetry.stop()
         bluetooth.stop()
     }

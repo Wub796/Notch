@@ -41,6 +41,30 @@ empty-state entrance) still need a live run.
 - All plans use only the existing `NotchAnimations` vocabulary — no new tokens,
   no new dependencies.
 
+## Second pass (after 006)
+
+Two more smoothing changes, made after the audit above. Neither invents a curve:
+everything new reuses the existing vocabulary, and neither touches a state the
+user can reverse mid-flight without keeping it interruptible.
+
+| # | Change | Where |
+| --- | --- | --- |
+| 007 | The playback fill glides between timeline samples | `Notch/Modules/Media/ScrubberBar.swift` |
+| 008 | The lock-screen player fades in and out instead of popping | `Notch/Modules/FaceID/Overlay/FaceIDNowPlayingView.swift` |
+
+**007** — `sampleInterval` matches the caller's own cadence (10Hz in the panel
+and on the Devices screen) and interpolates with `NotchAnimations.clockStep`, one
+linear segment per interval. Never while dragging: the fill under the thumb is
+the user's gesture and has to track the pointer 1:1. Verified offscreen — a
+quarter track fills a quarter of the bar with and without the parameter, so no
+static geometry moved.
+
+**008** — the pane is ordered in at zero alpha and faded up, and fades out before
+it is ordered out. The fade runs on the window's own alpha rather than a SwiftUI
+opacity, so the Liquid Glass surface is not re-driven on every frame of the fade;
+the generation guard stops a slow fade-out from ordering out a pane that has been
+asked back. Still needs a live feel-check on a real lock screen.
+
 ## How to execute
 
 Run any plan with a capable agent, e.g.:

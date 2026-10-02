@@ -67,6 +67,19 @@ enum NotchAnimations {
         mode == .expanded ? open : close
     }
 
+    /// How long the opening spring needs before an auto-collapse may start.
+    /// Hover can leave during the opening animation; closing immediately from
+    /// the first exit used to reverse the window resize while SwiftUI was still
+    /// laying out the expanding slab, producing a half-open panel.
+    static var openSettle: TimeInterval {
+        guard !prefersReducedMotion else { return 0.2 }
+        switch profile {
+        case .snappy: return 0.6
+        case .bouncy: return 0.7
+        case .calm: return 0.75
+        }
+    }
+
     /// How long a close takes to be *finished* rather than merely started.
     ///
     /// A spring has no duration of its own, but two things need the same
@@ -120,6 +133,18 @@ enum NotchAnimations {
     static var release: Animation {
         guard !prefersReducedMotion else { return reduced }
         return .spring(response: 0.26, dampingFraction: 0.7)
+    }
+
+    /// Glides a clock-driven value across the gap between two samples.
+    ///
+    /// Linear, and deliberately neither profile-dependent nor Reduce Motion
+    /// aware: this is not decoration, it is the value's own constant velocity.
+    /// A playhead sampled at 10Hz steps visibly on a wide bar, and an ease or
+    /// a spring would bend a motion that is already correct — one segment
+    /// matched to the sampler's own interval lands exactly on the next sample,
+    /// so the travel reads as continuous instead of as a seam per tick.
+    static func clockStep(_ interval: TimeInterval) -> Animation {
+        .linear(duration: interval)
     }
 
     /// The HUD bar's own settle, matching `DraggableProgressBar`. Computed,

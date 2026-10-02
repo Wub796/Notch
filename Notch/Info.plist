@@ -36,7 +36,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>Notch takes over one app's audio, and only that app's, when you change its level, mute it, or apply an equalizer or headphone correction in the mixer. Nothing is recorded, nothing is stored, and nothing is captured for an app you have not changed.</string>
+	<string>Notch measures low, mid, and high frequency magnitudes in the output mix for the real-time waveform, and reads an app's audio when you change it in the mixer. Samples are processed in memory, never recorded or stored.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Notch communicates with Music and Spotify to read the current track when system now-playing data is unavailable.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>

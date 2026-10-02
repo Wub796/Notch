@@ -387,9 +387,9 @@ final class NotchSettings {
 
     var fetchLyrics = true { didSet { save(fetchLyrics, "fetchLyrics") } }
 
-    /// Drive the visualiser from the real output mix rather than the volume.
-    /// Off by default: it costs a Screen Recording permission.
-    var realtimeAudioMeter = false {
+    /// Drive the visualiser from three real-time frequency bands in the output mix.
+    /// Enabled by default so the bars measure audio rather than inventing motion.
+    var realtimeAudioMeter = true {
         didSet {
             save(realtimeAudioMeter, "realtimeAudioMeter")
             notify(onRealtimeAudioMeterChanged, realtimeAudioMeter)

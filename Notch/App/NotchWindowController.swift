@@ -8,6 +8,9 @@ import SwiftUI
 final class NotchWindowController: NSWindowController {
     private let state: NotchState
     private weak var trackedScreen: NSScreen?
+    private var trackedDisplayID: CGDirectDisplayID?
+    /// Screen query-backed geometry, cached until display parameters change.
+    private var trackedNotchCenterX: CGFloat = 0
     private var observesFaceIDOverlayPhase = true
     private var isFaceIDOverlayActive = false
     private var shouldShowPanelAfterFaceID = false
@@ -20,6 +23,9 @@ final class NotchWindowController: NSWindowController {
     private var lastCollapsedWindowSize: CGSize?
     private var screenParametersObserver: NSObjectProtocol?
     private var collapseResizeWork: DispatchWorkItem?
+    private var pendingCollapseFrame: NSRect?
+    private var collapseResizeGeneration: UInt64 = 0
+    private var settleGeneration: UInt64 = 0
     /// True only while this controller is applying a frame of its own, so the
     /// window delegate can tell our sizing apart from anything else that moves
     /// or resizes the panel. See `repairFrameIfDrifted`.
@@ -28,8 +34,10 @@ final class NotchWindowController: NSWindowController {
     init(state: NotchState, screen: NSScreen) {
         self.state = state
         self.trackedScreen = screen
+        trackedDisplayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
 
         let geometry = NotchGeometry(screen: screen)
+        trackedNotchCenterX = geometry.notchCenterX
         state.notchSize = geometry.notchSize
 
         // Open at the closed notch's size. `syncWindowSize()` below keeps it
@@ -83,8 +91,11 @@ final class NotchWindowController: NSWindowController {
         state.onModeChange = nil
         state.onWillExpand = nil
         state.onWillShowTab = nil
-        collapseResizeWork?.cancel()
-        collapseResizeWork = nil
+        cancelPendingShrink()
+        settleWork?.cancel()
+        settleWork = nil
+        settleGeneration &+= 1
+        isWindowSettling = false
         window?.delegate = nil
         if let spaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver)
@@ -203,21 +214,80 @@ final class NotchWindowController: NSWindowController {
     /// *inside* the window, so shrinking early clips it mid-flight.
     private func apply(windowSize size: CGSize, on screen: NSScreen) {
         guard let panel = window else { return }
-        collapseResizeWork?.cancel()
-        collapseResizeWork = nil
+
+        // Same target: do not cancel/re-arm an outstanding deferred shrink.
+        // The cursor probe runs repeatedly, and doing that at every poll used
+        // to keep the open panel around indefinitely.
+        let targetFrame = roundedWindowFrame(size, on: screen)
+        if panel.frame == targetFrame {
+            cancelPendingShrink()
+            return
+        }
+        if pendingCollapseFrame == targetFrame { return }
 
         let grows = size.width > panel.frame.width || size.height > panel.frame.height
         guard !grows else {
+            cancelPendingShrink()
             setWindowFrame(size, on: screen)
             return
         }
+        // `onWillExpand` and `onWillShowTab` grow synchronously before the
+        // corresponding state mutation; that is intentional, so they must not
+        // be vetoed against the old mode's size here.
+        guard state.mode == .expanded else {
+            let currentTarget = collapsedWindowSize()
+            guard abs(currentTarget.width - size.width) <= 0.5,
+                  abs(currentTarget.height - size.height) <= 0.5
+            else {
+                cancelPendingShrink()
+                return
+            }
+            scheduleShrink(to: size, on: screen)
+            return
+        }
+        let currentTarget = expandedWindowSize()
+        guard abs(currentTarget.width - size.width) <= 0.5,
+              abs(currentTarget.height - size.height) <= 0.5
+        else {
+            cancelPendingShrink()
+            return
+        }
+        scheduleShrink(to: size, on: screen)
+    }
+
+    private func scheduleShrink(to size: CGSize, on screen: NSScreen) {
+        let targetFrame = roundedWindowFrame(size, on: screen)
+        guard pendingCollapseFrame != targetFrame else { return }
+        cancelPendingShrink()
+        pendingCollapseFrame = targetFrame
+        let settleGeneration = self.settleGeneration
+        let workGeneration = collapseResizeGeneration
         let work = DispatchWorkItem { [weak self] in
-            guard let self, let screen = self.trackedScreen else { return }
+            guard let self,
+                  self.collapseResizeGeneration == workGeneration,
+                  self.pendingCollapseFrame == targetFrame
+            else { return }
+            guard let screen = self.trackedScreen else {
+                self.cancelPendingShrink()
+                return
+            }
+
+            let canApplyScheduledShrink = self.settleGeneration == settleGeneration
+                && !self.isWindowSettling
+            self.pendingCollapseFrame = nil
+            self.collapseResizeWork = nil
             // Re-derive: the mode may have changed again while waiting.
             let current = self.state.mode == .expanded
                 ? self.expandedWindowSize()
                 : self.collapsedWindowSize()
-            self.setWindowFrame(current, on: screen)
+            if canApplyScheduledShrink {
+                self.setWindowFrame(current, on: screen)
+            } else {
+                // A newer frame is still settling, or settled after this work
+                // was queued. Re-enter the sizing path so it can grow now or
+                // schedule a fresh shrink against the latest settle generation.
+                self.apply(windowSize: current, on: screen)
+            }
         }
         collapseResizeWork = work
         // The same settle the hover probe waits for before it will open the
@@ -226,19 +296,30 @@ final class NotchWindowController: NSWindowController {
         DispatchQueue.main.asyncAfter(deadline: .now() + NotchAnimations.closeSettle, execute: work)
     }
 
+    private func cancelPendingShrink() {
+        collapseResizeGeneration &+= 1
+        collapseResizeWork?.cancel()
+        collapseResizeWork = nil
+        pendingCollapseFrame = nil
+    }
+
     private func setWindowFrame(_ size: CGSize, on screen: NSScreen) {
         guard let panel = window else { return }
-        let frame = NSRect(
-            x: (NotchGeometry(screen: screen).notchCenterX - size.width / 2).rounded(),
-            y: (screen.frame.maxY - size.height).rounded(),
-            width: size.width.rounded(),
-            height: size.height.rounded()
-        )
+        let frame = roundedWindowFrame(size, on: screen)
         guard panel.frame != frame else { return }
         isApplyingFrame = true
         panel.setFrame(frame, display: true)
         isApplyingFrame = false
         markWindowSettling()
+    }
+
+    private func roundedWindowFrame(_ size: CGSize, on screen: NSScreen) -> NSRect {
+        NSRect(
+            x: (trackedNotchCenterX - size.width / 2).rounded(),
+            y: (screen.frame.maxY - size.height).rounded(),
+            width: size.width.rounded(),
+            height: size.height.rounded()
+        )
     }
 
     /// True from the moment a frame is applied until the size animation it began
@@ -261,9 +342,12 @@ final class NotchWindowController: NSWindowController {
 
     private func markWindowSettling() {
         settleWork?.cancel()
+        settleGeneration &+= 1
+        let generation = settleGeneration
         isWindowSettling = true
         let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
+            guard let self, self.settleGeneration == generation else { return }
+            self.settleWork = nil
             self.isWindowSettling = false
             self.repairFrameIfDrifted()
         }
@@ -291,7 +375,7 @@ final class NotchWindowController: NSWindowController {
         // A frame in flight is not a frame that drifted: `isWindowSettling`'s own
         // completion calls this again once the animation has landed.
         guard !isWindowSettling else { return }
-        let notchCentre = NotchGeometry(screen: screen).notchCenterX
+        let notchCentre = trackedNotchCenterX
         let offCentre = abs(panel.frame.midX - notchCentre) > 0.5
         let target = state.mode == .expanded ? expandedWindowSize() : collapsedWindowSize()
         let wrongSize = abs(panel.frame.width - target.width) > 0.5
@@ -312,8 +396,7 @@ final class NotchWindowController: NSWindowController {
     /// earlier screen is shrunk by `apply` once things settle.
     private func growWindow(for tab: NotchTab?) {
         guard let panel = window, let screen = trackedScreen else { return }
-        collapseResizeWork?.cancel()
-        collapseResizeWork = nil
+        cancelPendingShrink()
         let target = expandedWindowSize(for: tab)
         setWindowFrame(
             CGSize(
@@ -374,9 +457,27 @@ final class NotchWindowController: NSWindowController {
 
     private func refreshNotchGeometry() {
         guard let screen = trackedScreen else { return }
-        state.notchSize = NotchGeometry(screen: screen).notchSize
+        let geometry = NotchGeometry(screen: screen)
+        trackedNotchCenterX = geometry.notchCenterX
+        state.notchSize = geometry.notchSize
         syncWindowSize()
+        reanchorToTrackedScreen()
         updateIgnoreMouseEvents()
+    }
+
+    /// Reuses the live panel when a wake or display-parameter notification
+    /// refers to the same physical display. Tearing down and rebuilding the
+    /// hosting view on every wake interrupts SwiftUI's shape animation and
+    /// can leave the slab as a flat rectangle until the next state change.
+    func refreshIfAttached(to screen: NSScreen) -> Bool {
+        guard let trackedDisplayID,
+              let requestedID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
+              trackedDisplayID == requestedID
+        else { return false }
+
+        self.trackedScreen = screen
+        refreshNotchGeometry()
+        return true
     }
 
     private func setupSpaceObserver() {
@@ -395,7 +496,7 @@ final class NotchWindowController: NSWindowController {
         // what the notch is drawing, so a fixed size would misplace it.
         let size = panel.frame.size
         let newOrigin = NSPoint(
-            x: (NotchGeometry(screen: screen).notchCenterX - size.width / 2).rounded(),
+            x: (trackedNotchCenterX - size.width / 2).rounded(),
             y: (screen.frame.maxY - size.height).rounded()
         )
         guard abs(panel.frame.origin.x - newOrigin.x) > 0.5
@@ -436,30 +537,22 @@ final class NotchWindowController: NSWindowController {
         // A global monitor does not receive mouse-moved events when the user
         // has disabled mouse-move reporting or when another app owns the
         // event stream. Keep the notch responsive by checking the cursor at a
-        // low-cost cadence while it is collapsed; this also prevents a stale
+        // low-cost cadence in both modes; this also prevents a stale
         // `ignoresMouseEvents` value from making the hover probe unreachable.
         syncCursorTracking()
     }
 
-    /// The cursor poll exists only to catch the collapsed notch's hover when
-    /// AppKit does not deliver a move event. While the panel is open the
-    /// pointer is already inside it and SwiftUI owns hover, so the poll is
-    /// pure overhead — and it is not cheap overhead: every tick recomputes
-    /// `expandedSize`, which walks the whole per-tab sizing path. Run it while
-    /// collapsed, stop it while expanded.
+    /// Polls the cursor as a fallback when AppKit does not deliver a move
+    /// event. Keep this running while expanded too: the expanded hover callback
+    /// intentionally ignores SwiftUI's unreliable exit reports during layout,
+    /// so the screen-coordinate check below must keep sampling to notice a real
+    /// exit even when a global event monitor is unavailable.
     private func syncCursorTracking() {
-        let wantsTracking = state.mode != .expanded
-        guard wantsTracking != (cursorTrackingTimer != nil) else { return }
-
-        guard wantsTracking else {
-            cursorTrackingTimer?.invalidate()
-            cursorTrackingTimer = nil
-            return
-        }
-        // A tight cadence so a cursor flicking up under the notch is still
-        // sampled inside the probe — a fast crossing can clear the collapsed
-        // target between two slow polls.
-        cursorTrackingTimer = Timer.scheduledRepeating(every: 1.0 / 60.0) { [weak self] in
+        guard cursorTrackingTimer == nil else { return }
+        // Event monitors handle ordinary movement immediately. A 30Hz poll is
+        // only the fallback for systems that do not deliver mouse-moved events;
+        // 60Hz needlessly repeated screen-geometry and activity checks while idle.
+        cursorTrackingTimer = Timer.scheduledRepeating(every: 1.0 / 30.0) { [weak self] in
             self?.updateIgnoreMouseEvents()
         }
     }
@@ -485,43 +578,62 @@ final class NotchWindowController: NSWindowController {
 
         // Keep the collapsed panel's frame in lockstep with live notch
         // adjustments before deciding whether it can receive the pointer.
-        // This runs at the same 60Hz cadence as the fallback cursor probe, so
+        // This runs at the fallback cursor-probe cadence, so
         // a display or size change never leaves a stale dead zone behind.
         if state.mode != .expanded {
             // Only when the target itself moved. The size is compared against
-            // the last request rather than the live frame because `apply`
-            // defers a shrink for 0.55s — re-arming it every tick would mean
-            // the collapse never lands.
+            // the last request rather than the live frame while a shrink waits
+            // for the close animation to settle.
             let target = collapsedWindowSize()
             if lastCollapsedWindowSize != target {
                 lastCollapsedWindowSize = target
                 apply(windowSize: target, on: screen)
+            } else if let pendingCollapseFrame,
+                      pendingCollapseFrame != roundedWindowFrame(target, on: screen) {
+                cancelPendingShrink()
             }
         }
 
-        // The same test in both modes. Exempting the expanded state meant the
-        // whole window took the mouse while the notch was open — and the
-        // window is nearly as wide as the screen and ~537pt tall, so opening
-        // the notch made the top half of the display dead again. Worse, an
-        // outside click could not dismiss it: `hitTest` dropped the click, and
-        // AppDelegate's *global* monitor never sees events delivered to this
-        // app. `interactiveScreenRect` already returns the slab when expanded,
-        // which is exactly the region that should take the mouse.
-        let activeRect = interactiveScreenRect(on: screen)
-        let pointerInside = activeRect.contains(NSEvent.mouseLocation)
+        // Keep the panel interactive only over its active region. In expanded
+        // mode this is the slab; while collapsed it is the visible pill and
+        // hover target.
+        let pointer = NSEvent.mouseLocation
+        // The interactive region is always contained within the window frame.
+        // Most movement events happen elsewhere on screen, so skip rebuilding
+        // the (mode- and content-dependent) exact rect unless the cursor is in
+        // the panel's small bounding box. A drag keeps hit-testing enabled.
+        let dragging = NSEvent.pressedMouseButtons != 0
+        let pointerInside = !dragging && panel.frame.contains(pointer)
+            && interactiveScreenRect(on: screen).contains(pointer)
 
         // While a button is held anywhere, stay interactive: a file dragged
         // from Finder arrives as a dragging session rather than as mouse-moved
         // events, and a window that ignores the mouse is not a drop target.
-        let dragging = NSEvent.pressedMouseButtons != 0
         let shouldIgnore = !pointerInside && !dragging
 
         if panel.ignoresMouseEvents != shouldIgnore {
             panel.ignoresMouseEvents = shouldIgnore
         }
 
+        if state.mode == .expanded {
+            if let pendingCollapseFrame,
+               pendingCollapseFrame != roundedWindowFrame(expandedWindowSize(), on: screen) {
+                cancelPendingShrink()
+            }
+            // Keep hover latched while the cursor is over the visible expanded
+            // slab. The top overshoot band bridges the shared menu-bar clamp;
+            // the sides and lower edge still end at the visible slab boundary.
+            if activeExpandedHoverRect(on: screen).contains(pointer) {
+                if !state.isHovering { state.hoverChanged(true) }
+            } else if state.isHovering {
+                state.hoverChanged(false)
+            }
+            return
+        }
+
         // Hover is decided here on both sides of the same rectangle, rather
-        // than entered here and left to SwiftUI to exit.
+        // than entered here and left to SwiftUI to exit. Expanded mode exits
+        // above; only collapsed hover needs to build the activity probe.
         //
         // Both directions are needed because the panel stops receiving events
         // the moment it starts ignoring them: SwiftUI never sees the pointer
@@ -539,25 +651,13 @@ final class NotchWindowController: NSWindowController {
         // One rect, read as it is now: idle it is the entry edge, and hovered
         // it has grown (see `hoverProbeSize`), so the two edges differ and a
         // cursor resting on the pill's boundary cannot blink the peek.
-        let pointer = NSEvent.mouseLocation
         let probeRect = probeScreenRect(on: screen)
-        if state.mode == .expanded {
-            // The open slab answers hover itself; all this has to do is say
-            // when the pointer got away from it. Still gated on the switch,
-            // because a held button keeps the panel interactive on purpose
-            // — dragging the dropped bar downwards must not close the panel
-            // mid-drag.
-            if shouldIgnore, state.isHovering {
-                state.hoverChanged(false)
-            }
-        } else {
-            // Scoped to the probe, never the wider interactive area: the notch
-            // must not peek just because the cursor is near it.
-            if probeRect.contains(pointer) {
-                if !state.isHovering { state.hoverChanged(true) }
-            } else if state.isHovering {
-                state.hoverChanged(false)
-            }
+        // Scoped to the probe, never the wider interactive area: the notch
+        // must not peek just because the cursor is near it.
+        if probeRect.contains(pointer) {
+            if !state.isHovering { state.hoverChanged(true) }
+        } else if state.isHovering {
+            state.hoverChanged(false)
         }
     }
 
@@ -581,7 +681,7 @@ final class NotchWindowController: NSWindowController {
     private func probeScreenRect(on screen: NSScreen) -> NSRect {
         let probe = state.hoverProbeSize
         return NSRect(
-            x: NotchGeometry(screen: screen).notchCenterX - probe.width / 2,
+            x: trackedNotchCenterX - probe.width / 2,
             y: screen.frame.maxY - probe.height,
             width: probe.width,
             height: probe.height + NotchSizing.hoverOvershootGrace
@@ -591,10 +691,27 @@ final class NotchWindowController: NSWindowController {
     private func interactiveScreenRect(on screen: NSScreen) -> NSRect {
         let size = NotchInteractiveRegion.size(for: state)
         return NSRect(
-            x: NotchGeometry(screen: screen).notchCenterX - size.width / 2,
+            x: trackedNotchCenterX - size.width / 2,
             y: screen.frame.maxY - size.height,
             width: size.width,
             height: size.height
+        )
+    }
+
+    /// Pointer zone that keeps an expanded panel open. Its sides and lower edge
+    /// match the visible slab exactly. The only extension is the same top-edge
+    /// overshoot accepted by the collapsed probe: macOS clamps a cursor aimed
+    /// at the hardware notch to the screen boundary, just above the drawn slab.
+    /// Without matching that allowance here, the panel closes at the clamp,
+    /// then the collapsed probe immediately reopens it in an endless loop.
+    private func activeExpandedHoverRect(on screen: NSScreen) -> NSRect {
+        let slab = state.expandedSize
+        let height = state.expandedTotalHeight
+        return NSRect(
+            x: trackedNotchCenterX - slab.width / 2,
+            y: screen.frame.maxY - height,
+            width: slab.width,
+            height: height + NotchSizing.hoverOvershootGrace
         )
     }
 

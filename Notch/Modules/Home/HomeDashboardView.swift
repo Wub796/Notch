@@ -7,13 +7,15 @@ import SwiftUI
 /// dashboard). Keep these in step with the layout below.
 enum HomeDashboardMetrics {
     /// The full music column: a single artwork/text row inside its surface.
-    /// The 88pt artwork tile is the tallest element — the title/artist/
-    /// transport block sits beside it, not beneath it — so the row is 88pt,
-    /// plus the card's own vertical padding above and below it.
+    /// The artwork tile is the tallest element — the title/artist/transport
+    /// block sits beside it, not beneath it — so the row is the tile's own
+    /// side, plus the card's vertical padding above and below it.
     ///
     /// Counting a stacked transport row here made the slab ~42pt taller than
     /// its content, which is the black strip this measurement exists to avoid.
-    static let musicColumnHeight: CGFloat = 88 + NotchTheme.Space.s * 2
+    static var musicColumnHeight: CGFloat {
+        HomeDashboardSizing.coverArtSize + NotchTheme.Space.s * 2
+    }
     /// A row of other-audio chips beneath the music row: the 4pt VStack gap
     /// plus the chip row itself (14pt glyph + 3pt padding above and below).
     static let otherAudioChipsHeight: CGFloat = 24
@@ -34,9 +36,18 @@ enum HomeDashboardMetrics {
 /// Settings. By default the player, weather and calendar, as in the Sapphire
 /// reference.
 ///
-/// Budget: `NotchState.moduleContentSize`, and it has to be respected — pane
-/// content is `fixedSize`, so asking for more than the panel has does not
-/// clip, it *compresses*, and a Text squeezed below its natural width wraps.
+/// Budget: `NotchState.moduleContentSize`. The row is three cards that hug
+/// their own content, so that budget is spent rather than merely respected —
+/// and the cards do not all react to it the same way. The player's card is
+/// elastic: it gives width back when the row is tight, clipping its title, so
+/// a long track name costs the card's own text and never the neighbours'
+/// widths. The weather and calendar cards are rigid, because the readings and
+/// cells are what makes them readable at a glance, and a squeezed one spills
+/// rather than shrinks — the weather card keeps its metrics column, and the
+/// player's card is the one that ends up narrow. What keeps them whole is the
+/// arrangement: `HomeDashboardSizing`, picked from the width the module
+/// actually got, sizes their caps and cells, and the two arrangements'
+/// minimums are checked against that width before either is drawn.
 struct HomeDashboardView: View {
     let state: NotchState
     let namespace: Namespace.ID
@@ -44,6 +55,14 @@ struct HomeDashboardView: View {
     /// The widgets the user chose, left to right.
     private var widgets: [DashboardWidget] {
         state.settings.dashboardWidgets
+    }
+
+    /// Which arrangement the cards are drawn in, from the width the module was
+    /// actually given. See `HomeDashboardSizing`: the caps, glyph sizes and
+    /// day cells below all come from here, so the dashboard cannot lay itself
+    /// out at one size while the slab is sized for another.
+    private var sizing: HomeDashboardSizing {
+        HomeDashboardSizing.sizing(forContentWidth: state.moduleContentSize.width)
     }
 
     /// One height for every pane, whichever widgets are showing. NotchState
@@ -56,10 +75,13 @@ struct HomeDashboardView: View {
 
     var body: some View {
         // Panes of one height on a shared baseline, divided by a uniform gap.
-        // Music, when present, takes the spare width — it has the most to say
-        // (artwork, title, transport) — and the rest keep their natural size.
-        // Without it, the panes share the row evenly.
-        HStack(alignment: .center, spacing: NotchTheme.Space.s) {
+        // The player card is raised above the other two so that it — the row's
+        // elastic card, and the one that draws a long title window — is served
+        // the spare width first. It is also the only pane that can shrink: its
+        // title clips, where the weather and calendar cards hold readings at a
+        // size somebody chose, so a tight row is paid for here and no card is
+        // pushed past the slab.
+        HStack(alignment: .center, spacing: sizing.paneGap) {
             ForEach(widgets) { widget in
                 pane(for: widget)
                     .frame(height: rowHeight)
@@ -72,17 +94,31 @@ struct HomeDashboardView: View {
         // a flexible maxHeight frame here would let the fit measure the full
         // budget instead of the row's real height.
         .frame(maxWidth: .infinity)
+        #if DEBUG
+        // The arrangement questions this log answers, per open: which cards
+        // were drawn, how wide the module handed them, and whether that width
+        // even holds the smaller arrangement. The arithmetic itself has its
+        // own tests; what cannot be checked offscreen is the width the panel
+        // actually gives the module.
+        .onAppear {
+            let content = state.moduleContentSize.width
+            print("[Notch] home cards: \(sizing.arrangement.rawValue) at \(Int(content))pt"
+                  + " (needs \(Int(sizing.minimumContentWidth))pt), player card up to"
+                  + " \(Int(sizing.musicMaximumWidth))pt, weather needs"
+                  + " \(Int(sizing.weatherMinimumWidth))pt")
+            if content < HomeDashboardSizing.compact.minimumContentWidth {
+                print("[Notch] home cards: module narrower than the compact"
+                      + " arrangement — the rigid cards will be squeezed")
+            }
+        }
+        #endif
     }
 
     @ViewBuilder
     private func pane(for widget: DashboardWidget) -> some View {
         switch widget {
         case .music:
-            musicSection
-                .padding(.horizontal, NotchTheme.Space.s)
-                .padding(.vertical, NotchTheme.Space.s)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .notchTile(radius: NotchTheme.Radius.card)
+            musicPane
         case .weather:
             weatherSection
         case .calendar:
@@ -97,6 +133,52 @@ struct HomeDashboardView: View {
     }
 
     // MARK: - Music
+
+    /// The player card: the row's elastic card, its block pinned to the left.
+    ///
+    /// It gives width back when the row is tight — clipping the title rather
+    /// than pushing its neighbours past the slab — and it takes the width the
+    /// two cards beside it leave when the row is roomy, up to
+    /// `musicMaximumWidth`. It is the row's *smallest* card on the tuned slab
+    /// for that reason: the weather card holds its metrics column and the
+    /// calendar its day strip, and the player card is what is left (measured:
+    /// 326pt of player card beside 304pt of weather and 294pt of calendar,
+    /// with every card at its own size and no slack on any side).
+    ///
+    /// The block is pinned to the card's leading edge — cover first, then the
+    /// text column — and never centred: the elements read from the left rim
+    /// whatever the card's width, and the width a short title does not use sits
+    /// at the card's far end rather than around it.
+    ///
+    /// The two candidates are the card at the block's own width — cover, title
+    /// window, transport row, which a short title asks for — and the same card
+    /// filled to whatever the row can afford, clipping the title inside it.
+    /// `ViewThatFits` takes the first whenever it fits, which is what keeps the
+    /// transport row under the text block: in the filled card the column runs
+    /// the full title window, and a transport row centred in *that* drifts
+    /// right of a short title. Either way the tile is `musicMaximumWidth`.
+    private var musicPane: some View {
+        ViewThatFits(in: .horizontal) {
+            musicCard
+                .fixedSize(horizontal: true, vertical: false)
+            musicCard
+        }
+        .frame(
+            maxWidth: sizing.musicMaximumWidth,
+            maxHeight: .infinity,
+            alignment: .leading
+        )
+        .notchTile(radius: NotchTheme.Radius.card)
+    }
+
+    /// The card's own body: the padding and the two rows, with no width of its
+    /// own beyond what the content asks for — the pane above decides how much
+    /// room it is given, and pins the block to the card's left rim.
+    private var musicCard: some View {
+        musicSection
+            .padding(.horizontal, sizing.panePadding)
+            .padding(.vertical, NotchTheme.Space.s)
+    }
 
     private var activeAudioApp: AudioAppMonitor.App? {
         state.audioApps.apps.first(where: \.isPlaying)
@@ -138,9 +220,13 @@ struct HomeDashboardView: View {
         state.otherAudioApps
     }
 
+    /// Leading, like every other thing on the panel: the cover, the text column
+    /// and the chips row all start from the card's left rim. Only the transport
+    /// row inside the column is centred, and it is centred under its own text
+    /// rather than under the card.
     private var musicSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: sizing.coverGap) {
                 Button(action: openSource) {
                     artwork
                 }
@@ -157,7 +243,7 @@ struct HomeDashboardView: View {
                     MarqueeText(
                         text: displayTitle.uppercased(),
                         font: .system(size: 18, weight: .heavy, design: .rounded),
-                        width: 220,
+                        width: sizing.marqueeWidth,
                         tracking: 2.0
                     )
                     .foregroundStyle(NotchTheme.inkPrimary)
@@ -170,7 +256,7 @@ struct HomeDashboardView: View {
                             .foregroundStyle(NotchTheme.inkSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .frame(maxWidth: 220, alignment: .leading)
+                            .frame(maxWidth: sizing.artistWidth, alignment: .leading)
 
                     }
 
@@ -198,7 +284,21 @@ struct HomeDashboardView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.top, 2)
                 }
-                .fixedSize(horizontal: true, vertical: false)
+                // This column is the dashboard's elastic width. It takes
+                // whatever the weather and calendar cards leave and gives it
+                // back — clipping the title, truncating the artist — when the
+                // row is tight. It used to be `fixedSize`, which turned a long
+                // track name into a demand on the whole row: the two cards
+                // beside it were squeezed past their own content and painted
+                // out past the slab's edge, which is the state
+                // `HomeDashboardSizing` exists to keep the panel out of. The
+                // cap is what keeps the transport row centred under the text
+                // rather than drifting right when the card has width to spare,
+                // because its `maxWidth: .infinity` frame would take all of it.
+                // The card itself is capped to this same width plus the cover
+                // and padding (`musicMaximumWidth`), so spare width is not
+                // collected here as empty tile either.
+                .frame(maxWidth: sizing.marqueeWidth, alignment: .leading)
                 .help("Open the full player")
             }
 
@@ -273,7 +373,8 @@ struct HomeDashboardView: View {
     }
 
     private var artwork: some View {
-        ZStack {
+        let side = HomeDashboardSizing.coverArtSize
+        return ZStack {
             // Keyed on `artworkVersion` so the cover crossfades on track
             // change; the stable container below keeps the open/close morph
             // and the source-app badge fixed while the image swaps.
@@ -281,7 +382,7 @@ struct HomeDashboardView: View {
                 .id(state.media.artworkVersion)
                 .transition(.opacity)
         }
-        .frame(width: 88, height: 88)
+        .frame(width: side, height: side)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: state.media.accent.opacity(0.38), radius: 12, y: 4)
@@ -353,18 +454,25 @@ struct HomeDashboardView: View {
     @ViewBuilder
     private var weatherSection: some View {
         if let weather = state.weather.snapshot {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: sizing.readoutGap) {
                 Image(systemName: WeatherService.symbol(
                     for: weather.weatherCode,
                     isDay: weather.isDay
                 ))
-                .font(.system(size: 36))
+                .font(.system(size: sizing.weatherGlyphSize))
                 .symbolRenderingMode(.multicolor)
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(WeatherService.temperatureString(celsius: weather.temperatureCelsius))
-                        .font(.system(size: 38, weight: .heavy, design: .rounded).monospacedDigit())
+                        .font(.system(size: sizing.temperatureSize, weight: .heavy, design: .rounded).monospacedDigit())
                         .foregroundStyle(NotchTheme.inkPrimary)
+                        // The card's one reading, and never negotiated: a Text
+                        // squeezed below its own width wraps rather than
+                        // shrinks, and a temperature broken over two lines is
+                        // worse than a narrower card. `fixedSize` puts it in
+                        // the card's minimum, which is what HomeDashboardSizing
+                        // budgets for.
+                        .fixedSize()
                         // Digits roll when the reading changes; without a
                         // value-bound animation the contentTransition is inert.
                         .contentTransition(.numericText())
@@ -375,23 +483,29 @@ struct HomeDashboardView: View {
                         .foregroundStyle(NotchTheme.inkPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .frame(maxWidth: 120, alignment: .leading)
+                        .frame(maxWidth: sizing.weatherTextWidth, alignment: .leading)
 
                     Text(WeatherService.condition(for: weather.weatherCode))
                         .font(.system(size: 14, weight: .medium, design: .rounded))
                         .foregroundStyle(NotchTheme.inkSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .frame(maxWidth: 120, alignment: .leading)
+                        .frame(maxWidth: sizing.weatherTextWidth, alignment: .leading)
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    metric("wind", WeatherService.windString(kmh: weather.windKmh))
-                    metric("drop.fill", "\(weather.precipitationChancePercent)%")
-                    metric("humidity.fill", "\(weather.humidityPercent)%")
+                // The card's third register, and the widest thing on it. It
+                // belongs to the roomy arrangement: the player card beside it
+                // gives up the width for it, which is why the card is a chip
+                // without it (see `HomeDashboardSizing.showsWeatherMetrics`).
+                if sizing.showsWeatherMetrics {
+                    VStack(alignment: .leading, spacing: 4) {
+                        metric("wind", WeatherService.windString(kmh: weather.windKmh))
+                        metric("drop.fill", "\(weather.precipitationChancePercent)%")
+                        metric("humidity.fill", "\(weather.humidityPercent)%")
+                    }
                 }
             }
-            .dashboardPane(opens: .weather, in: state, help: "Open the weather detail")
+            .dashboardPane(padding: sizing.panePadding, opens: .weather, in: state, help: "Open the weather detail")
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Weather")
             .accessibilityValue(
@@ -433,7 +547,7 @@ struct HomeDashboardView: View {
                 }
             }
         }
-        .dashboardPane(opens: .weather, in: state, help: "Open the weather detail")
+        .dashboardPane(padding: sizing.panePadding, opens: .weather, in: state, help: "Open the weather detail")
     }
 
     private var weatherPlaceholderIcon: String {
@@ -458,55 +572,61 @@ struct HomeDashboardView: View {
             !$0.isAllDay && $0.start > today && Calendar.current.isDateInToday($0.start)
         }
 
-        // Trailing-aligned so the whole block — the date strip *and* the
-        // event line under it — shares the right gutter, giving the calendar
-        // the same side spacing as the cover art on the left.
-        return VStack(alignment: .trailing, spacing: 8) {
-            HStack(alignment: .center, spacing: 8) {
+        // Centred on both axes, so the strip is the anchor of its own card.
+        //
+        // This used to hang off the right edge, trailing-aligned to share a
+        // gutter with the cover art at the far left. Read on its own, though,
+        // the block just looked shoved into a corner: the month and day
+        // numbers sat hard against the right rim while the left half of the
+        // pane stayed empty. Centre alignment gives the block the same poise
+        // the weather and music panes already have.
+        //
+        // The padding is symmetric for the same reason — centre alignment only
+        // centres anything if the space around it is even. The old
+        // `.padding(.bottom, .l)` was deliberate while the block was trailing
+        // (it nudged the ink up to sit level with its neighbours), but under
+        // centre alignment that asymmetry just pushes the block off-centre
+        // again.
+        //
+        // The two rungs stay modest, and for different reasons. The pane hugs
+        // this block horizontally, so every point of *side* pad widens the
+        // calendar card by exactly that and takes the width from the music
+        // column beside it — kept at the same 8pt it already carried. The
+        // *vertical* pad costs nothing: the row height is fixed, so it only
+        // re-centres the ink inside its card, and it can carry the roomier
+        // beat the event line wanted under it.
+        //
+        // Keep block + padding inside the tile's budget (the row height less
+        // the pane's own 16), or the pane's minimum wins and its tile grows
+        // past the row — which is what a 40pt pad did: the calendar card ran
+        // 8pt above the other two.
+        return VStack(alignment: .center, spacing: NotchTheme.Space.m) {
+            HStack(alignment: .center, spacing: sizing.dayStrip.cellGap) {
                 Text(today.formatted(.dateTime.month(.abbreviated)))
-                    .font(.system(size: 27, weight: .heavy, design: .rounded))
+                    .font(.system(size: sizing.monthSize, weight: .heavy, design: .rounded))
                     .fixedSize()
                     .foregroundStyle(NotchTheme.inkPrimary)
                     .accessibilityHidden(true)
 
-                HStack(alignment: .center, spacing: 8) {
+                HStack(alignment: .center, spacing: sizing.dayStrip.cellGap) {
                     ForEach(Array(strip.enumerated()), id: \.offset) { _, day in
                         dayCell(day)
                     }
                 }
             }
 
-            // The event line ("no more items today") sits right under the
-            // date strip so the column reads as one compact block near the
-            // top, instead of its label floating at the slab's bottom edge.
-            // The line hugs its content: without fixedSize, the title's
-            // 180pt cap frame expands to fill the whole trailing-aligned
-            // column, leaving a ~90pt dead strip between the title text and
-            // the gutter.
+            // The event line ("no more items today") sits a beat below the
+            // strip — a touch more than the strip's own internal gaps, so the
+            // block reads as two registers (the dates, then the note about
+            // them) rather than one evenly-spaced row of them. It hugs its
+            // content: without fixedSize the title's 180pt cap frame would
+            // stretch the centred column and push the strip off-centre.
             nextEventLine(next)
                 .fixedSize(horizontal: true, vertical: false)
         }
-        // A little air around the block. Its ink — the month, the day numbers
-        // and the event line — ran within a few points of the card's edges,
-        // where the music card keeps 16pt to its own; the event line in
-        // particular read as crowded against the bottom of the pane.
-        //
-        // Both rungs are honest about what they buy, and both are measured.
-        // The pane hugs this block, so a side pad widens the card by exactly
-        // what it adds: the ink's side inset went 7 -> 11 for these 8pt, paid
-        // for by the music pane giving up 9 (334 -> 325) while the weather kept
-        // its 227. Height is not the pane's to give — the row height is fixed —
-        // so a bottom pad only re-centres the block inside its card, and the
-        // event line gains *half* of it: 16 sat the block 4pt higher (ink top
-        // 69.5 -> 65.5), which is 4pt more under the line and 4 less above.
-        //
-        // Keep the pair inside the tile's budget. The block and this padding
-        // have to stay shorter than the row height less the pane's own 16, or
-        // the pane's minimum wins and its tile grows past the row — which is
-        // what a 40pt pad did: the calendar card ran 8pt above the other two.
-        .padding(.horizontal, NotchTheme.Space.s)
-        .padding(.bottom, NotchTheme.Space.l)
-        .dashboardPane(opens: .calendar, in: state, help: "Open the calendar")
+        .padding(.horizontal, sizing.panePadding)
+        .padding(.vertical, NotchTheme.Space.m)
+        .dashboardPane(padding: sizing.panePadding, opens: .calendar, in: state, help: "Open the calendar")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Calendar")
         .accessibilityValue(next?.title ?? "Nothing left today")
@@ -520,18 +640,23 @@ struct HomeDashboardView: View {
         let isToday = calendar.isDateInToday(day)
         let distance = abs(calendar.dateComponents([.day], from: Date(), to: day).day ?? 0)
         let fade = 1.0 - Double(distance) * 0.28
+        let strip = sizing.dayStrip
 
         return VStack(spacing: -1) {
             Text(isToday
                  ? day.formatted(.dateTime.weekday(.abbreviated)).uppercased()
                  : String(day.formatted(.dateTime.weekday(.narrow)).prefix(1)).uppercased())
-                .font(.system(size: isToday ? 12 : 10, weight: .heavy, design: .rounded))
+                .font(.system(
+                    size: isToday ? strip.todayWeekdaySize : strip.otherWeekdaySize,
+                    weight: .heavy,
+                    design: .rounded
+                ))
                 .fixedSize()
                 .foregroundStyle(isToday ? .blue : NotchTheme.inkSecondary.opacity(fade))
 
             Text("\(calendar.component(.day, from: day))")
                 .font(.system(
-                    size: isToday ? 22 : 17,
+                    size: isToday ? strip.todayNumberSize : strip.otherNumberSize,
                     weight: isToday ? .heavy : .bold,
                     design: .rounded
                 ).monospacedDigit())
@@ -539,7 +664,9 @@ struct HomeDashboardView: View {
                 .fixedSize()
                 .foregroundStyle(isToday ? .blue : NotchTheme.inkPrimary.opacity(fade))
         }
-        .frame(minWidth: isToday ? 32 : 20)
+        // The arrangement's cell width, which is its content's width rounded
+        // up — see `HomeDashboardSizing.DayStrip`.
+        .frame(minWidth: isToday ? strip.todayCellWidth : strip.otherCellWidth)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(day.formatted(.dateTime.weekday(.wide).day().month(.wide)))
         .accessibilityAddTraits(isToday ? [.isSelected] : [])
@@ -563,7 +690,7 @@ struct HomeDashboardView: View {
                     .foregroundStyle(NotchTheme.inkSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 180, alignment: .leading)
+                    .frame(maxWidth: sizing.eventTitleWidth, alignment: .leading)
             } else {
                 Text(state.calendar.accessState == .granted
                      ? "No more items today"

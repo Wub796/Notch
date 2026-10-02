@@ -98,6 +98,7 @@ struct AudioDevicesView: View {
             #endif
             state.audio.refresh()
             state.audioInput.refresh()
+            state.refreshAudioApps()
             refreshPairedBluetooth()
         }
     }
@@ -163,9 +164,9 @@ struct AudioDevicesView: View {
     ///
     /// The meter is a CoreAudio tap, and a tap is a permission-gated object:
     /// macOS can refuse to create it (and macOS before 14.2 has no API at
-    /// all). That refusal is the difference between bars that follow the music
-    /// and bars that only follow the volume, so it belongs on the audio
-    /// surface the user is already looking at rather than in a log.
+    /// all). That refusal means there is no measured frequency data to show,
+    /// so it belongs on the audio surface the user is already looking at
+    /// rather than in a log.
     @ViewBuilder
     private var meterFailureNotice: some View {
         if let reason = state.audioMeter.failureReason {

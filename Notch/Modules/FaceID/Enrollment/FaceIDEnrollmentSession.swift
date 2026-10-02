@@ -295,7 +295,13 @@ final class FaceIDEnrollmentSession {
             let outcome = await Task.detached(priority: .userInitiated) {
                 () -> EnrollFrameOutcome in
                 do {
-                    let faces = try FaceDetector.detectFaces(in: frame.image)
+                    // The frame arrives as a recipe; its pixels are rendered
+                    // here, on this task, rather than on the capture callback
+                    // that published it (see `FaceIDCamera.workingImage(from:)`).
+                    guard let image = FaceIDCamera.workingImage(from: frame) else {
+                        return .noFace
+                    }
+                    let faces = try FaceDetector.detectFaces(in: image)
                     // The largest face with no prominence cutoff, so a face that
                     // is merely too far away reads as "move closer" rather than
                     // as nobody there.
@@ -305,7 +311,7 @@ final class FaceIDEnrollmentSession {
                     if Float(face.normalizedBoundingBox.width) < Self.minimumFaceWidth {
                         return .tooFar(face)
                     }
-                    return .ready(try pipeline.recognize(face, in: frame.image))
+                    return .ready(try pipeline.recognize(face, in: image))
                 } catch {
                     return .noFace
                 }

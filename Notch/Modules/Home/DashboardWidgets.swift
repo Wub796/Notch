@@ -17,9 +17,19 @@ extension View {
     /// past it. Without that, the music pane's claim on spare width let the row
     /// squeeze a neighbour down to its *minimum* — and a Text's minimum is
     /// nothing, which is how the weather pane lost its temperature entirely.
-    func dashboardPane() -> some View {
+    /// The player's column is the exception: it is elastic on purpose, so the
+    /// width a long track name asks for comes out of its own title rather than
+    /// out of the cards beside it, and a short one leaves the row rather than
+    /// sitting in empty tile (see `HomeDashboardView.musicPane`).
+    /// Cards this rigid are fine as long as the row is wide enough for them,
+    /// which is what the two arrangements in `HomeDashboardSizing` are for.
+    ///
+    /// The padding is a parameter because the two arrangements the dashboard
+    /// is drawn in size their own cards from it (`HomeDashboardSizing`), and a
+    /// card's padding is part of its minimum width.
+    func dashboardPane(padding: CGFloat = NotchTheme.Space.s) -> some View {
         fixedSize(horizontal: true, vertical: false)
-            .padding(.horizontal, NotchTheme.Space.s)
+            .padding(.horizontal, padding)
             .padding(.vertical, NotchTheme.Space.s)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .notchTile(radius: NotchTheme.Radius.card)
@@ -31,8 +41,13 @@ extension View {
     /// a zero-distance drag inside the tile, and an inner gesture beats a plain
     /// `.onTapGesture` attached outside it — the tile shrank under the click
     /// but never opened its screen.
-    func dashboardPane(opens tab: NotchTab, in state: NotchState, help: String) -> some View {
-        dashboardPane()
+    func dashboardPane(
+        padding: CGFloat = NotchTheme.Space.s,
+        opens tab: NotchTab,
+        in state: NotchState,
+        help: String
+    ) -> some View {
+        dashboardPane(padding: padding)
             .contentShape(Rectangle())
             .tileHover()
             .simultaneousGesture(TapGesture().onEnded { state.select(tab) })

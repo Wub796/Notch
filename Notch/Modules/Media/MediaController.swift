@@ -84,6 +84,9 @@ final class MediaController {
     private(set) var sourceAppIcon: NSImage?
     private var sourceAppPID: Int32 = 0
     private(set) var sourceAppBundleID: String?
+    /// The specific browser media page, when the now-playing item came from
+    /// YouTube.
+    private(set) var sourceMediaURL: URL?
 
     /// True while the current metadata came from a YouTube/web-video probe.
     /// This is deliberately exposed so every media surface uses the same
@@ -466,20 +469,56 @@ final class MediaController {
 
     // MARK: - Lifecycle
 
-    /// Called when the notch expands/collapses, starting and stopping the
-    /// timers that only make sense while the panel is open.
+    /// Whether the media surfaces that are on screen right now need live
+    /// updates.
     ///
-    /// Not *every* timer: the closed notch still shows the wings and the lyric
-    /// line, so where MediaRemote cannot push a track change (the Apple Events
-    /// path) a slow poll survives the collapse, and `updateLyricActivityTimer`
-    /// runs while closed by definition. What the collapse does buy is the end
-    /// of the 10Hz progress tick, the 1s browser probe, and the fast playback
-    /// reconcile — see `reconcilePlaybackIfStale`.
-    func setActive(_ active: Bool) {
+    /// This is separate from `isActive` on purpose. `isActive` means "the
+    /// panel is open and the data-heavy modules are awake"; it gates the fast
+    /// 10Hz progress tick, the 1s browser probe and the aggressive playback
+    /// reconcile. But the Home tab's player and the closed notch's wings are
+    /// drawn *without* the panel being open, and they were reading whatever
+    /// the last open left behind — a paused track stayed "playing" and a skip
+    /// did not land until the notch was next opened. Marking the media
+    /// surfaces visible lets them keep a slower heartbeat while still costing
+    /// nothing when the notch is idle and nothing media-related is showing.
+    private var isVisible = false
+
+    /// Sets both media gates at once and rebuilds the timers to match.
+    ///
+    /// `active` is the panel being open — the state that earns the fast
+    /// cadence; `visible` is any media surface being on screen (the open
+    /// panel, the Home tab on a closed notch, or the wings), which earns the
+    /// slower heartbeat. They are passed together because they always change
+    /// together and rebuilding the timers twice for one change would double
+    /// the immediate probes.
+    func setMediaPresence(active: Bool, visible: Bool) {
+        // Idempotent: the callers fire on every playback and track change, and
+        // rebuilding an unchanged cadence would tear down and re-arm the
+        // timers — and fire an extra immediate probe — on each of them, which
+        // the probes themselves can trigger. Only an actual change rebuilds.
+        guard active != isActive || visible != isVisible else { return }
         isActive = active
-        // Opening the notch puts the lyric list on screen, so the position is
-        // worth re-reading at once rather than at the slower closed cadence.
-        if active { invalidatePlaybackReconcile() }
+        isVisible = visible
+        rebuildMediaTimers()
+    }
+
+    /// (Re)builds the media polling timers to match the current
+    /// active/visible state.
+    ///
+    /// Two cadences run off the same sources. While the panel is open
+    /// (`isActive`) everything runs fast, because the scrubber, the lyric
+    /// list and the transport are all on screen. While a media surface is
+    /// merely visible — the Home tab is the front tab on an unopened notch,
+    /// or the wings are showing — the same sources run slowly, just enough to
+    /// keep the title, artist, play state and artwork honest without turning
+    /// an idle notch into a poller.
+    ///
+    /// Not *every* timer is gated here: the closed notch still shows the
+    /// lyric line, so `updateLyricActivityTimer` runs while closed by
+    /// definition and keeps its own 0.1s tick — see `tickCollapsedLyric`.
+    private func rebuildMediaTimers() {
+        // Every source the method below can arm, armed fresh. Rebuilding to a
+        // clean slate is what makes the visible/active change idempotent.
         mediaRemoteRetryWork?.cancel()
         mediaRemoteRetryWork = nil
         progressTimer?.invalidate()
@@ -490,53 +529,60 @@ final class MediaController {
         browserProbeTimer = nil
         defer { updateLyricActivityTimer() }
 
-        guard active else {
-            // Closed, the wings and the lyric line still need to know when the
-            // song changes. MediaRemote pushes that on its own; the Apple
-            // Events path has to ask, so it keeps a slow poll rather than
-            // going dark until the notch is opened again.
-            if !useMediaRemote, wantsCollapsedMediaUpdates {
-                fallbackTimer = Timer.scheduledRepeating(every: 4.0) { [weak self] in
-                    self?.refreshFromAppleScript()
-                }
+        let wantLive = isActive || isVisible
+
+        // Opening the panel puts the lyric list on screen, so the position is
+        // worth re-reading at once rather than at the slower closed cadence.
+        if isActive { invalidatePlaybackReconcile() }
+
+        // The elapsed-time tick drives the open scrubber, the Home progress
+        // bar and the closed-notch lyric highlight. It is the one thing that
+        // has to run whenever any of them is on screen, so it is gated on
+        // visibility rather than on the panel being open.
+        if wantLive {
+            progressTimer = Timer.scheduledRepeating(every: 0.1) { [weak self] in
+                self?.tickProgress()
             }
+            tickProgress()
+        }
+
+        guard wantLive else {
+            // Idle and closed with nothing media-related showing: the only
+            // reason to poll would be to catch a track that starts on its own,
+            // and there is nothing on screen to show it on — the notch wakes
+            // on the push notification anyway.
             return
         }
 
         if useMediaRemote {
             refreshFromMediaRemote()
-            // Browser metadata is independent of MediaRemote and must also be
-            // refreshed whenever the Audio/media surface becomes visible.
-            probeBrowserForPlayingMedia(avoidPrompt: false)
-            // While the notch is open and MediaRemote is the source, a
-            // browser-derived track needs a probe of its own to stay honest:
-            // MediaRemote never answers for browsers, so nothing else would
-            // tell us when the tab closes or the video changes.
-            browserProbeTimer = Timer.scheduledRepeating(every: 1.0) { [weak self] in
+            // A browser probe while nothing is open must not raise the
+            // Automation prompt; the panel being open is what makes a prompt
+            // acceptable (it is how consent is obtained).
+            probeBrowserForPlayingMedia(avoidPrompt: !isActive)
+            // While MediaRemote is the source, a browser-derived track needs
+            // its own probe to stay honest: MediaRemote never answers for
+            // browsers, so nothing else tells us when the tab closes or the
+            // video changes. Fast open, slower while the closed notch still
+            // shows the wings.
+            let browserInterval: TimeInterval = isActive ? 1.0 : 2.5
+            browserProbeTimer = Timer.scheduledRepeating(every: browserInterval) { [weak self] in
                 self?.tickBrowserProbe()
             }
             tickBrowserProbe()
-            // On Macs where MediaRemote is gated, its answers are silence and
-            // the demotion counter only advances one refresh per open — music
-            // that was already playing took several open/close rounds to appear.
-            // One AppleScript probe per open closes that gap: if the fallback
-            // player answers with something playing while MediaRemote says
-            // nothing, demote on the spot and show the track.
-            probeFallbackIfMediaRemoteSilent()
+            // Only worth asking on an open: the demotion gap it closes is one
+            // empty reply per open, and the open is where the track appears.
+            if isActive { probeFallbackIfMediaRemoteSilent() }
         } else {
             refreshFromAppleScript()
-            fallbackTimer = Timer.scheduledRepeating(every: 2.0) { [weak self] in
+            // The Apple Events path has no push, so the closed notch keeps a
+            // slow poll to notice a track change; open, it can afford to be
+            // quicker.
+            let fallbackInterval: TimeInterval = isActive ? 2.0 : 4.0
+            fallbackTimer = Timer.scheduledRepeating(every: fallbackInterval) { [weak self] in
                 self?.refreshFromAppleScript()
             }
         }
-
-        // 0.1s keeps lyric highlighting within ~50ms of the LRC timestamp.
-        // A half-second tick quantized the highlight to every 0.5s beat,
-        // which read as lyrics arriving late on top of the anchor lag.
-        progressTimer = Timer.scheduledRepeating(every: 0.1) { [weak self] in
-            self?.tickProgress()
-        }
-        tickProgress()
     }
 
     /// Whether the closed notch is showing anything that depends on the
@@ -614,10 +660,16 @@ final class MediaController {
         expireStaleScrubPreview()
         // Lyric highlighting must never advance while playback is paused, or
         // while a scrub drag is previewing positions under the thumb.
-        guard isPlaying, !isBrowserVideo, !isScrubPreviewing else { return }
+        guard isPlaying, !isScrubPreviewing else { return }
         // Use the live extrapolated clock, not the stored display copy, so
         // the highlight lands on the timestamp instead of one tick behind.
-        lyrics.updateCurrentLine(for: currentElapsed)
+        // A browser item has no lyrics, but it is the one source whose play
+        // state arrives through the same now-playing channel, so it still gets
+        // the reconcile — without it a missed pause or resume on YouTube had
+        // nothing to correct it.
+        if !isBrowserVideo {
+            lyrics.updateCurrentLine(for: currentElapsed)
+        }
         reconcilePlaybackIfStale()
     }
 
@@ -634,16 +686,38 @@ final class MediaController {
     /// Deliberately only corrects the playback flag (and, on a pause, the
     /// frozen position) — it never goes through the full snapshot pipeline,
     /// so an unreadable player can never blank a track that is still shown.
+    ///
+    /// It is also the read-back for a *system* source (a browser video, a
+    /// Chrome-app window): those have no DOM or scripted state to trust, so
+    /// this reading is the only thing that can tell the notch their playback
+    /// really stopped — or really started — while it was showing them.
     private func reconcilePlaybackIfStale() {
         // Open, the scrubber and the lyric list are both on screen and a stale
         // pause is obvious within a second or two. Closed, the only thing this
         // corrects is the one-line lyric activity, so a far slower cadence is
         // enough. While a lyric is actually on the closed notch, a missed
         // pause is visible — the words keep coming — so it is checked sooner.
-        let interval: TimeInterval = isActive ? 2 : (collapsedLyric != nil ? 5 : 15)
-        guard isPlaying, !isReadingAppleScript,
-              Date().timeIntervalSince(lastPlaybackReconcile) >= interval
+        //
+        // A system source has no lyric to give it away, so while it claims to
+        // be playing it keeps the quicker closed cadence; once it claims to be
+        // paused, only a resume can be worth catching, which the slow tail is
+        // plenty for.
+        let interval: TimeInterval
+        if isSystemMediaSource {
+            interval = isPlaying ? (isActive ? 2 : 5) : 15
+        } else {
+            interval = isActive ? 2 : (collapsedLyric != nil ? 5 : 15)
+        }
+        let due = Date().timeIntervalSince(lastPlaybackReconcile) >= interval
+        // A command routed through the now-playing channel may have left the
+        // optimistic flip standing while the item reads paused; that flip is
+        // exactly what the read-back exists to check, so it bypasses both the
+        // cadence and the "is anything playing" gate.
+        let forced = readBackAfterCommand
+        guard forced || isPlaying || isSystemMediaSource, !isReadingAppleScript,
+              forced || due
         else { return }
+        readBackAfterCommand = false
         lastPlaybackReconcile = Date()
 
         // Primary probe: the adapter's one-shot `get --now`. On this macOS the
@@ -662,12 +736,13 @@ final class MediaController {
             }
             // Identity guard: only correct our own track. A payload for a
             // different app belongs to the source-switching machinery, not
-            // the pause probe — without this, audio elsewhere could freeze
-            // these lyrics.
-            let reportedTitle = (info[MediaRemoteBridge.InfoKey.title] as? String ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            // this probe — without it, audio elsewhere could freeze a lyric
+            // line or flip the transport of something else. Prefixes count as
+            // a match, because the two sides of the same item do not always
+            // spell its name the same way (a tab title carries " - YouTube").
+            let reportedTitle = Self.normalizedTitle(info[MediaRemoteBridge.InfoKey.title] as? String ?? "")
             let currentTitle = self.track?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard !reportedTitle.isEmpty, reportedTitle == currentTitle else { return }
+            guard Self.titlesAgree(reportedTitle, currentTitle) else { return }
 
             let reportedPlaying = (info[MediaRemoteBridge.InfoKey.playbackRate] as? Double)
                 .map { $0 > 0 } ?? true
@@ -685,20 +760,48 @@ final class MediaController {
                     Self.syncLog?.notice("RECONCILE play 1 → 0 at e=\(pausedAt, format: .fixed(precision: 2), privacy: .public)")
                     self.isPlaying = false
                 }
-            } else if let position = Self.livePosition(from: info),
-                      position > 0.5,
-                      abs(position - self.currentElapsed) > 1.5 {
-                // Playing but the clock has wandered: re-anchor to the
-                // player's real position. This is the healing path for the
-                // "a bit slow" and rewind-loop symptoms — and the one that
-                // catches a launch (or track change) that was anchored to a
-                // zero/stale position, where the lyrics otherwise run a whole
-                // verse behind for the rest of the song.
-                Self.syncLog?.notice("RECONCILE drift e=\(self.currentElapsed, format: .fixed(precision: 2), privacy: .public) → \(position, format: .fixed(precision: 2), privacy: .public)")
-                self.elapsedAnchor = position
-                self.anchorDate = Date()
-                self.displayedElapsed = position
+            } else {
+                // A resume the stream never pushed. Symmetrical to the pause
+                // above, and the case a system source needs most: the transport
+                // icon has to stop showing a pause nobody took.
+                if !self.isPlaying, self.acceptPlaybackReport(true) {
+                    Self.syncLog?.notice("RECONCILE play 0 → 1 at e=\(self.currentElapsed, format: .fixed(precision: 2), privacy: .public)")
+                    self.anchorDate = Date()
+                    self.isPlaying = true
+                    self.updateLyricActivityTimer()
+                }
+                if let position = Self.livePosition(from: info),
+                   position > 0.5,
+                   abs(position - self.currentElapsed) > 1.5 {
+                    // Playing but the clock has wandered: re-anchor to the
+                    // player's real position. This is the healing path for the
+                    // "a bit slow" and rewind-loop symptoms — and the one that
+                    // catches a launch (or track change) that was anchored to a
+                    // zero/stale position, where the lyrics otherwise run a whole
+                    // verse behind for the rest of the song. A browser item read
+                    // from the tab title has no position at all, so this is also
+                    // the first real one it sees.
+                    Self.syncLog?.notice("RECONCILE drift e=\(self.currentElapsed, format: .fixed(precision: 2), privacy: .public) → \(position, format: .fixed(precision: 2), privacy: .public)")
+                    self.elapsedAnchor = position
+                    self.anchorDate = Date()
+                    self.displayedElapsed = position
+                }
             }
+        }
+    }
+
+    /// Set by a transport command that was routed through the now-playing
+    /// channel, so the next reconcile reads back the state that command was
+    /// supposed to produce even when the item currently reads paused.
+    private var readBackAfterCommand = false
+
+    /// One read-back shortly after such a command: the optimistic flip is a
+    /// guess, and the player's own answer is what the transport should show.
+    private func schedulePlaybackReadBack() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self, self.hasTrack else { return }
+            self.readBackAfterCommand = true
+            self.reconcilePlaybackIfStale()
         }
     }
 
@@ -706,7 +809,11 @@ final class MediaController {
     /// Used when the adapter's `get` is unavailable. Never raises a consent
     /// prompt, and never blanks the track — it only corrects the play state.
     private func reconcilePlaybackViaAppleScript() {
-        guard automationIsAllowed() else { return }
+        // Only ever about a player the notch can read directly. This rung has
+        // no identity check of its own (the adapter path does), so pointed at a
+        // browser video or a Chrome-app window it would adopt a *player's*
+        // state for media that is not the player's.
+        guard musicPlayerOwnsSource, automationIsAllowed() else { return }
         isReadingAppleScript = true
 
         let inputs = captureScriptInputs()
@@ -792,8 +899,10 @@ final class MediaController {
     /// flipped its icon and nothing else happened. Ungranted players now fall
     /// through to the MediaRemote rung, which needs no permission at all.
     ///
-    /// 1. A running music player we may script wins (by the now-playing app,
-    ///    then the selected provider, then whichever player is running).
+    /// 1. The music player that owns the session on screen, when we may script
+    ///    it (by the now-playing app, then the selected provider, then
+    ///    whichever player is running) — never a player that merely happens to
+    ///    be open while something else is playing.
     /// 2. Browser media (YouTube, web videos) — only when no music player
     ///    is active.
     /// 3. The selected provider's own AppleScript app, when it has one.
@@ -814,15 +923,53 @@ final class MediaController {
         return IntegrationPermissions.isAutomationAllowed(bundleID)
     }
 
+    /// Whether the item on screen belongs to a dedicated music player — the
+    /// two apps the notch can drive directly. This is the question every
+    /// transport rung and the provider filter actually mean by "the player
+    /// owns the session"; the answer is read off the source app, so media from
+    /// anywhere else (a browser video, a Chrome-app window, a video player)
+    /// is never mistaken for the player's own and never has a command aimed at
+    /// a player that is merely running alongside it.
+    ///
+    /// With no resolved source app, it answers true while nothing is on
+    /// screen: that is the state in which the selected provider is the sensible
+    /// target (pressing play starts it) rather than a session being hijacked.
+    ///
+    /// Read by the player UI too: the controls that drive an app directly
+    /// (shuffle, the heart) belong to the player's own media, and must not be
+    /// shown for a video the player has nothing to do with.
+    var musicPlayerOwnsSource: Bool {
+        guard let bundle = sourceAppBundleID else { return !hasTrack }
+        return Self.musicPlayerBundleIDs.contains(bundle)
+    }
+
+    /// True while the item on screen comes from an app whose playback the notch
+    /// can only observe through the now-playing channel — a browser video, a
+    /// Chrome-app ("YouTube") window, any other player. Their state has to be
+    /// read back rather than driven, so they earn the reconcile's faster
+    /// cadence and are never handed to the Apple Events fallback.
+    private var isSystemMediaSource: Bool {
+        guard hasTrack else { return false }
+        return isBrowserVideo || !musicPlayerOwnsSource
+    }
+
     private func resolveTransportTarget(providerCommand: String) -> TransportTarget {
         let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
         let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
         let spotifyScriptable = spotifyRunning && canScript(MusicProvider.spotify.bundleID)
         let musicScriptable = musicRunning && canScript(MusicProvider.appleMusic.bundleID)
 
-        // 1. If a music player is running/active *and we are allowed to drive
-        //    it*, ALWAYS prioritize controlling the music player!
-        if !isBrowserVideo && (spotifyScriptable || musicScriptable) {
+        // 1. If the session on screen belongs to a music player and we are
+        //    allowed to drive it, prioritize controlling that player.
+        //
+        //    `musicPlayerOwnsSource` is what keeps this from firing for media
+        //    that is not the player's. It used to be `!isBrowserVideo` alone,
+        //    which only guarded scriptable browsers — so a YouTube window
+        //    (including the Chrome-app "YouTube" that macOS reports as its own
+        //    now-playing client) was handed to whatever player was running and
+        //    scriptable, and the notch's play/pause paused Spotify while the
+        //    video kept playing.
+        if musicPlayerOwnsSource, (spotifyScriptable || musicScriptable) {
             if let bundle = sourceAppBundleID {
                 if bundle == MusicProvider.spotify.bundleID, spotifyScriptable {
                     return .provider(appName: "Spotify", command: providerCommand)
@@ -857,8 +1004,15 @@ final class MediaController {
             return .browser
         }
 
-        // 3. Specific Selected Provider
-        if let provider = selectedProvider.appleScriptAppName,
+        // 3. Specific Selected Provider.
+        //    Media that belongs to something else is never re-routed to a music
+        //    player here: the selected provider is a fallback for *its own*
+        //    media — starting it when nothing is playing — not a way to hand a
+        //    web video or another app's item to Music/Spotify, which would fire
+        //    the command at an app that is not what the user is looking at.
+        //    Ungranted, the command falls through to the MediaRemote rung.
+        if musicPlayerOwnsSource,
+           let provider = selectedProvider.appleScriptAppName,
            canScript(selectedProvider.bundleID) {
             return .provider(appName: provider, command: providerCommand)
         }
@@ -875,11 +1029,14 @@ final class MediaController {
             }
         }
 
-        // 5. Last resort: any running player we may script.
-        if spotifyScriptable {
+        // 5. Last resort: any running player we may script — again never for
+        //    media that belongs to something else, so a web video (or a
+        //    Chrome-app window) with no scriptable browser lands on the
+        //    MediaRemote rung and its own now-playing session.
+        if musicPlayerOwnsSource, spotifyScriptable {
             return .provider(appName: "Spotify", command: providerCommand)
         }
-        if musicScriptable {
+        if musicPlayerOwnsSource, musicScriptable {
             return .provider(appName: "Music", command: providerCommand)
         }
 
@@ -898,6 +1055,56 @@ final class MediaController {
         switch target {
         case .provider, .browser: return true
         case .system: return useAdapter || useMediaRemote || AXIsProcessTrusted()
+        }
+    }
+
+    /// A transport command delivered through the system now-playing channel
+    /// rather than to a named app.
+    ///
+    /// One ladder for all three controls so they cannot drift apart: the
+    /// perl-bridge adapter first (entitled, no consent needed, and what the
+    /// hardware media keys amount to), the dlopen bridge on ungated macOS,
+    /// then a synthetic media key — the only rung that needs Accessibility.
+    /// The key is also the rung that fails silently without it, so it is
+    /// deliberately last.
+    private enum SystemTransport {
+        case togglePlayPause
+        case nextTrack
+        case previousTrack
+    }
+
+    private func sendSystemTransport(_ command: SystemTransport) {
+        // Whatever the command reached (or failed to reach) reports through
+        // this channel, so the next second's read-back is what turns the
+        // optimistic icon into the player's real state — the half of the
+        // toggle a browser with JavaScript-through-AppleScript switched off
+        // could previously never answer.
+        schedulePlaybackReadBack()
+        switch command {
+        case .togglePlayPause:
+            if useAdapter {
+                adapter.sendCommand(.togglePlayPause)
+            } else if useMediaRemote {
+                bridge.send(.togglePlayPause)
+            } else {
+                SystemMediaKeySender.togglePlayPause()
+            }
+        case .nextTrack:
+            if useAdapter {
+                adapter.sendCommand(.nextTrack)
+            } else if useMediaRemote {
+                bridge.send(.nextTrack)
+            } else {
+                SystemMediaKeySender.nextTrack()
+            }
+        case .previousTrack:
+            if useAdapter {
+                adapter.sendCommand(.previousTrack)
+            } else if useMediaRemote {
+                bridge.send(.previousTrack)
+            } else {
+                SystemMediaKeySender.previousTrack()
+            }
         }
     }
 
@@ -930,48 +1137,51 @@ final class MediaController {
         case .browser:
             toggleBrowserPlayback()
         case .system:
-            if useAdapter {
-                adapter.sendCommand(.togglePlayPause)
-            } else if useMediaRemote {
-                bridge.send(.togglePlayPause)
-            } else {
-                SystemMediaKeySender.togglePlayPause()
-            }
+            sendSystemTransport(.togglePlayPause)
         }
     }
 
     func nextTrack() {
+        guard beginSkip() else { return }
         switch resolveTransportTarget(providerCommand: "next track") {
         case let .provider(appName, command):
             runProviderCommand(appName: appName, command: command)
         case .browser:
             nextBrowserTrack()
         case .system:
-            if useAdapter {
-                adapter.sendCommand(.nextTrack)
-            } else if useMediaRemote {
-                bridge.send(.nextTrack)
-            } else {
-                SystemMediaKeySender.nextTrack()
-            }
+            sendSystemTransport(.nextTrack)
         }
     }
 
     func previousTrack() {
+        guard beginSkip() else { return }
         switch resolveTransportTarget(providerCommand: "previous track") {
         case let .provider(appName, command):
             runProviderCommand(appName: appName, command: command)
         case .browser:
             previousBrowserTrack()
         case .system:
-            if useAdapter {
-                adapter.sendCommand(.previousTrack)
-            } else if useMediaRemote {
-                bridge.send(.previousTrack)
-            } else {
-                SystemMediaKeySender.previousTrack()
-            }
+            sendSystemTransport(.previousTrack)
         }
+    }
+
+    /// Shared preamble for a skip: refuse a command that has nowhere to go,
+    /// and open the optimistic window so the *pause* a player reports while
+    /// it swaps tracks is not mistaken for the user pausing.
+    ///
+    /// A skip lands on a track that is, by definition, playing. Players push a
+    /// stale now-playing diff around the switch — often the paused end-of-track
+    /// state — and without the window that diff flips the transport icon and,
+    /// on the browser/Apple Events paths, freezes the extrapolated clock. That
+    /// is the "skipping pauses the song" symptom: the skip itself worked, but
+    /// the icon (and sometimes the perceived state) read paused for a beat.
+    /// The window keeps `isPlaying` true and ends as soon as a report agrees.
+    private func beginSkip() -> Bool {
+        guard transportIsDeliverable(resolveTransportTarget(providerCommand: "next track")) else {
+            return false
+        }
+        armOptimisticWindow(true)
+        return true
     }
 
     /// While true, the scrubber is being dragged and the lyric highlight is
@@ -1113,10 +1323,26 @@ final class MediaController {
         updateLyricActivityTimer()
     }
 
+    /// Toggles browser playback through AppleScript, trusting the *state* the
+    /// page reports back.
+    ///
+    /// This mirrors `browserTransport`'s discipline so the two browser command
+    /// paths behave the same. The synthetic media key is a system-wide command
+    /// delivered to whatever macOS treats as the now-playing app — which is not
+    /// necessarily the browser, and never the tab we just scripted — so firing
+    /// it as a blanket fallback double-delivers the toggle (the page flips, then
+    /// the key flips whatever was actually playing). The key is therefore posted
+    /// only when a tab we can see is ours answered the script *cleanly* with "no
+    /// control here", and only when no music player owns the session (if one is
+    /// running, the key would go to it instead — exactly the duplicate to avoid).
     private func toggleBrowserPlayback() {
+        // `#movie_player` is the desktop YouTube player and exposes a reliable
+        // state; the bare `video` element is the fallback and also covers
+        // YouTube Music, whose player is a plain HTML5 video.
+        let js = "(function(){var p=document.querySelector('#movie_player');if(p&&p.getPlayerState){if(p.getPlayerState()===1){p.pauseVideo();return 'paused';}else{p.playVideo();return 'playing';}}var v=document.querySelector('video');if(v){if(v.paused){v.play();return 'playing';}else{v.pause();return 'paused';}}return 'none';})();"
+
         for browser in Self.browserTargets {
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else { continue }
-            let js = "(function(){var p=document.querySelector('#movie_player');if(p&&p.getPlayerState){if(p.getPlayerState()===1){p.pauseVideo();return 'paused';}else{p.playVideo();return 'playing';}}var v=document.querySelector('video');if(v){if(v.paused){v.play();return 'playing';}else{v.pause();return 'paused';}}return 'none';})();"
             let scriptSource: String
             if browser.isChromium {
                 scriptSource = """
@@ -1161,86 +1387,130 @@ final class MediaController {
             var error: NSDictionary?
             if let script = NSAppleScript(source: scriptSource) {
                 let result = script.executeAndReturnError(&error)
-                if error == nil, let res = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
-                   res == "playing" || res == "paused" {
+                guard error == nil,
+                      let res = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+                else { continue }
+                if res == "playing" || res == "paused" {
                     // The toggle script returned the authoritative post-toggle
-                    // state, so set `isPlaying` from it directly. Re-reading
-                    // the DOM right after (the old immediate re-crawl) raced
-                    // the player's internal state transition — YouTube's
-                    // getPlayerState() takes a beat to flip after
-                    // pauseVideo(), so that read reported the stale "still
-                    // playing" and snapped the button back, then the periodic
-                    // probe corrected it again. Trusting the return value
-                    // keeps the button on what the video just did; the 1s
-                    // periodic probe still catches any genuine drift.
+                    // state, so set `isPlaying` from it directly rather than
+                    // re-reading the DOM — that read races the player's own
+                    // state transition (YouTube's getPlayerState() takes a beat
+                    // to flip after pauseVideo()), and the periodic probe still
+                    // catches any genuine drift. Stop here: going on to the next
+                    // browser would toggle a second time.
                     setPlaying(res == "playing")
+                    // The script's answer is the page's own, but it can be
+                    // optimistic — a `play()` the page's autoplay policy never
+                    // honoured still reports 'playing'. One read-back keeps the
+                    // transport honest instead of leaving the claim standing.
+                    schedulePlaybackReadBack()
                     return
+                }
+                if res == "none" {
+                    // Our tab, but this page exposes no player we can drive.
+                    // The system channel is the fallback here, not a duplicate.
+                    break
                 }
             }
         }
-        SystemMediaKeySender.togglePlayPause()
+
+        sendBrowserFallback(.togglePlayPause)
     }
 
-    private func nextBrowserTrack() {
-        for browser in Self.browserTargets {
-            guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else { continue }
-            let js = "(function(){var nextBtn=document.querySelector('.ytp-next-button')||document.querySelector('button.next-button')||document.querySelector('tp-yt-paper-icon-button.next-button');if(nextBtn){nextBtn.click();return 'clicked';}return 'none';})();"
-            let scriptSource: String
-            if browser.isChromium {
-                scriptSource = """
-                tell application "\(browser.name)"
-                    if (count of windows) is 0 then return ""
-                    repeat with w in windows
-                        repeat with t in tabs of w
-                            set u to URL of t
-                            set n to title of t
-                            if u contains "youtube.com" or u contains "youtu.be" or n contains " - YouTube" or n contains "YouTube Music" then
-                                try
-                                    tell t
-                                        return (execute javascript "\(js)") as text
-                                    end tell
-                                end try
-                            end if
-                        end repeat
-                    end repeat
-                    return ""
-                end tell
-                """
-            } else {
-                scriptSource = """
-                tell application "\(browser.name)"
-                    if (count of windows) is 0 then return ""
-                    repeat with w in windows
-                        repeat with t in tabs of w
-                            set u to URL of t
-                            set n to name of t
-                            if u contains "youtube.com" or u contains "youtu.be" or n contains " - YouTube" or n contains "YouTube Music" then
-                                try
-                                    return (do JavaScript "\(js)" in t) as text
-                                end try
-                            end if
-                        end repeat
-                    end repeat
-                    return ""
-                end tell
-                """
-            }
+    /// Selector set for the "next" control, newest first.
+    ///
+    /// YouTube Music is the reason this is a list: it has no `.ytp-next-button`
+    /// (that is the desktop YouTube player) and its paper-icon button does not
+    /// always carry a plain `.next-button` class — so the old two-selector query
+    /// matched nothing, returned `none`, and the caller fell through to a
+    /// synthetic media key. `ytmusic-player-bar` is the one stable hook.
+    private static let nextButtonSelectors = [
+        ".ytp-next-button",
+        "ytmusic-player-bar .next-button",
+        "tp-yt-paper-icon-button.next-button",
+        "button.next-button"
+    ]
 
-            var error: NSDictionary?
-            if let script = NSAppleScript(source: scriptSource) {
-                let result = script.executeAndReturnError(&error)
-                if error == nil, let res = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), res == "clicked" {
-                    return
-                }
-            }
-        }
-        SystemMediaKeySender.nextTrack()
+    private static let previousButtonSelectors = [
+        ".ytp-prev-button",
+        "ytmusic-player-bar .previous-button",
+        "tp-yt-paper-icon-button.previous-button",
+        "button.previous-button"
+    ]
+
+    private func nextBrowserTrack() {
+        browserTransport(
+            selectors: Self.nextButtonSelectors,
+            fallbackScript: nil,
+            systemCommand: .nextTrack
+        )
     }
 
     private func previousBrowserTrack() {
+        browserTransport(
+            selectors: Self.previousButtonSelectors,
+            // Restart the video when there is no previous-track control
+            // (plain YouTube, where "previous" means "back to the start").
+            fallbackScript: "var v=document.querySelector('video');if(v){v.currentTime=0;return 'reset';}",
+            systemCommand: .previousTrack
+        )
+    }
+
+    /// The last rung of a browser transport command, reached when no browser
+    /// tab acted on the Apple Events path.
+    ///
+    /// JavaScript through Apple Events is off unless it is switched on in the
+    /// browser's own Develop menu, so this is a routine case rather than an
+    /// error case — and it used to end at a synthetic media key that needs
+    /// Accessibility, which meant the button flipped its icon and nothing else
+    /// happened. The system now-playing channel reaches the browser's media
+    /// session with no consent at all (it is what the hardware key amounts to),
+    /// so it is the fallback; the raw key stays the last resort for a Mac where
+    /// no MediaRemote source is armed.
+    private func sendBrowserFallback(_ command: SystemTransport) {
+        guard !isMusicConnectedOrActive else { return }
+        if useAdapter || useMediaRemote {
+            sendSystemTransport(command)
+        } else {
+            switch command {
+            case .togglePlayPause: SystemMediaKeySender.togglePlayPause()
+            case .nextTrack: SystemMediaKeySender.nextTrack()
+            case .previousTrack: SystemMediaKeySender.previousTrack()
+            }
+        }
+    }
+
+    /// Drives a browser's next/previous control through AppleScript, falling
+    /// back to the system channel only when a browser genuinely could not act.
+    ///
+    /// The fallback is *system-wide*: macOS delivers it to whatever it
+    /// currently considers the now-playing app, which is not necessarily the
+    /// browser we just scripted — and never the tab we scripted. Firing it as a
+    /// blanket fallback meant a skip that half-worked (the browser was found but
+    /// its button query missed, e.g. YouTube Music) landed a second command on
+    /// whatever was actually playing, which read as the song pausing. So it is
+    /// sent only when a browser tab that is genuinely showing media answered a
+    /// script *cleanly* with "no control here" — a page we can see is ours but
+    /// cannot drive.
+    ///
+    /// A music player that owns the session is never overridden: if one is
+    /// playing, the command would go to it rather than the browser, which is
+    /// exactly the double-delivery this avoids.
+    private func browserTransport(
+        selectors: [String],
+        fallbackScript: String?,
+        systemCommand: SystemTransport
+    ) {
+        let selectorJS = selectors.map { "document.querySelector('\($0)')" }.joined(separator: "||")
+        var body = "(function(){var btn=\(selectorJS);if(btn){btn.click();return 'clicked';}"
+        if let fallbackScript {
+            body += fallbackScript
+        }
+        body += "return 'none';})();"
+        let js = body
+
         for browser in Self.browserTargets {
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else { continue }
-            let js = "(function(){var prevBtn=document.querySelector('.ytp-prev-button')||document.querySelector('button.previous-button')||document.querySelector('tp-yt-paper-icon-button.previous-button');if(prevBtn){prevBtn.click();return 'clicked';}var v=document.querySelector('video');if(v){v.currentTime=0;return 'reset';}return 'none';})();"
             let scriptSource: String
             if browser.isChromium {
                 scriptSource = """
@@ -1285,12 +1555,24 @@ final class MediaController {
             var error: NSDictionary?
             if let script = NSAppleScript(source: scriptSource) {
                 let result = script.executeAndReturnError(&error)
-                if error == nil, let res = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), res == "clicked" || res == "reset" {
+                guard error == nil,
+                      let res = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+                else { continue }
+                if res == "clicked" || res == "reset" {
+                    // A browser acted on the command. Stop here: going on to
+                    // the next browser would skip a second time.
                     return
+                }
+                if res == "none" {
+                    // The script ran against a matching tab and reported that
+                    // this page has no such control — the one case where the
+                    // system channel is the fallback rather than a duplicate.
+                    break
                 }
             }
         }
-        SystemMediaKeySender.previousTrack()
+
+        sendBrowserFallback(systemCommand)
     }
 
     private func seekBrowser(to seconds: TimeInterval) {
@@ -1374,16 +1656,30 @@ final class MediaController {
         controlBundleID == MusicProvider.spotify.bundleID ? "Spotify" : "Music"
     }
 
-    /// The name of the app `openSourceApp()` would bring forward, or nil when
-    /// there is nothing to open.
+    /// The media source `openSourceApp()` would open, or nil when there is
+    /// nothing to open.
     var openableSourceName: String? {
+        if isBrowserVideo, sourceMediaURL != nil { return "YouTube video" }
         if let sourceAppName { return sourceAppName }
         return hasTrack ? controlAppName : nil
     }
 
-    /// Brings the app the music is coming from to the front — Spotify, Music,
-    /// or the browser playing a video — launching it if it has quit.
+    /// Brings the browser tab that owns the current YouTube item to the front;
+    /// otherwise brings the app the music is coming from to the front.
     func openSourceApp() {
+        if isBrowserVideo {
+            if let bundleID = sourceAppBundleID,
+               let browser = Self.browserTargets.first(where: { $0.bundleID == bundleID }),
+               let sourceMediaURL {
+                focusBrowserTab(browser, matching: sourceMediaURL)
+            } else if let bundleID = sourceAppBundleID,
+                      let running = NSRunningApplication
+                        .runningApplications(withBundleIdentifier: bundleID).first {
+                running.activate()
+            }
+            return
+        }
+
         guard let bundleID = sourceAppBundleID ?? (hasTrack ? controlBundleID : nil) else {
             return
         }
@@ -1393,6 +1689,75 @@ final class MediaController {
         } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         }
+    }
+
+    /// Selects the already-open tab that owns this video. Opening its URL via
+    /// NSWorkspace can create another tab, which loses the active playback
+    /// session and may restart the video.
+    private func focusBrowserTab(_ browser: BrowserTarget, matching mediaURL: URL) {
+        guard let runningApp = NSRunningApplication
+            .runningApplications(withBundleIdentifier: browser.bundleID).first else { return }
+        guard IntegrationPermissions.isAutomationAllowed(browser.bundleID) else {
+            runningApp.activate()
+            return
+        }
+
+        let targetURL = Self.appleScriptStringLiteral(mediaURL.absoluteString)
+        let videoID = Self.extractYouTubeVideoID(from: mediaURL.absoluteString) ?? ""
+        let videoMatchers = ["v=", "youtu.be/", "shorts/", "live/", "embed/"]
+            .map { "u contains \(Self.appleScriptStringLiteral($0 + videoID))" }
+            .joined(separator: " or ")
+        let tabMatches = videoID.isEmpty
+            ? "u is \(targetURL)"
+            : "(u is \(targetURL)) or ((u contains \(Self.appleScriptStringLiteral("youtube.com/")) or u contains \(Self.appleScriptStringLiteral("youtu.be/")) ) and (\(videoMatchers)))"
+        let selection: String
+        if browser.isChromium {
+            selection = """
+                set active tab index of w to ti
+                set index of w to 1
+                """
+        } else {
+            selection = """
+                set current tab of w to t
+                set index of w to 1
+                """
+        }
+        let scriptSource = """
+            tell application "\(browser.name)"
+                repeat with wi from 1 to (count of windows)
+                    set w to window wi
+                    repeat with ti from 1 to (count of tabs of w)
+                        set t to tab ti of w
+                        set u to URL of t as text
+                        if \(tabMatches) then
+                            \(selection)
+                            activate
+                            return "activated"
+                        end if
+                    end repeat
+                end repeat
+                activate
+                return "not-found"
+            end tell
+            """
+
+        Self.scriptQueue.async {
+            var error: NSDictionary?
+            let result = NSAppleScript(source: scriptSource)?.executeAndReturnError(&error)
+            guard error == nil, result?.stringValue == "activated" else {
+                DispatchQueue.main.async {
+                    runningApp.activate()
+                }
+                return
+            }
+        }
+    }
+
+    private static func appleScriptStringLiteral(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
     }
 
     private var controlAppIsRunning: Bool {
@@ -1513,7 +1878,19 @@ final class MediaController {
             var error: NSDictionary?
             NSAppleScript(source: source)?.executeAndReturnError(&error)
 
-            if error != nil {
+            // A synthetic media key only when the player was never there to
+            // receive the Apple Event. The media key goes to whatever macOS
+            // currently treats as the now-playing app, *not* the app we
+            // resolved — so posting it after a script that failed for some
+            // other reason (the app ignored the event, a transient timeout,
+            // a consent refusal) double-delivers the command: the player acts
+            // on the script, then the key hits the real now-playing app and
+            // toggles/skips it a second time. That second key is what made
+            // Skip read as "the song paused": the skip landed, then the key
+            // toggled whatever was actually playing. If the player is running,
+            // the script is the whole command; the retry machinery and the
+            // per-command read-back cover a genuinely ignored event.
+            if error != nil && !isRunning {
                 DispatchQueue.main.async {
                     if command == "playpause" || command == "pause" || command == "play" {
                         SystemMediaKeySender.togglePlayPause()
@@ -1637,20 +2014,53 @@ final class MediaController {
             handleEmptyMediaRemoteReply()
             return
         }
-        if let pid = info[MediaRemoteAdapter.Key.processIdentifier] as? Int {
-            updateSourceApp(pid: Int32(pid))
+        // The app this update is from, resolved *before* anything is committed
+        // to the controller's own source identity: a report that is about to be
+        // declined must not leave the source pointing at the app it came from.
+        let reportedPID = (info[MediaRemoteAdapter.Key.processIdentifier] as? Int).map(Int32.init)
+        let reportedBundleID = reportedPID.flatMap {
+            NSRunningApplication(processIdentifier: pid_t($0))?.bundleIdentifier
         }
+        let reportedPlaying = Self.reportedIsPlaying(info)
 
-        let title = (info[MediaRemoteBridge.InfoKey.title] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let isBrowser = sourceAppBundleID.map { bundle in Self.browserTargets.contains(where: { $0.bundleID == bundle }) } ?? false
-
-        // If MediaRemote reports for a browser without a title, defer to the browser probe.
-        if isBrowser && title.isEmpty {
+        // A reading for the app already on screen updates it — that is how a
+        // pause, a new title or an ended video lands. A reading for a
+        // *different* app may take the notch over only by playing: a paused tab
+        // or a paused player reporting in the background is not a reason to
+        // move off what is running.
+        //
+        // Both directions of this used to be wrong in opposite ways. Browser
+        // reports were dropped wholesale while a music player had a track, so
+        // with Spotify paused in the background YouTube could never appear,
+        // while a paused player could claim the screen anyway — leaving a
+        // playing video for a song that was not even running. Following the
+        // system's own now-playing session, whoever is actually playing it, is
+        // what makes the closed notch switch sources in real time.
+        let reportIsAboutShownSource = reportedBundleID == nil
+            || reportedBundleID == sourceAppBundleID
+            // A session the notch has not seen yet is still the first item of
+            // the session, not a claim on somebody else's screen: a paused
+            // player whose track nothing else is showing is worth displaying.
+            || !hasTrack
+        if reportedPlaying != true, !reportIsAboutShownSource {
             return
         }
 
-        // If a dedicated music player (Spotify or Apple Music) is running with a track, ignore browser reports!
-        if isBrowser && isMusicConnectedOrActive {
+        if let reportedPID {
+            updateSourceApp(pid: reportedPID, reportIsPlaying: reportedPlaying == true)
+        }
+
+        if !isShowingBrowserSnapshot {
+            sourceMediaURL = nil
+        }
+        let title = Self.normalizedTitle(info[MediaRemoteBridge.InfoKey.title] as? String ?? "")
+        let isBrowser = sourceAppBundleID.map { Self.isBrowserBundle($0) } ?? false
+        if !isBrowser {
+            sourceMediaURL = nil
+        }
+
+        // If MediaRemote reports for a browser without a title, defer to the browser probe.
+        if isBrowser && title.isEmpty {
             return
         }
 
@@ -1664,7 +2074,16 @@ final class MediaController {
             isBrowserVideo = false
         }
 
-        guard providerAllowsCurrentSource() else {
+        // The provider filter is about *players*: it hides another music
+        // player's media when a specific provider is selected, and it never
+        // hides what is not a player's at all (a browser video, a Chrome-app
+        // window, a video player) — the media surfaces exist to follow what is
+        // making the sound, and the provider only decides which player the
+        // controls drive. Filtered the other way, the adapter's browser report
+        // blanked the item the browser probe kept restoring: a flicker every
+        // couple of seconds under a provider other than Automatic.
+        let sourceIsMusicPlayer = sourceAppBundleID.map { Self.musicPlayerBundleIDs.contains($0) } ?? false
+        guard !sourceIsMusicPlayer || providerAllowsCurrentSource() else {
             apply([:])
             return
         }
@@ -1700,18 +2119,20 @@ final class MediaController {
         pendingClearWork = nil
 
         var newTrack = Track()
-        var rawTitle = info[MediaRemoteBridge.InfoKey.title] as? String ?? ""
-        if rawTitle.hasSuffix(" - YouTube") {
-            rawTitle = String(rawTitle.dropLast(" - YouTube".count)).trimmingCharacters(in: .whitespacesAndNewlines)
-        } else if rawTitle.hasSuffix(" - YouTube Music") {
-            rawTitle = String(rawTitle.dropLast(" - YouTube Music".count)).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        newTrack.title = rawTitle
+        let rawTitle = info[MediaRemoteBridge.InfoKey.title] as? String ?? ""
+        newTrack.title = Self.normalizedTitle(rawTitle)
         newTrack.artist = info[MediaRemoteBridge.InfoKey.artist] as? String ?? ""
         newTrack.album = info[MediaRemoteBridge.InfoKey.album] as? String ?? ""
         newTrack.duration = info[MediaRemoteBridge.InfoKey.duration] as? TimeInterval ?? 0
 
         let isBrowser = sourceAppBundleID.map { bundle in Self.browserTargets.contains(where: { $0.bundleID == bundle }) } ?? false
+        if !isBrowser {
+            sourceMediaURL = nil
+        } else if !newTrack.title.isEmpty, newTrack.title != track?.title {
+            // A new browser title invalidates the old link until the browser
+            // probe supplies the matching page URL.
+            sourceMediaURL = nil
+        }
         if isBrowser {
             isShowingBrowserSnapshot = true
             isBrowserVideo = true
@@ -1801,8 +2222,10 @@ final class MediaController {
         // A probe while the notch is closed must never be what raises the
         // Automation dialog; one while the user is looking at the notch may —
         // without consent the browser snapshot can never work, and the prompt
-        // is how consent is obtained.
-        probeBrowserForPlayingMedia(avoidPrompt: !isActive)
+        // is how consent is obtained. Only an *unconsented* browser needs
+        // sparing: probing one that is already allowed costs nothing and is
+        // how a browser track keeps showing on the closed notch.
+        probeBrowserForPlayingMedia(avoidPrompt: !automationIsAllowed())
         apply([:])
     }
 
@@ -1840,9 +2263,13 @@ final class MediaController {
                     return
                 }
                 if isPlayer {
-                    // The selected player is playing but MediaRemote couldn't
-                    // see it — demote so the Apple Events path owns it from
-                    // here on (it also starts its 2s polling).
+                    // Only actual playback demotes the source. A player that
+                    // answers its state script while *paused* is not "playing
+                    // where MediaRemote cannot see it" — demoting on it stopped
+                    // the adapter's stream and with it every browser and
+                    // Chrome-app source, leaving the notch showing the paused
+                    // song while YouTube played.
+                    guard snapshot.isPlaying else { return }
                     self.demoteToAppleEvents()
                 } else {
                     // YouTube is intentionally allowed to replace stale
@@ -1873,9 +2300,13 @@ final class MediaController {
             return
         }
         let inputs = captureScriptInputs()
+        // A probe while the notch is closed must never be what raises the
+        // Automation dialog — it is only acceptable while the user is looking
+        // at the notch, which is how that consent is obtained.
+        let avoidPrompt = !isActive
         Self.scriptQueue.async { [weak self] in
             let snapshot = self?.browserYouTubeSnapshot(
-                avoidPrompt: false, musicOwnsSession: inputs.musicOwnsSession
+                avoidPrompt: avoidPrompt, musicOwnsSession: inputs.musicOwnsSession
             )
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
@@ -1902,6 +2333,7 @@ final class MediaController {
     private func applyBrowserSnapshot(_ snapshot: Snapshot) {
         isShowingBrowserSnapshot = true
         isBrowserVideo = true
+        sourceMediaURL = snapshot.mediaURL
         sourceAppName = snapshot.appName
         sourceAppBundleID = snapshot.bundleID
         sourceAppPID = 0
@@ -1990,8 +2422,8 @@ final class MediaController {
         consecutiveEmptyReplies = Self.emptyRepliesBeforeDemotion
         pendingClearWork?.cancel()
         pendingClearWork = nil
-        if isActive {
-            setActive(true)
+        if isActive || isVisible {
+            rebuildMediaTimers()
         }
     }
 
@@ -2015,11 +2447,18 @@ final class MediaController {
     }
 
     /// Resolves the now-playing app from its PID, once per change.
-    private func updateSourceApp(pid: Int32) {
-        // While a browser-derived track is showing, MediaRemote's idea of the
-        // now-playing app (often stale or gated) must not override the browser
-        // the snapshot came from.
-        if isShowingBrowserSnapshot { return }
+    ///
+    /// `reportIsPlaying` says whether the report this pid came with claims to be
+    /// playing. While a browser-derived item is showing, MediaRemote's idea of
+    /// the now-playing app is often stale (the gated bridge answers with an old
+    /// client, or with none), which is why the browser snapshot is protected
+    /// from it — but a report that says it is *playing* is a source change in
+    /// progress, and blocking that left the song which replaced a video carrying
+    /// the browser's identity: album "YouTube", artist "YouTube", and a
+    /// transport still aimed at Chrome, until something cleared the item
+    /// outright.
+    private func updateSourceApp(pid: Int32, reportIsPlaying: Bool = false) {
+        if isShowingBrowserSnapshot, !reportIsPlaying { return }
         guard pid != sourceAppPID else { return }
         sourceAppPID = pid
         guard pid > 0,
@@ -2172,6 +2611,21 @@ final class MediaController {
         BrowserTarget(name: "Chromium", bundleID: "org.chromium.Chromium", isChromium: true)
     ]
 
+    private static func validatedYouTubeURL(from rawValue: String?) -> URL? {
+        guard let rawValue,
+              let components = URLComponents(string: rawValue.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "https" || scheme == "http",
+              let host = components.host?.lowercased()
+        else { return nil }
+        let isYouTubeHost = host == "youtube.com"
+            || host.hasSuffix(".youtube.com")
+            || host == "youtu.be"
+            || host.hasSuffix(".youtu.be")
+        guard isYouTubeHost else { return nil }
+        return components.url
+    }
+
     private static func extractYouTubeVideoID(from urlString: String) -> String? {
         guard let url = URL(string: urlString) else { return nil }
 
@@ -2214,18 +2668,70 @@ final class MediaController {
         return nil
     }
 
-    var isMusicConnectedOrActive: Bool {
-        let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
-        let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
-        if spotifyRunning || musicRunning {
-            if hasTrack && !isBrowserVideo {
-                return true
-            }
-            if isPlaying && !isBrowserVideo {
-                return true
-            }
+    /// The playing state a MediaRemote payload reports, or nil when it carries
+    /// none. `playbackRate` is the normalized form both sources deliver (the
+    /// adapter folds its own `playing` flag into it); the raw flag is read too,
+    /// for a payload that arrives without the bridge's key mapping.
+    private static func reportedIsPlaying(_ info: [String: Any]) -> Bool? {
+        if let rate = info[MediaRemoteBridge.InfoKey.playbackRate] as? Double { return rate > 0 }
+        if let rate = info[MediaRemoteBridge.InfoKey.playbackRate] as? NSNumber {
+            return rate.doubleValue > 0
         }
-        return false
+        if let playing = info[MediaRemoteAdapter.Key.playing] as? Bool { return playing }
+        return nil
+    }
+
+    /// A now-playing title with the platform suffixes stripped, so a
+    /// MediaRemote reading and a DOM reading of the same item compare equal
+    /// ("Song - YouTube" and "Song" are the same video).
+    private static func normalizedTitle(_ raw: String) -> String {
+        var title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        for suffix in [" - YouTube", " - YouTube Music"] where title.hasSuffix(suffix) {
+            title = String(title.dropLast(suffix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return title
+    }
+
+    /// Whether two now-playing titles describe the same item. Prefixes are
+    /// accepted as well as equality, because the two sides capture different
+    /// amounts of the name — a tab title carries " - YouTube", a media session
+    /// does not, and a video's own title often runs on past what the other side
+    /// recorded. Short strings are never prefix-matched: "Song" matching
+    /// "Song 2" is not safe.
+    private static func titlesAgree(_ a: String, _ b: String) -> Bool {
+        guard !a.isEmpty, !b.isEmpty else { return false }
+        if a == b { return true }
+        guard min(a.count, b.count) >= 8 else { return false }
+        return a.hasPrefix(b) || b.hasPrefix(a)
+    }
+
+    /// The apps whose media is "music" as far as source priority is
+    /// concerned — the two players the notch can drive directly.
+    private static let musicPlayerBundleIDs: Set<String> = [
+        "com.apple.Music",
+        MusicProvider.spotify.bundleID
+    ]
+
+    private static func isBrowserBundle(_ bundleID: String) -> Bool {
+        browserTargets.contains { $0.bundleID == bundleID }
+    }
+
+    var isMusicConnectedOrActive: Bool {
+        // Music holds the session only while it is *actually playing*. The old
+        // test also accepted "a music player is running and has a track", and
+        // because a paused Spotify keeps its track, that claimed the session
+        // for as long as the player stayed open: YouTube could be playing in
+        // Chrome and the notch went on showing the paused song, with the
+        // transport aimed at Spotify. A paused player now lets the browser
+        // take over the moment it starts playing.
+        guard isPlaying, !isBrowserVideo else { return false }
+        guard let bundle = sourceAppBundleID else {
+            // Playing, with no resolved source app: do not hand a session that
+            // is demonstrably making sound to a browser probe.
+            return true
+        }
+        return Self.musicPlayerBundleIDs.contains(bundle)
     }
 
     private func browserYouTubeSnapshot(
@@ -2233,6 +2739,7 @@ final class MediaController {
     ) -> Snapshot? {
         guard !musicOwnsSession else { return nil }
 
+        var fallbackSnapshot: Snapshot?
         for browser in Self.browserTargets {
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else {
                 continue
@@ -2250,49 +2757,63 @@ final class MediaController {
             // progress bar. Chromium exposes it through `execute javascript`;
             // Safari through `do JavaScript`, falling back to the tab-title
             // path when "Allow JavaScript from Apple Events" is off.
-            let js = "(function(){try{var title=(document.querySelector('h1.ytd-watch-metadata')||document.querySelector('h1')).innerText||document.title;var channel=(document.querySelector('#upload-info #channel-name a')||document.querySelector('ytd-channel-name a')).innerText||'';var p=document.querySelector('#movie_player');var d=p&&p.getDuration?p.getDuration():0;var c=p&&p.getCurrentTime?p.getCurrentTime():0;var id=p&&p.getVideoData?p.getVideoData().video_id:'';var playing=false;try{playing=p&&p.getPlayerState?p.getPlayerState()===1:(function(){var v=document.querySelector('video');return !!v&&!v.paused&&!v.ended;})();}catch(e){}return JSON.stringify({title:title,youtuber:channel,thumbnail:id?'https://img.youtube.com/vi/'+id+'/maxresdefault.jpg':'',progress:d>0?c/d:0,duration:d,playing:playing});}catch(e){return '';}})();"
+            let js = "(function(){try{var title=(document.querySelector('h1.ytd-watch-metadata')||document.querySelector('h1')).innerText||document.title;var channel=(document.querySelector('#upload-info #channel-name a')||document.querySelector('ytd-channel-name a')).innerText||'';var p=document.querySelector('#movie_player');var d=p&&p.getDuration?p.getDuration():0;var c=p&&p.getCurrentTime?p.getCurrentTime():0;var id=p&&p.getVideoData?p.getVideoData().video_id:'';var playing=false;try{playing=p&&p.getPlayerState?p.getPlayerState()===1:(function(){var v=document.querySelector('video');return !!v&&!v.paused&&!v.ended;})();}catch(e){}return (playing?'PLAYING||':'PAUSED||')+JSON.stringify({title:title,youtuber:channel,thumbnail:id?'https://img.youtube.com/vi/'+id+'/maxresdefault.jpg':'',sourceURL:location.href,progress:d>0?c/d:0,duration:d,playing:playing});}catch(e){return '';}})();"
 
             let scriptSource: String
             if browser.isChromium {
                 scriptSource = """
                 tell application "\(browser.name)"
-                    if (count of windows) is 0 then return ""
+                    set fallback to ""
                     repeat with w in windows
                         repeat with t in tabs of w
                             set u to URL of t
                             set n to title of t
                             if u contains "youtube.com/watch" or u contains "youtu.be" or u contains "music.youtube.com" or u contains "youtube.com/shorts" or u contains "youtube.com/live" or u contains "youtube.com/embed" or n contains " - YouTube" or n contains "YouTube Music" then
+                                set candidate to ""
                                 try
                                     tell t
-                                        return (execute javascript "\(js)") as text
+                                        set candidate to (execute javascript "\(js)") as text
                                     end tell
                                 on error
-                                    return n & "||" & u
+                                    set candidate to n & "||" & u
                                 end try
+                                if candidate begins with "PLAYING||" then return text 10 thru -1 of candidate
+                                if fallback is "" and candidate begins with "PAUSED||" then
+                                    set fallback to text 9 thru -1 of candidate
+                                else if fallback is "" and candidate is not "" then
+                                    set fallback to candidate
+                                end if
                             end if
                         end repeat
                     end repeat
-                    return ""
+                    return fallback
                 end tell
                 """
             } else {
                 scriptSource = """
                 tell application "\(browser.name)"
-                    if (count of windows) is 0 then return ""
+                    set fallback to ""
                     repeat with w in windows
                         repeat with t in tabs of w
                             set u to URL of t
                             set n to name of t
                             if u contains "youtube.com/watch" or u contains "youtu.be" or u contains "music.youtube.com" or u contains "youtube.com/shorts" or u contains "youtube.com/live" or u contains "youtube.com/embed" or n contains " - YouTube" or n contains "YouTube Music" then
+                                set candidate to ""
                                 try
-                                    return (do JavaScript "\(js)" in t) as text
+                                    set candidate to (do JavaScript "\(js)" in t) as text
                                 on error
-                                    return n & "||" & u
+                                    set candidate to n & "||" & u
                                 end try
+                                if candidate begins with "PLAYING||" then return text 10 thru -1 of candidate
+                                if fallback is "" and candidate begins with "PAUSED||" then
+                                    set fallback to text 9 thru -1 of candidate
+                                else if fallback is "" and candidate is not "" then
+                                    set fallback to candidate
+                                end if
                             end if
                         end repeat
                     end repeat
-                    return ""
+                    return fallback
                 end tell
                 """
             }
@@ -2325,16 +2846,24 @@ final class MediaController {
                 track.artist = channel
                 track.album = "YouTube"
                 track.duration = duration
-                return Snapshot(
+                // A missing `playing` key is not "paused": the page answered
+                // without it, so the reading simply has no state to report.
+                let playing = Self.boolValue(json["playing"])
+                let snapshot = Snapshot(
                     track: track,
                     elapsed: progress * duration,
                     duration: duration,
-                    isPlaying: Self.boolValue(json["playing"]) ?? false,
+                    isPlaying: playing ?? false,
                     bundleID: browser.bundleID,
                     appName: browser.name,
                     artworkURL: thumbnail.isEmpty ? nil : URL(string: thumbnail),
-                    isBrowser: true
+                    mediaURL: Self.validatedYouTubeURL(from: json["sourceURL"] as? String),
+                    isBrowser: true,
+                    playbackStateKnown: playing != nil
                 )
+                if snapshot.isPlaying { return snapshot }
+                if fallbackSnapshot == nil { fallbackSnapshot = snapshot }
+                continue
             }
 
             // Legacy tab-title path: "Title - YouTube||https://…".
@@ -2375,18 +2904,26 @@ final class MediaController {
             track.title = title
             track.artist = artist
             track.album = "YouTube"
-            return Snapshot(
-                track: track,
-                elapsed: 0,
-                duration: 0,
-                isPlaying: false,
-                bundleID: browser.bundleID,
-                appName: browser.name,
-                artworkURL: artworkURL,
-                isBrowser: true
-            )
+            if fallbackSnapshot == nil {
+                fallbackSnapshot = Snapshot(
+                    track: track,
+                    elapsed: 0,
+                    duration: 0,
+                    isPlaying: false,
+                    bundleID: browser.bundleID,
+                    appName: browser.name,
+                    artworkURL: artworkURL,
+                    mediaURL: Self.validatedYouTubeURL(from: urlString),
+                    isBrowser: true,
+                    // The tab title says nothing about playback, so this
+                    // reading must not claim the video is paused — the
+                    // now-playing channel answers that instead, through the
+                    // playback reconcile.
+                    playbackStateKnown: false
+                )
+            }
         }
-        return nil
+        return fallbackSnapshot
     }
 
     /// Channel names for video IDs already looked up, so the periodic browser
@@ -2458,9 +2995,18 @@ final class MediaController {
         var bundleID: String?
         var appName: String?
         var artworkURL: URL?
+        /// The page that owns this browser-derived item, if known.
+        var mediaURL: URL? = nil
         /// True for browser snapshots: MediaRemote can't see or confirm them,
         /// they carry no real playback position, and their artwork is a URL.
         var isBrowser = false
+        /// False when the reading carries no playback state at all — the
+        /// tab-title browser fallback, which has a title and a URL and says
+        /// nothing about whether the video is running. Such a reading must not
+        /// be able to *assert* "paused": that is what left a playing YouTube
+        /// video showing a play button, with the periodic probe re-asserting
+        /// it every couple of seconds.
+        var playbackStateKnown = true
     }
 
     /// One reading of the player's state, or nil when it has nothing to say.
@@ -2531,11 +3077,15 @@ final class MediaController {
     private func apply(_ snapshot: Snapshot) {
         isShowingBrowserSnapshot = snapshot.isBrowser
         isBrowserVideo = snapshot.isBrowser
+        sourceMediaURL = snapshot.isBrowser ? snapshot.mediaURL : nil
         if snapshot.isBrowser {
             lyrics.clear()
             collapsedLyric = nil
+            // A browser item's source identity is its own; the pid that MediaRemote
+            // last named is about a player, not this page.
+            sourceAppPID = 0
         }
-        if !snapshot.isPlaying && isPlaying {
+        if snapshot.playbackStateKnown, !snapshot.isPlaying, isPlaying {
             elapsedAnchor = currentElapsed
             anchorDate = Date()
         } else if snapshot.duration > 0 {
@@ -2556,7 +3106,7 @@ final class MediaController {
             elapsedAnchor = snapshot.elapsed
             anchorDate = Date()
         }
-        if acceptPlaybackReport(snapshot.isPlaying) {
+        if snapshot.playbackStateKnown, acceptPlaybackReport(snapshot.isPlaying) {
             isPlaying = snapshot.isPlaying
         }
 
@@ -2677,6 +3227,7 @@ final class MediaController {
     private func finishClearingTrack() {
         isShowingBrowserSnapshot = false
         isBrowserVideo = false
+        sourceMediaURL = nil
         track = nil
         setArtwork(nil, data: nil)
         isPlaying = false

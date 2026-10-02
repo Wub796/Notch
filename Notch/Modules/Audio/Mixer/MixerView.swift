@@ -19,38 +19,60 @@ struct MixerView: View {
     private var mixer: MixerEngine { state.mixer }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: NotchTheme.Space.s) {
-                masterRow
+        VStack(alignment: .leading, spacing: NotchTheme.Space.s) {
+            masterRow
 
-                if mixer.isEnabled {
-                    if !mixer.isSupported {
-                        notice("Per-app volume needs macOS 14.2 or later. On this macOS the app's own output level can't be changed by anything but the app itself.")
-                    } else if mixer.mixes.isEmpty {
-                        notice("Move a slider to take over an app's audio. Nothing runs for apps you leave alone.")
-                    } else {
-                        ForEach(mixerAppIDs, id: \.self) { appID in
-                            appRow(appID)
-                        }
-                    }
-
-                    displayVolumeSection
-                }
-
-                Text(mixer.isEnabled
-                     ? "Boost is up to 4x (+12 dB). Apps you don't change keep playing through the system, untouched."
-                     : "The mixer is off: no app's audio is being rewritten.")
-                    .font(.notchFootnote)
-                    .foregroundStyle(NotchTheme.inkMuted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 2)
+            if !mixer.isSupported {
+                notice("Per-app mixing needs macOS 14.2 or later. The apps are shown below, but their audio cannot be changed on this macOS.")
+            } else if !state.audioApps.canObserveProcesses {
+                notice("This macOS can create mixer taps, but app audio processes are only available from macOS 14.4. Per-app controls are unavailable here.")
             }
-            .padding(.bottom, 6)
-            .animation(.notchSpring, value: mixer.activeAppIDs)
+
+            sectionLabel("Apps")
+            if mixerAppIDs.isEmpty {
+                emptyAppsRow
+            } else {
+                VStack(spacing: NotchTheme.Space.s) {
+                    ForEach(mixerAppIDs, id: \.self) { appID in
+                        appRow(appID)
+                    }
+                }
+            }
+
+            displayVolumeSection
+
+            Text(!mixer.isEnabled
+                 ? "Mixer is off. Turn it on above to apply per-app volume, mute, routing, and EQ."
+                 : !state.audioApps.canObserveProcesses
+                 ? "App audio processes can't be identified on this macOS, so per-app controls are unavailable."
+                 : "Set app levels ahead of time; mixing starts when they play. Untouched apps keep the normal system audio path.")
+                .font(.notchFootnote)
+                .foregroundStyle(NotchTheme.inkMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 2)
         }
-        .notchScrollFade(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear { refreshDisplayVolumes() }
+        .padding(.bottom, 6)
+        .animation(.notchSpring, value: mixer.activeAppIDs)
+        .animation(.notchSpring, value: mixerAppIDs)
+        .onAppear {
+            refreshDisplayVolumes()
+        }
+    }
+
+    private var emptyAppsRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("No apps playing audio")
+                .font(.notchBody.weight(.semibold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+            Text("Start music, a video, or a call. Active apps appear here automatically.")
+                .font(.notchFootnote)
+                .foregroundStyle(NotchTheme.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, NotchTheme.Space.m)
+        .padding(.vertical, 12)
+        .notchCard()
     }
 
     /// Every app with settings, plus the ones making sound right now — the
@@ -116,82 +138,44 @@ struct MixerView: View {
     private func appRow(_ appID: String) -> some View {
         let mix = mixer.mix(for: appID)
         let app = state.audioApps.apps.first { $0.id == appID }
+        let appName = app?.name ?? appID
+        let canAdjust = canAdjustApp(appID, app: app)
 
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: NotchTheme.Space.s) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
                 if let icon = app?.icon {
                     Image(nsImage: icon)
                         .resizable()
-                        .frame(width: 20, height: 20)
-                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 26, height: 26)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 } else {
                     Image(systemName: "app.dashed")
-                        .font(.system(size: 13))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(NotchTheme.inkMuted)
-                        .frame(width: 20, height: 20)
+                        .frame(width: 26, height: 26)
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(app?.name ?? appID)
-                        .font(.notchBody)
+                    Text(appName)
+                        .font(.notchBody.weight(.semibold))
                         .foregroundStyle(NotchTheme.inkPrimary)
                         .lineLimit(1)
-                    Text(statusLine(for: appID, mix: mix, isPlaying: app?.isPlaying ?? false))
+                    Text(statusLine(for: appID, mix: mix, app: app))
                         .font(.notchFootnote)
-                        .foregroundStyle(mixer.failures[appID] == nil ? NotchTheme.inkMuted : .orange)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(statusTint(for: appID, app: app))
+                        .lineLimit(1)
                 }
-
-                Spacer(minLength: 8)
-
-                Text(mix.isMuted ? "muted" : percentLabel(mix.gain))
-                    .font(.notchFootnote.monospacedDigit())
-                    .foregroundStyle(NotchTheme.inkSecondary)
-                    .frame(width: 54, alignment: .trailing)
+                .frame(minWidth: 90, maxWidth: 170, alignment: .leading)
 
                 RoundIconButton(
                     systemImage: mix.isMuted ? "speaker.wave.2.fill" : "speaker.slash.fill",
-                    help: mix.isMuted ? "Unmute \(app?.name ?? appID)" : "Mute \(app?.name ?? appID)",
-                    tint: mix.isMuted ? nil : .red
+                    help: mix.isMuted ? "Unmute \(appName)" : "Mute \(appName)",
+                    tint: mix.isMuted ? nil : .red,
+                    isEnabled: canAdjust
                 ) {
                     mixer.toggleMute(for: appID)
                 }
-
-                RoundIconButton(
-                    systemImage: "slider.vertical.3",
-                    help: "Equalizer for \(app?.name ?? appID)",
-                    tint: expandedEQAppID == appID ? .blue : nil
-                ) {
-                    withAnimation(.notchSpring) {
-                        expandedEQAppID = expandedEQAppID == appID ? nil : appID
-                    }
-                }
-            }
-
-            if mixer.canControl(appID) || !mixer.activeAppIDs.contains(appID) {
-                levelControls(appID: appID, mix: mix)
-            }
-
-            if expandedEQAppID == appID {
-                EqualizerPanel(appID: appID, mix: mix, mixer: mixer)
-                    .transition(.opacity)
-            }
-        }
-        .padding(.horizontal, NotchTheme.Space.m)
-        .padding(.vertical, 10)
-        .notchCard(isHighlighted: mixer.isActive(appID))
-    }
-
-    /// Level, boost, routing and loudness for one app. The slider runs to 4x
-    /// because that is the point of a boost: material mastered quietly, or a
-    /// call recorded low, has room above unity that a 100% ceiling would deny.
-    private func levelControls(appID: String, mix: MixerEngine.AppMix) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("100%")
-                    .font(.notchFootnote)
-                    .foregroundStyle(NotchTheme.inkMuted)
 
                 Slider(
                     value: Binding(
@@ -201,13 +185,15 @@ struct MixerView: View {
                     in: 0...4
                 )
                 .tint(mix.gain > 1 ? .orange : .accentColor)
+                .disabled(!canAdjust)
+                .accessibilityLabel("\(appName) volume")
+                .frame(minWidth: 110, maxWidth: 230)
 
-                Text("400%")
-                    .font(.notchFootnote)
-                    .foregroundStyle(NotchTheme.inkMuted)
-            }
+                Text(mix.isMuted ? "Muted" : percentLabel(mix.gain))
+                    .font(.notchFootnote.monospacedDigit())
+                    .foregroundStyle(NotchTheme.inkSecondary)
+                    .frame(width: 52, alignment: .trailing)
 
-            HStack(spacing: NotchTheme.Space.s) {
                 Menu {
                     Button("System output") { mixer.route(nil, for: appID) }
                     Divider()
@@ -215,17 +201,32 @@ struct MixerView: View {
                         Button(device.name) { mixer.route(device.uid, for: appID) }
                     }
                 } label: {
-                    chip(
-                        title: routeLabel(for: mix),
-                        systemImage: "hifispeaker.2.fill",
-                        isActive: mix.routeDeviceUID != nil
-                    )
+                    Image(systemName: "hifispeaker.2.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(mix.routeDeviceUID == nil ? NotchTheme.inkSecondary : .accentColor)
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(NotchTheme.surfaceHover))
+                        .contentShape(Circle())
                 }
                 .menuStyle(.button)
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
-                .fixedSize()
+                .disabled(!canAdjust)
+                .help("Route \(appName) audio: \(routeLabel(for: mix))")
 
+                RoundIconButton(
+                    systemImage: "slider.vertical.3",
+                    help: expandedEQAppID == appID ? "Close EQ for \(appName)" : "Equalizer for \(appName)",
+                    tint: expandedEQAppID == appID ? .blue : nil,
+                    isEnabled: canAdjust
+                ) {
+                    withAnimation(.notchSpring) {
+                        expandedEQAppID = expandedEQAppID == appID ? nil : appID
+                    }
+                }
+            }
+
+            HStack(spacing: NotchTheme.Space.s) {
                 Button {
                     mixer.setLoudnessCompensation(!mix.loudnessCompensation, for: appID)
                 } label: {
@@ -236,6 +237,7 @@ struct MixerView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .disabled(!canAdjust)
 
                 if mixer.mixes[appID] != nil {
                     Button {
@@ -247,22 +249,57 @@ struct MixerView: View {
                         chip(title: "Reset", systemImage: "arrow.uturn.backward", isActive: false)
                     }
                     .buttonStyle(.plain)
+                    .disabled(!mixer.isEnabled)
                 }
 
                 Spacer(minLength: 0)
             }
+            .padding(.leading, 34)
+
+            if expandedEQAppID == appID {
+                EqualizerPanel(appID: appID, mix: mix, mixer: mixer)
+                    .disabled(!canAdjust)
+                    .transition(.opacity)
+            }
         }
+        .padding(.horizontal, NotchTheme.Space.m)
+        .padding(.vertical, 8)
+        .notchCard(isHighlighted: app?.isPlaying == true || mixer.isActive(appID))
+        .accessibilityElement(children: .contain)
     }
 
-    private func statusLine(for appID: String, mix: MixerEngine.AppMix, isPlaying: Bool) -> String {
+    /// Settings can be prepared for an inactive app, but an active process
+    /// needs a real CoreAudio handle before its controls are enabled.
+    private func canAdjustApp(_ appID: String, app: AudioAppMonitor.App?) -> Bool {
+        guard mixer.isEnabled, mixer.isSupported, state.audioApps.canObserveProcesses else { return false }
+        guard app?.isPlaying == true else { return true }
+        return mixer.canControl(appID)
+    }
+
+    private func statusLine(for appID: String, mix: MixerEngine.AppMix, app: AudioAppMonitor.App?) -> String {
+        if !mixer.isSupported { return "Needs macOS 14.2 or later" }
+        if !mixer.isEnabled { return "Mixer off" }
+        if !state.audioApps.canObserveProcesses { return "App mixing needs macOS 14.4 or later" }
         if let failure = mixer.failures[appID] { return failure }
-        if !mixer.isSupported { return "Unsupported on this macOS" }
-        if mixer.mixes[appID] == nil { return isPlaying ? "Playing" : "Idle" }
+        if app?.isPlaying == true && !mixer.canControl(appID) {
+            return "Audio process is unavailable to mix"
+        }
+        if mixer.mixes[appID] == nil { return app?.isPlaying == true ? "Playing" : "Idle" }
         switch (mix.isMuted, mix.gain > 1) {
         case (true, _): return "Muted"
         case (_, true): return "Boosted \(percentLabel(mix.gain))"
         default: return "Set to \(percentLabel(mix.gain))"
         }
+    }
+
+    private func statusTint(for appID: String, app: AudioAppMonitor.App?) -> Color {
+        if !mixer.isEnabled { return NotchTheme.inkMuted }
+        if mixer.failures[appID] != nil || !mixer.isSupported
+            || !state.audioApps.canObserveProcesses
+            || (app?.isPlaying == true && !mixer.canControl(appID)) {
+            return .orange
+        }
+        return app?.isPlaying == true ? .green : NotchTheme.inkMuted
     }
 
     private func routeLabel(for mix: MixerEngine.AppMix) -> String {
