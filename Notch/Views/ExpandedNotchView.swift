@@ -53,11 +53,18 @@ struct ExpandedNotchView: View {
 
     private func weatherHeaderTrailing(maxWidth: CGFloat) -> some View {
         HStack(spacing: 8) {
+            // One transaction: the chip's own fill and the module's strip swap
+            // are the same choice, and the module is a sibling of this header,
+            // so both have to move on the animation this click starts.
             forecastChip("Hourly", isActive: !state.showsDailyForecast) {
-                state.showsDailyForecast = false
+                withAnimation(NotchAnimations.content) {
+                    state.showsDailyForecast = false
+                }
             }
             forecastChip("5 Days", isActive: state.showsDailyForecast) {
-                state.showsDailyForecast = true
+                withAnimation(NotchAnimations.content) {
+                    state.showsDailyForecast = true
+                }
             }
 
             NotchIconButton(systemImage: "arrow.clockwise", help: "Refresh weather") {
@@ -163,10 +170,14 @@ struct DropZoneView: View {
                 : (instantAirDrop ? "airplane.circle.fill" : "tray.and.arrow.down.fill"))
                 .font(.system(size: 26, weight: .light))
                 .foregroundStyle(.blue)
-                .symbolEffect(.pulse, isActive: isResolving)
+                .symbolEffect(.pulse, isActive: isResolving && !NotchAnimations.prefersReducedMotion)
+                .contentTransition(NotchAnimations.prefersReducedMotion ? .opacity : .symbolEffect(.replace))
+                .animation(NotchAnimations.content, value: isResolving)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
+                    .contentTransition(.opacity)
+                    .animation(NotchAnimations.content, value: title)
                     .font(.notchBody)
                     .foregroundStyle(NotchTheme.inkPrimary)
                 Text(instantAirDrop

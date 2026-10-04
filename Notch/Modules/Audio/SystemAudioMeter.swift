@@ -2,14 +2,19 @@ import AppKit
 import Foundation
 import Observation
 
-/// The measured source behind the closed notch's three bars.
+/// The measured source behind the closed notch's bars.
 ///
 /// This class is the lifecycle and the publication, not the measurement: the
 /// samples are read and split into bands by `AudioSpectrumTap`, which exists
 /// only while something is playing. What lives here is the timer that copies
-/// the tap's latest three numbers onto the main thread at 30Hz, plus the two
+/// the tap's latest band levels onto the main thread at 30Hz, plus the two
 /// states the UI needs to tell the truth — whether the meter is live at all,
 /// and why it is not.
+///
+/// It also owns how many bands that is, because the count is a setting rather
+/// than a property of the tap: the user can move between three and five bars
+/// while the music is playing, and the change has to reach both the analyzer
+/// that measures the bands and the view that draws them.
 ///
 /// There is no permission this class can check. macOS either lets the tap be
 /// created or refuses it in the call itself (see `AudioSpectrumTap`), so the
@@ -22,7 +27,12 @@ import Observation
 /// Audio surface.
 @Observable
 final class SystemAudioMeter {
-    private(set) var bands: [Float] = [0, 0, 0]
+    private(set) var bands: [Float] = [Float](repeating: 0, count: AudioBandAnalyzer.defaultBandCount)
+
+    /// How many bands are measured, and therefore how many bars the view has
+    /// data for. Kept clamped to what the analyzer offers, so the count the
+    /// bars draw and the count the tap measures cannot drift apart.
+    private(set) var bandCount = AudioBandAnalyzer.defaultBandCount
 
     /// True only while the tap is running, which is exactly when `bands` is a
     /// measurement rather than three zeros waiting for one.
@@ -148,7 +158,26 @@ final class SystemAudioMeter {
         // aggregate device and its tap waits on the audio system.
         queueTapStop()
         isLive = false
-        bands = [0, 0, 0]
+        bands = [Float](repeating: 0, count: bandCount)
+    }
+
+    /// Changes how many bands are measured. Called from the main thread when
+    /// the setting changes, and safe whether or not the tap is running.
+    ///
+    /// The published levels are re-sized here, so the bars redraw at the new
+    /// count at once — idle for the moment it takes the tap to publish levels
+    /// of the same length, which is the honest way round: a bar is only as
+    /// tall as a measurement it actually has. The retune itself is queued
+    /// with every other CoreAudio call, behind whatever the control queue is
+    /// already doing.
+    func setBandCount(_ count: Int) {
+        let clamped = AudioBandAnalyzer.clampedBandCount(count)
+        guard clamped != bandCount else { return }
+        bandCount = clamped
+        bands = [Float](repeating: 0, count: clamped)
+        controlQueue.async { [weak self] in
+            self?.tap.setBandCount(clamped)
+        }
     }
 
     private func queueTapStop() {
@@ -166,7 +195,8 @@ final class SystemAudioMeter {
         let live = tap.isRunning
         if live != isLive { isLive = live }
         guard live else {
-            if bands != [0, 0, 0] { bands = [0, 0, 0] }
+            let silence = [Float](repeating: 0, count: bandCount)
+            if bands != silence { bands = silence }
             return
         }
         let measured = tap.bands

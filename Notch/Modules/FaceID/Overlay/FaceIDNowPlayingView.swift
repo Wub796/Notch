@@ -1,6 +1,5 @@
 import AppKit
 import Observation
-import QuartzCore
 import SwiftUI
 
 /// The panel's Liquid Glass surface.
@@ -159,6 +158,12 @@ struct FaceIDNowPlayingPlayer: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        // The pane stays up across tracks, and the artwork
+                        // beside this text already crossfades; the title and
+                        // artist fading through each other keeps the two in
+                        // step instead of one swapping while the other eases.
+                        .contentTransition(.opacity)
+                        .animation(NotchAnimations.content, value: title)
 
                     Text(subtitle)
                         .font(.system(size: 15, weight: .medium, design: .rounded))
@@ -166,6 +171,8 @@ struct FaceIDNowPlayingPlayer: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentTransition(.opacity)
+                        .animation(NotchAnimations.content, value: subtitle)
 
                     NowPlayingGlassRow(spacing: 21) {
                         HStack(spacing: 21) {
@@ -368,16 +375,20 @@ final class FaceIDNowPlayingWindowController {
     private var media: MediaController?
     private var lockMonitor: LockMonitor?
     private var isSkyLightDelegated = false
-    /// Raw, CGSession-confirmed lock state. Do not gate the player on Face ID's
-    /// trigger/armed state: lock-screen music is useful when Face ID is disabled.
-    private var isScreenLocked = false
     private var cursorPollTimer: Timer?
     private var visibilityRetryTimer: Timer?
 
-    /// Invalidates a fade that is still in flight when the pane is asked to
-    /// change visibility again, so a slow fade-out can never order out a window
-    /// that has already been asked back.
-    private var visibilityGeneration = 0
+    /// Development lever: `--debug-now-playing` parks the pane on screen while
+    /// the session is unlocked, so the player's layout can be looked at (and
+    /// this class's lock-state plumbing exercised) without locking the Mac. It
+    /// deliberately never joins the elevated lock-screen space.
+    private static var debugAlwaysVisible: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--debug-now-playing")
+        #else
+        false
+        #endif
+    }
 
     init() {
         window.contentView = NSHostingView(rootView: EmptyView())
@@ -391,7 +402,6 @@ final class FaceIDNowPlayingWindowController {
     ) {
         media = mediaController
         self.lockMonitor = lockMonitor
-        isScreenLocked = lockMonitor.confirmedScreenLockState == true
         window.contentView = NSHostingView(
             rootView: FaceIDNowPlayingPlayer(
                 media: mediaController,
@@ -412,6 +422,10 @@ final class FaceIDNowPlayingWindowController {
         withObservationTracking {
             _ = media.hasTrack
             _ = media.isPlaying
+            // Also tracked: whether this session is music at all is decided by
+            // which app owns it, and a source can change under a track that
+            // stays put (the adapter naming its client a moment after launch).
+            _ = media.sourceAppBundleID
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -423,9 +437,6 @@ final class FaceIDNowPlayingWindowController {
 
     /// Re-checks both media and lock state, including after display changes.
     func refresh() {
-        if let lockMonitor {
-            isScreenLocked = lockMonitor.confirmedScreenLockState == true
-        }
         reconcileVisibility()
     }
 
@@ -437,9 +448,8 @@ final class FaceIDNowPlayingWindowController {
             _ = lockMonitor.confirmedScreenLockState
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
-                guard let self, let lockMonitor = self.lockMonitor else { return }
+                guard let self else { return }
                 self.observeScreenLockState()
-                self.isScreenLocked = lockMonitor.confirmedScreenLockState == true
                 self.reconcileVisibility()
             }
         }
@@ -456,36 +466,12 @@ final class FaceIDNowPlayingWindowController {
         cursorPollTimer?.invalidate()
         cursorPollTimer = nil
         guard window.isVisible else { return }
-        // Faded out before it is ordered out, so the pane leaves the way it
-        // arrived instead of blinking off the lock screen.
-        visibilityGeneration &+= 1
-        let generation = visibilityGeneration
-        fade(alpha: 0, over: 0.14, timing: .easeIn) { [weak self] in
-            guard let self, self.visibilityGeneration == generation else { return }
-            self.window.orderOut(nil)
-            self.window.alphaValue = 1
-        }
-    }
-
-    /// Fades the pane over the lock screen rather than popping it: it arrives
-    /// while macOS is still animating the lock screen itself, and a hard cut
-    /// through that reads as a glitch.
-    ///
-    /// On the window's own alpha, never on a SwiftUI opacity — the pane is
-    /// Liquid Glass, and animating its view would re-drive the glass every
-    /// frame of the fade (the same reason the mouse-tracking writes in
-    /// `updateMousePassthrough()` are transition-only).
-    private func fade(
-        alpha: CGFloat,
-        over duration: TimeInterval,
-        timing: CAMediaTimingFunctionName,
-        completion: (() -> Void)? = nil
-    ) {
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(name: timing)
-            window.animator().alphaValue = alpha
-        }, completionHandler: completion)
+        // Ordered out directly and left fully opaque for the next arrival.
+        window.orderOut(nil)
+        window.alphaValue = 1
+        #if DEBUG
+        print("[FaceID] player: hidden")
+        #endif
     }
 
     private func startVisibilityRetry() {
@@ -501,13 +487,25 @@ final class FaceIDNowPlayingWindowController {
         visibilityRetryTimer = timer
     }
 
+    /// Music only. MediaRemote carries a session for anything the system is
+    /// playing — a browser video, a video file, the TV app, a podcast — and a
+    /// transport pane over any of those is not what this surface is for. The
+    /// test is `musicPlayerOwnsSource`, the same one the transport uses: the
+    /// session belongs to one of the two music players the notch can drive.
+    /// An unrecognized client is not music, so nothing is shown for it.
     private var hasTrackToShow: Bool {
         guard let media else { return false }
-        return media.hasTrack || media.isPlaying
+        guard media.hasTrack || media.isPlaying else { return false }
+        return media.musicPlayerOwnsSource
     }
 
     private func reconcileVisibility() {
-        guard hasTrackToShow, isScreenLocked,
+        // The authoritative session bit is re-read here rather than mirrored
+        // from the lock monitor: this runs both from the retry timer and from
+        // every observation change, and a mirror that is one refresh behind is
+        // exactly how the pane ends up ordered out with the lock screen up.
+        let isLocked = LockMonitor.isScreenActuallyLocked()
+        guard hasTrackToShow, Self.debugAlwaysVisible || isLocked,
               let screen = FaceIDGeometry.preferredScreen()
         else {
             hide()
@@ -528,20 +526,12 @@ final class FaceIDNowPlayingWindowController {
         if window.frame.origin != origin {
             window.setFrameOrigin(origin)
         }
-        if !window.isVisible {
-            // Ordered in at zero alpha and faded up: the arrival is the half of
-            // the transition that reads as a pop.
-            window.alphaValue = 0
-            window.orderFrontRegardless()
-            visibilityGeneration &+= 1
-            fade(alpha: 1, over: 0.18, timing: .easeOut)
-        } else if window.alphaValue < 1 {
-            // A hide that landed mid-fade must not leave the pane stuck
-            // half-transparent when it is asked back.
-            visibilityGeneration &+= 1
-            fade(alpha: 1, over: 0.12, timing: .easeOut)
-        }
-        if LockMonitor.isScreenActuallyLocked(), let skyLight = FaceIDSkyLight.shared {
+        // Into the elevated space before it is ordered in, so the pane arrives
+        // already above the login window instead of being composited once in
+        // the ordinary space. Never while the debug lever is on: a delegated
+        // window floats over everything, which is not what a desktop preview
+        // of the player is for.
+        if isLocked, !Self.debugAlwaysVisible, let skyLight = FaceIDSkyLight.shared {
             if !isSkyLightDelegated {
                 skyLight.delegate(window)
                 isSkyLightDelegated = true
@@ -549,6 +539,25 @@ final class FaceIDNowPlayingWindowController {
         } else if isSkyLightDelegated, let skyLight = FaceIDSkyLight.shared {
             skyLight.undelegate(window)
             isSkyLightDelegated = false
+        }
+        if !window.isVisible {
+            // Fully opaque before it is ordered in, never faded up from zero.
+            // AppKit's `NSAnimationContext` window-alpha animation does not
+            // commit for this background accessory app (reproduced on macOS
+            // 27: the animator leaves `alphaValue` at 0 while a direct write
+            // sticks), so a pane whose arrival hangs on that fade is simply
+            // never seen. That is the bug this replaced: the arrival was an
+            // `alphaValue = 0` write followed by a fade that never landed, so
+            // the window was on screen and invisible the entire time.
+            window.alphaValue = 1
+            window.orderFrontRegardless()
+            #if DEBUG
+            print("[FaceID] player: shown locked=\(isLocked) preview=\(Self.debugAlwaysVisible) "
+                + "track=\(media?.hasTrack ?? false) playing=\(media?.isPlaying ?? false) "
+                + "screen=\(screen.localizedName)")
+            #endif
+        } else if window.alphaValue < 1 {
+            window.alphaValue = 1
         }
         updateMousePassthrough()
         if cursorPollTimer == nil {

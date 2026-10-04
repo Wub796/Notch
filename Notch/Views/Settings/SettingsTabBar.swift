@@ -36,7 +36,8 @@ struct SettingsTabBar: View {
                     )
                     .frame(width: frame.width, height: frame.height)
                     .offset(x: frame.minX, y: frame.minY)
-                    .transition(.opacity)
+                    .animation(SettingsMetrics.tabSelectionAnimation, value: selection)
+                    .animation(SettingsMetrics.tabSelectionAnimation, value: frame)
                     .allowsHitTesting(false)
             }
 
@@ -61,15 +62,15 @@ struct SettingsTabBar: View {
                 .strokeBorder(SettingsMetrics.tabBarBorder, lineWidth: 1)
         )
         .onPreferenceChange(TabFramePreferenceKey.self) { frames in
-            withAnimation(SettingsMetrics.tabSelectionAnimation) {
-                tabFrames = frames
-            }
+            guard frames != tabFrames else { return }
+            tabFrames = frames
         }
     }
 
     private func item(_ tab: SettingsTab) -> some View {
         let isSelected = selection == tab
         return Button {
+            guard selection != tab else { return }
             withAnimation(SettingsMetrics.tabSelectionAnimation) {
                 selection = tab
             }

@@ -567,8 +567,8 @@ final class NotchWindowController: NSWindowController {
         // the notch: the panel was still ignoring the mouse on the preceding
         // sample, so AppKit handed the press straight past it. Without this the
         // first click on a freshly-reached notch is swallowed. `handleTap`
-        // applies the same dwell guard as the panel's own tap gesture, and the
-        // region is the same notch rectangle, so this can only ever open the
+        // treats this as the same intentional pin-and-open as the panel tap;
+        // the region is the same notch rectangle, so this can only ever open the
         // notch from over the notch.
         state.handleTap()
     }

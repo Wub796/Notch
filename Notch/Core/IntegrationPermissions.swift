@@ -195,6 +195,7 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
     private override init() {
         super.init()
         locationManager.delegate = self
+        Self.repairFolderRecord()
         refresh()
     }
 
@@ -260,6 +261,26 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
 
     private static func markRequested(_ integration: Integration) {
         UserDefaults.standard.set(true, forKey: "requested.\(integration.rawValue)")
+    }
+
+    /// One-time repair of the Files & Folders record.
+    ///
+    /// This is the only integration whose prompt is raised by the read itself,
+    /// and macOS cannot raise it without the matching folder usage description
+    /// in the Info.plist — the read is just refused. Builds before those keys
+    /// existed still set `requested.filesAndFolders` on that refused read, which
+    /// left the record claiming a firm "Denied": and a denied row is never
+    /// asked again, so the prompt became unreachable for good rather than
+    /// merely unheard. Clearing the flag once gives the next press of the
+    /// button a real chance to prompt; nothing else about the record changes,
+    /// and a genuine "Don't Allow" simply re-records itself on that read.
+    private static func repairFolderRecord() {
+        let marker = "permissions.folderPromptRepair"
+        guard !UserDefaults.standard.bool(forKey: marker) else { return }
+        UserDefaults.standard.removeObject(
+            forKey: "requested.\(Integration.filesAndFolders.rawValue)"
+        )
+        UserDefaults.standard.set(true, forKey: marker)
     }
 
     private func accessibilityStatus() -> Status {

@@ -32,8 +32,9 @@ struct NotchLayoutView: View {
             // measurement, and hit-testing off so they can't eat a click.
             if state.mode == .expanded, let toast = state.toast {
                 NotchToastView(toast: toast)
+                    .id(toast.id)
                     .padding(.bottom, 12)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(NotchAnimations.feedback)
                     .allowsHitTesting(false)
                     .zIndex(20)
             }
@@ -102,6 +103,7 @@ struct NotchLayoutView: View {
                 alignment: .center
             )
             .fixedSize(horizontal: false, vertical: fits)
+            .animation(NotchAnimations.content, value: state.isDropTargeted || state.shelf.isResolvingDrop)
             .onPreferenceChange(ModuleNaturalHeightKey.self) { heights in
                 // Deferred off the layout pass: recording a height while
                 // SwiftUI is mid-update can be dropped, which silently leaves
@@ -123,6 +125,7 @@ struct NotchLayoutView: View {
                 isResolving: state.shelf.isResolvingDrop,
                 instantAirDrop: state.settings.instantAirDrop
             )
+            .transition(NotchAnimations.feedback)
         } else {
             tabContent
         }

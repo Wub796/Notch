@@ -153,10 +153,11 @@ struct HomeDashboardView: View {
     /// The two candidates are the card at the block's own width — cover, title
     /// window, transport row, which a short title asks for — and the same card
     /// filled to whatever the row can afford, clipping the title inside it.
-    /// `ViewThatFits` takes the first whenever it fits, which is what keeps the
-    /// transport row under the text block: in the filled card the column runs
-    /// the full title window, and a transport row centred in *that* drifts
-    /// right of a short title. Either way the tile is `musicMaximumWidth`.
+    /// `ViewThatFits` takes the first whenever it fits. The candidates differ
+    /// in how much width the card takes, never in where the transport row
+    /// sits: the row is pinned to the text column's leading edge (see
+    /// `musicSection`), which is the same distance from the cover's rim in
+    /// both.
     private var musicPane: some View {
         ViewThatFits(in: .horizontal) {
             musicCard
@@ -220,10 +221,14 @@ struct HomeDashboardView: View {
         state.otherAudioApps
     }
 
-    /// Leading, like every other thing on the panel: the cover, the text column
-    /// and the chips row all start from the card's left rim. Only the transport
-    /// row inside the column is centred, and it is centred under its own text
-    /// rather than under the card.
+    /// Leading, like every other thing on the panel: the cover, the text
+    /// column, the transport row and the chips row all start from the same
+    /// edge. The transport row used to be centred under the text block, which
+    /// reads as one unit only while the column stays one width — and it does
+    /// not: the column hugs the current title and artist, so the centre moved
+    /// with every track and the buttons slid across the card. Pinned to the
+    /// column's leading edge, they hold one place, the same edge the title
+    /// and artist above them start from.
     private var musicSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center, spacing: sizing.coverGap) {
@@ -260,8 +265,11 @@ struct HomeDashboardView: View {
 
                     }
 
-                    // Transport sits centred under the text block rather than
-                    // flush left, which is what makes the column read as one unit.
+                    // Transport pinned to the column's leading edge, under the
+                    // title's first glyph. A centred row made the buttons'
+                    // place a function of the current track — a short title's
+                    // centre sits well left of a long one's — so the controls
+                    // moved at every track change.
                     HStack(spacing: 16) {
                         transportButton("backward.fill", size: 15, label: "Previous track") {
                             state.media.previousTrack()
@@ -281,7 +289,7 @@ struct HomeDashboardView: View {
                             state.media.nextTrack()
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .center)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 2)
                 }
                 // This column is the dashboard's elastic width. It takes
@@ -292,11 +300,11 @@ struct HomeDashboardView: View {
                 // beside it were squeezed past their own content and painted
                 // out past the slab's edge, which is the state
                 // `HomeDashboardSizing` exists to keep the panel out of. The
-                // cap is what keeps the transport row centred under the text
-                // rather than drifting right when the card has width to spare,
-                // because its `maxWidth: .infinity` frame would take all of it.
-                // The card itself is capped to this same width plus the cover
-                // and padding (`musicMaximumWidth`), so spare width is not
+                // cap is what keeps the column from collecting the row's spare
+                // width as a longer blank run beside the text, because its
+                // `maxWidth: .infinity` frame would take all of it. The card
+                // itself is capped to this same width plus the cover and
+                // padding (`musicMaximumWidth`), so spare width is not
                 // collected here as empty tile either.
                 .frame(maxWidth: sizing.marqueeWidth, alignment: .leading)
                 .help("Open the full player")

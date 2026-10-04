@@ -146,29 +146,29 @@ struct CollapsedNotchView: View {
                         )
                     }
                 }
-            case let .screenLock(locked):
+            case .screenLock:
                 dropped {
-                    droppedRow(
-                        symbol: locked ? "lock.fill" : "lock.open.fill",
-                        label: locked ? "Locked" : "Unlocked",
-                        value: nil
-                    )
+                    droppedRow(symbol: "lock.fill", label: "Locked", value: nil)
                 }
-            case let .timer(remaining, progress):
+            case let .timer(remaining, progress, paused):
                 dropped(height: 42) {
                     VStack(spacing: 4) {
                         droppedRow(
-                            symbol: "timer",
+                            symbol: paused ? "pause.fill" : "timer",
                             tint: .orange,
-                            label: "Timer",
+                            label: paused ? "Paused" : "Timer",
                             value: TimerManager.timeString(remaining)
                         )
-                        DraggableProgressBar(
-                            value: .constant(CGFloat(progress)),
-                            tint: .orange,
-                            inline: true
-                        )
+                        GeometryReader { geometry in
+                            Capsule().fill(Color.orange.opacity(0.16))
+                                .overlay(alignment: .leading) {
+                                    Capsule().fill(Color.orange)
+                                        .frame(width: geometry.size.width * CGFloat(progress))
+                                }
+                        }
                         .frame(height: 4)
+                        .animation(paused ? nil : NotchAnimations.clockStep(0.25), value: progress)
+                        .accessibilityHidden(true)
                     }
                 }
             case let .focusMode(name, symbol):
@@ -414,7 +414,8 @@ struct CollapsedNotchView: View {
             trailing: MusicVisualizerView(
                 accent: state.media.accent,
                 outputIsAudible: !state.audio.isMuted && state.audio.volume > 0.001,
-                bands: state.visualizerBands
+                bands: state.visualizerBands,
+                barCount: state.settings.audioMeterBarCount
             )
         )
     }

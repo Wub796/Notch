@@ -88,6 +88,11 @@ struct AudioDevicesView: View {
                 // rather than appear.
                 .animation(.notchSpring, value: state.audioApps.apps)
                 .animation(.notchSpring, value: state.audio.devices)
+                // The now-playing banner's other two conditions — playback
+                // starting and stopping, and the transport glyph on it — are
+                // not app- or device-list changes, so they need their own
+                // driver or the banner pops and the glyph snaps.
+                .animation(NotchAnimations.content, value: state.media.isPlaying)
             }
             .notchScrollFade(12)
         }

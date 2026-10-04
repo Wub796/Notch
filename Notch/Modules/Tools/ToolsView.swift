@@ -264,6 +264,24 @@ struct ToolsView: View {
                     .accessibilityLabel("Cancel timer")
                 }
                 .frame(maxWidth: .infinity)
+            } else if let systemTimer = state.clockTimer.snapshot {
+                HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(TimerManager.timeString(systemTimer.remaining))
+                            .font(.system(size: 15, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(NotchTheme.inkPrimary)
+                        Text(systemTimer.isPaused ? "Clock · Paused" : "Clock Timer")
+                            .font(.notchCaption)
+                            .foregroundStyle(NotchTheme.inkSecondary)
+                    }
+                    Spacer(minLength: 0)
+                    NotchIconButton(systemImage: "arrow.up.forward.app", help: "Manage timer in Clock", size: 24) {
+                        NSWorkspace.shared.openApplication(
+                            at: URL(fileURLWithPath: "/System/Applications/Clock.app"),
+                            configuration: NSWorkspace.OpenConfiguration()
+                        )
+                    }
+                }
             } else {
                 HStack(spacing: 5) {
                     ForEach([1, 5, 10, 25], id: \.self) { minutes in

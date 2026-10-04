@@ -34,6 +34,11 @@ struct CalendarDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.notchSpring, value: state.calendar.isMonthView)
+        // One selected date drives three things at once — the week strip's
+        // highlight, the month grid's circle, and which agenda is drawn — and
+        // the controllers mutate it from a plain click. Keyed here so they
+        // move together: the highlight used to jump and the agenda cut.
+        .animation(.notchSpring, value: state.calendar.selectedDate)
         .onAppear {
             state.calendar.refresh()
         }
@@ -239,6 +244,9 @@ struct CalendarDetailView: View {
                     .foregroundStyle(NotchTheme.inkSecondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            // "All Clear" and the list below are one slot; they fade through
+            // each other on a day change rather than cutting.
+            .transition(.opacity)
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -270,6 +278,7 @@ struct CalendarDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .transition(.opacity)
         }
     }
 

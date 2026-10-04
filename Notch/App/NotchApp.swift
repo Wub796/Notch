@@ -91,6 +91,12 @@ struct NotchApp: App {
                 NSApp.orderFrontStandardAboutPanel(nil)
             }
 
+            // The only route back to onboarding once it has been dismissed —
+            // by design it otherwise never reappears.
+            Button("Show Welcome Again") {
+                appDelegate.showOnboarding()
+            }
+
             Divider()
 
             Button("Quit Notch") {

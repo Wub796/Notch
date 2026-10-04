@@ -1,6 +1,6 @@
 # Notch
 
-Notch is a native macOS utility that turns the area around your Mac's notch into a small, interactive workspace. Hover over or click the notch to open the panel, then move the pointer away or click elsewhere to close it.
+Notch is a native macOS utility that turns the area around your Mac's notch into a small, interactive workspace. Hover to open temporarily, or click to pin the panel open. Use the pin control to return to hover behavior, or press Escape while the panel has keyboard focus to close it.
 
 Notch runs as a menu bar application. It does not add an icon to the Dock, and it keeps the rest of the screen available for normal use.
 
@@ -60,7 +60,25 @@ Notch asks only for permissions needed by the features you use:
 
 You can grant or manage these permissions later from **Settings → Privacy** or from **System Settings → Privacy & Security**.
 
-To start using Notch, hover over or click the notch. You can also use the keyboard shortcut configured in **Settings → Notch**.
+To start using Notch, hover over or click the notch. Clicking pins it open so it will not disappear while you read or reach for a control. The pin button is available in both the main rail and detail headers. You can also use the keyboard shortcut configured in **Settings → Notch**.
+
+Onboarding is optional: each permission has **Not now**, and **Skip the rest** (⇧⌘S) takes you straight to the summary. Progress counts screens, not grants. Brief navigation guards prevent a double-click from skipping a question. Reduce Motion replaces decorative travel, ripples, and light sweeps with fades; paused demo meters do not keep sampling.
+
+## Siri and Clock timers
+
+Enable **Settings → Activities → All Live Activities → Clock Timers** to mirror running
+and paused timers set on this Mac, including timers started with Siri. Notch reads timers
+locally and never changes, pauses, or dismisses Clock's timers; manage them in Clock.
+Timers set on an iPhone or HomePod are not Mac timers and are not mirrored.
+
+On macOS versions that migrate Clock's timers to a protected database, grant **Notch**
+access in **System Settings → Privacy & Security → Full Disk Access**, then quit and
+reopen Notch. Settings → Activities shows the actual connection status and a direct
+link to that pane. Full Disk Access is broad, optional macOS permission: this integration
+uses it only to read Clock's timer store. No timer data leaves your Mac.
+
+Notifications permission is only for alerts from Notch's own timers; it does not enable
+Siri/Clock timer detection. Notch's timers in Home and Tools work without Full Disk Access.
 
 ## Face ID
 

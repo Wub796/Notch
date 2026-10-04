@@ -63,7 +63,13 @@ final class NotchState {
     var faceEnrollmentRequest: FaceEnrollmentRequest?
 
     /// While pinned, the expanded panel ignores hover-out and outside clicks.
-    var isPinned = false
+    var isPinned = false {
+        didSet {
+            guard oldValue != isPinned else { return }
+            pinRevision += 1
+        }
+    }
+    private(set) var pinRevision = 0
 
     /// Whether the Now player is showing its lyrics row, which affects panel
     /// height. Held here because the window size depends on it.
@@ -349,6 +355,10 @@ final class NotchState {
     let clipboard = ClipboardManager()
     let notes = NotesManager()
     let timer = TimerManager()
+    /// The system Clock's timer — the one Siri sets, or the Clock app runs.
+    /// Watched for the life of the app so a timer set while the notch is
+    /// closed appears on its own, with nothing polling.
+    let clockTimer = ClockTimerMonitor.shared
     let eyeBreak = EyeBreakManager()
     let shortcuts = ShortcutsManager()
     let audio = AudioOutputManager.shared
@@ -449,7 +459,6 @@ final class NotchState {
 
     /// A tab switch scheduled by `select(_:)`; a newer one replaces it.
     private var pendingSelectWork: DispatchWorkItem?
-    private var hoverStartedAt: Date?
 
     /// Whether the pointer is over the closed pill. Read by the view for its
     /// hover affordances — the pad the pill grows by, the shadow it takes on —
@@ -461,9 +470,6 @@ final class NotchState {
     /// idle pill and exit against the grown one.
     private(set) var isHovering = false
 
-    /// Minimum dwell before a click counts as intentional rather than the tail
-    /// of a fast pointer sweep across the menu bar.
-    private static let minimumDwellForClick: TimeInterval = 0.06
 
     init() {
         // Personalization: reopen on the tab the user last used. Every tab is
@@ -507,6 +513,28 @@ final class NotchState {
             self.onModeChange?(self.mode)
         }
 
+        // The Clock timer is a condition rather than an interruption: it
+        // appears and leaves on the daemon's file changes, and the only thing
+        // the window needs is to grow for its dropped row and shrink after.
+        clockTimer.onStateChange = { [weak self] in
+            guard let self else { return }
+            self.onModeChange?(self.mode)
+        }
+        settings.onLiveActivitySettingChanged = { [weak self] _ in
+            guard let self else { return }
+            if self.settings.liveActivitiesEnabled, self.settings.clockTimerActivityEnabled {
+                self.clockTimer.start()
+                self.clockTimer.reload()
+            } else {
+                self.clockTimer.stop()
+            }
+            if !self.settings.liveActivitiesEnabled { self.activities.clearTransient() }
+            self.onModeChange?(self.mode)
+        }
+        if settings.liveActivitiesEnabled, settings.clockTimerActivityEnabled {
+            clockTimer.start()
+        }
+
         media.onTrackChange = { [weak self] track in
             guard let self else { return }
             self.activities.showTrackChange(title: track.title, artist: track.artist)
@@ -540,6 +568,14 @@ final class NotchState {
             self?.syncAudioMeter()
             self?.syncMediaVisibility()
         }
+        // The bar count is the meter's to measure, not the view's to draw
+        // alone: a change reaches the analyzer through here, so moving between
+        // three and five bars retunes a tap that is already running instead of
+        // waiting for the next start.
+        settings.onAudioMeterBarCountChanged = { [weak self] count in
+            self?.audioMeter.setBandCount(count)
+        }
+        audioMeter.setBandCount(settings.audioMeterBarCount)
         // The lyric line is the closed notch's only activity whose size the
         // user can switch off from Settings: without this the toggle only took
         // effect at the next track change or open/close.
@@ -604,8 +640,14 @@ final class NotchState {
         }
         fileCatcher.start()
 
+        settings.onVolumeHUDSettingChanged = { [weak self] _ in
+            self?.activities.syncVolumeMonitoring()
+        }
         if settings.clipboardHistoryEnabled {
             clipboard.start()
+        }
+        settings.onClipboardCapacityChanged = { [weak self] _ in
+            self?.clipboard.trimToCapacity()
         }
         settings.onClipboardSettingChanged = { [weak self] enabled in
             if enabled {
@@ -723,9 +765,23 @@ final class NotchState {
         if let caught = fileCatcher.latest {
             return .fileCaught(name: caught.name, source: caught.source)
         }
+        // A timer set with Siri or in the Clock app is the same promise as
+        // the one in Tools, and owns the notch until it is done. It is read
+        // first because Siri cannot see the Tools timer — the system one is
+        // the one the user set outside the notch — and because only one
+        // dropped row is drawn at a time. When it finishes, the Tools timer
+        // is back if it is still running.
+        if settings.liveActivitiesEnabled, settings.clockTimerActivityEnabled,
+           let systemTimer = clockTimer.snapshot {
+            return .timer(
+                remaining: systemTimer.remaining,
+                progress: systemTimer.progress,
+                paused: systemTimer.isPaused
+            )
+        }
         // A running timer owns the notch until it finishes or is cancelled.
         if timer.isRunning {
-            return .timer(remaining: timer.remaining, progress: timer.progress)
+            return .timer(remaining: timer.remaining, progress: timer.progress, paused: timer.isPaused)
         }
         if settings.liveActivitiesEnabled, let event = calendar.upcomingSoon {
             return .meetingSoon(title: event.title, start: event.start)
@@ -779,8 +835,13 @@ final class NotchState {
 
     /// Extra width added around the hardware notch for the active activity —
     /// split evenly into two wings, so each side must fit half of this.
-    private var activityWingWidth: CGFloat {
-        switch collapsedActivity {
+    ///
+    /// Takes the activity rather than reading `collapsedActivity` so the same
+    /// answer can be had for an activity that is not showing: the onboarding
+    /// demo draws the playing pill — its cover and visualiser wings are the
+    /// ones it depicts — and needs that pill's size even on a silent Mac.
+    private func activityWingWidth(for activity: LiveActivity?) -> CGFloat {
+        switch activity {
         // Each side is `NotchSizing.closedWingInset` of margin, the content,
         // and ~10pt clear of the camera housing, so a wing needs roughly its
         // content's width plus 23pt. The cover and visualiser are 22pt.
@@ -834,8 +895,8 @@ final class NotchState {
     /// and brightness HUDs live here rather than in the wings: a level bar
     /// squeezed beside the camera housing is unreadable, and dropping the
     /// notch down to hold it is what the system overlay does too.
-    private var activityDropHeight: CGFloat {
-        switch collapsedActivity {
+    private func activityDropHeight(for activity: LiveActivity?) -> CGFloat {
+        switch activity {
         case .lyrics: 26
         case .volume, .brightness: 34
         // The charging popup drops beneath the notch, iOS-style, with a gap
@@ -859,10 +920,16 @@ final class NotchState {
         }
     }
 
-    var collapsedSize: CGSize {
+    var collapsedSize: CGSize { collapsedSize(for: collapsedActivity) }
+
+    /// The closed pill as the app would draw it for an activity — the pill on
+    /// screen reads `collapsedSize`, other callers name the activity they
+    /// mean. The onboarding demo asks for `.music`: the pill it draws carries
+    /// the playing pill's cover and visualiser, so it has to be sized like it.
+    func collapsedSize(for activity: LiveActivity?) -> CGSize {
         var size = safeNotchSize
-        size.width += activityWingWidth
-        size.height += activityDropHeight
+        size.width += activityWingWidth(for: activity)
+        size.height += activityDropHeight(for: activity)
         return size
     }
 
@@ -982,7 +1049,6 @@ final class NotchState {
         #endif
 
         if hovering {
-            hoverStartedAt = Date()
             // Linger past the open delay to expand fully (when enabled).
             // Expanding is the one thing an already-open panel has nothing to
             // do for.
@@ -1004,7 +1070,6 @@ final class NotchState {
             pendingHoverWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + settings.openDelay, execute: work)
         } else {
-            hoverStartedAt = nil
             if mode != .expanded, isPreparingExpansion, pendingExpandFromHover {
                 // `expand()` deliberately waits one run-loop turn before it
                 // resizes the hosting window. If hover exits in that gap, the
@@ -1044,20 +1109,17 @@ final class NotchState {
     }
 
     func togglePin() {
-        withAnimation(NotchAnimations.content) {
-            isPinned.toggle()
-        }
+        guard mode == .expanded else { return }
+        withAnimation(NotchAnimations.content) { isPinned.toggle() }
+        showToast(isPinned ? "Pinned open" : "Unpinned — move away to close", symbol: isPinned ? "pin.fill" : "pin.slash")
+        if !isPinned, !isHovering, settings.autoCollapseOnMouseExit { collapse() }
     }
 
-    /// Click always opens fully, from collapsed or peek — but ignores a click
-    /// that lands in the first instants of a hover, which is characteristic of
-    /// a pointer sweeping through rather than aiming at the notch.
+    /// A click is explicit intent, unlike hover. It always pins the panel so
+    /// the pointer may leave while the user reads or reaches for a control.
     func handleTap() {
         guard mode != .expanded else { return }
-        if let started = hoverStartedAt,
-           Date().timeIntervalSince(started) < Self.minimumDwellForClick {
-            return
-        }
+        isPinned = true
         expand()
     }
 
@@ -1137,13 +1199,15 @@ final class NotchState {
         guard mode == .expanded else { return }
         expandedAt = nil
         mode = .collapsed
+        toastDismissWork?.cancel()
+        toastDismissWork = nil
+        toast = nil
         isDropTargeted = false
         isPinned = false
         // A collapse can arrive from an outside click or the hotkey, with the
         // pointer nowhere near the notch; leaving this set would make the next
         // genuine hover a no-op.
         isHovering = false
-        hoverStartedAt = nil
         pendingHoverWork?.cancel()
         pendingHoverWork = nil
         pendingHoverID = nil
@@ -1198,7 +1262,8 @@ final class NotchState {
     /// A brief in-panel confirmation for a user action ("Copied", "Pinned"…).
     /// Shown as a small capsule at the bottom of the open panel and dismissed
     /// automatically; firing another replaces it rather than stacking.
-    struct NotchToast {
+    struct NotchToast: Identifiable {
+        let id = UUID()
         let message: String
         let symbol: String
     }
@@ -1236,6 +1301,7 @@ final class NotchState {
     /// session and elevated panel are torn down here. The only caller is
     /// `applicationWillTerminate`, which is already on the main actor.
     @MainActor func shutdown() {
+        notes.flush()
         audioMeter.stop()
         audioApps.stopObserving()
         audio.stopListening()
@@ -1249,6 +1315,7 @@ final class NotchState {
         camera.stop()
         fileCatcher.stop()
         timer.cancel()
+        clockTimer.stop()
         // The mixer's private aggregate devices are the same kind of thing: a
         // tap left running silences the app it was reading while this process
         // is gone, exactly the failure this method exists to avoid.
@@ -1272,6 +1339,9 @@ final class NotchState {
         calendar.refresh()
         shortcuts.refresh()
         fileCatcher.syncWatchers()
+        // A timer may have started, finished or been dismissed with the Mac
+        // asleep, and the plist file monitor did not see any of it.
+        clockTimer.reload()
         syncAudioMeter()
         media.updateLyricActivityTimer()
         syncMediaVisibility()
@@ -1304,6 +1374,10 @@ final class NotchState {
         pendingWakeWork = nil
         pendingWakeID = nil
         syncMediaVisibility()
+        // Belt and braces with the file monitor: opening the notch is the
+        // moment a missed timer would be looked for, and re-reading here
+        // cannot miss one that is already in the daemon's preferences.
+        clockTimer.reload()
         calendar.refresh()
         telemetry.start()
         weather.refresh()

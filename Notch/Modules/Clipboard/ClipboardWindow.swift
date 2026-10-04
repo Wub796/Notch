@@ -115,8 +115,13 @@ struct ClipboardWindowView: View {
                         }
                         .buttonStyle(.borderless)
                         .help("Clear search")
+                        // Appears the moment a character is typed and leaves
+                        // when the field empties; fading it keeps the glyph
+                        // from popping in beside the caret.
+                        .transition(.opacity)
                     }
                 }
+                .animation(NotchAnimations.content, value: query.isEmpty)
             }
 
             if !pinned.isEmpty {
@@ -153,6 +158,10 @@ struct ClipboardWindowView: View {
         }
         .formStyle(.grouped)
         .animation(NotchAnimations.content, value: clipboard.entries)
+        // Turning history on swaps the whole page — the off notice goes, the
+        // pinned and recent sections arrive — so the form animates its own
+        // layout on that switch too, not just on entries changing.
+        .animation(NotchAnimations.content, value: settings.clipboardHistoryEnabled)
         .frame(minWidth: 380, minHeight: 360)
     }
 
@@ -203,6 +212,8 @@ private struct ClipboardHistoryRow: View {
 
             Spacer(minLength: 8)
 
+            // Quiet until the row is pointed at, so a long list reads as text
+            // rather than as a column of buttons. The fade is animated below.
             HStack(spacing: 2) {
                 actionButton(
                     wasJustCopied ? "checkmark" : "doc.on.doc",
@@ -222,12 +233,15 @@ private struct ClipboardHistoryRow: View {
                     withAnimation(NotchAnimations.content) { clipboard.remove(entry) }
                 }
             }
-            // Quiet until the row is pointed at, so a long list reads as text
-            // rather than as a column of buttons.
             .opacity(isHovering || entry.isPinned || wasJustCopied ? 1 : 0.35)
         }
         .contentShape(Rectangle())
         .onTapGesture { copy() }
+        // Both the cluster's fade and the copy button's glyph swap are driven
+        // here: hover changed in one frame, and the copy confirmation used to
+        // hard-cut to a green checkmark.
+        .animation(NotchAnimations.content, value: isHovering)
+        .animation(NotchAnimations.content, value: wasJustCopied)
         .onHover { isHovering = $0 }
         .contextMenu {
             Button("Copy") { copy() }
@@ -252,6 +266,7 @@ private struct ClipboardHistoryRow: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
+                .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(tint ?? .secondary)
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())

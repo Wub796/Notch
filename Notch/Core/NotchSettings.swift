@@ -201,7 +201,13 @@ final class NotchSettings {
     /// Master switch for the system events that interrupt the collapsed notch.
     /// Each source below also has its own switch, so this is the "all of it"
     /// answer rather than the only one.
-    var liveActivitiesEnabled = true { didSet { save(liveActivitiesEnabled, "liveActivitiesEnabled") } }
+    var liveActivitiesEnabled = true {
+        didSet {
+            save(liveActivitiesEnabled, "liveActivitiesEnabled")
+            notify(onLiveActivitySettingChanged, liveActivitiesEnabled)
+        }
+    }
+    var onLiveActivitySettingChanged: ((Bool) -> Void)?
 
     /// Battery plug/unplug and low-battery activities.
     var powerEventEnabled = true { didSet { save(powerEventEnabled, "powerEventEnabled") } }
@@ -209,9 +215,18 @@ final class NotchSettings {
     /// Focus mode changes (Do Not Disturb, Work, Sleep…).
     var focusChangeEnabled = true { didSet { save(focusChangeEnabled, "focusChangeEnabled") } }
 
-    /// Screen lock and unlock.
+    /// Announce the session locking. Unlocking is deliberately not announced.
     var screenLockActivityEnabled = true {
         didSet { save(screenLockActivityEnabled, "screenLockActivityEnabled") }
+    }
+
+    /// Mirror the system Clock's timer — set with Siri, or in the Clock app —
+    /// in the closed notch until it is done.
+    var clockTimerActivityEnabled = true {
+        didSet {
+            save(clockTimerActivityEnabled, "clockTimerActivityEnabled")
+            notify(onLiveActivitySettingChanged, clockTimerActivityEnabled)
+        }
     }
 
     /// Announce upcoming calendar events in the notch.
@@ -239,7 +254,13 @@ final class NotchSettings {
     var onCalendarReminderSettingChanged: (() -> Void)?
 
     /// Show system volume changes as a HUD in the collapsed notch.
-    var volumeHUDEnabled = true { didSet { save(volumeHUDEnabled, "volumeHUDEnabled") } }
+    var volumeHUDEnabled = true {
+        didSet {
+            save(volumeHUDEnabled, "volumeHUDEnabled")
+            notify(onVolumeHUDSettingChanged, volumeHUDEnabled)
+        }
+    }
+    var onVolumeHUDSettingChanged: ((Bool) -> Void)?
 
     /// Show brightness changes as a HUD in the collapsed notch. Detecting a
     /// brightness key press requires sampling, so this is opt-out.
@@ -363,8 +384,16 @@ final class NotchSettings {
     var onClipboardSettingChanged: ((Bool) -> Void)?
 
     var clipboardMaxCapacity = 25 {
-        didSet { save(clipboardMaxCapacity, "clipboardMaxCapacity") }
+        didSet {
+            let clamped = min(max(clipboardMaxCapacity, 1), 100)
+            if clipboardMaxCapacity != clamped {
+                clipboardMaxCapacity = clamped
+            }
+            save(clipboardMaxCapacity, "clipboardMaxCapacity")
+            notify(onClipboardCapacityChanged, clipboardMaxCapacity)
+        }
     }
+    var onClipboardCapacityChanged: ((Int) -> Void)?
 
     /// Announce Space switches in the notch.
     var desktopChangeEnabled = true {
@@ -396,6 +425,31 @@ final class NotchSettings {
         }
     }
     var onRealtimeAudioMeterChanged: ((Bool) -> Void)?
+
+    /// How many vertical bars the closed notch's real-time meter draws — and
+    /// with them how many frequency ranges the analyzer splits the output mix
+    /// into and measures. Three is the tuned default; four and five subdivide
+    /// the same spectrum into finer ranges. The pill's width does not change
+    /// with the choice: the bars thin inside the wing's existing content box
+    /// rather than asking it to grow.
+    var audioMeterBarCount = AudioBandAnalyzer.defaultBandCount {
+        didSet {
+            // Clamped rather than trusted: the value is also reachable from
+            // the defaults file, and a 0 or a 12 there would leave the meter
+            // drawing a count nothing measures.
+            let clamped = AudioBandAnalyzer.clampedBandCount(audioMeterBarCount)
+            if clamped != audioMeterBarCount {
+                audioMeterBarCount = clamped
+                return
+            }
+            save(audioMeterBarCount, "audioMeterBarCount")
+            notify(onAudioMeterBarCountChanged, audioMeterBarCount)
+        }
+    }
+
+    /// Fires when the bar count changes, so a meter that is already running
+    /// retunes at once instead of at its next start.
+    var onAudioMeterBarCountChanged: ((Int) -> Void)?
 
     var autoScrollLyrics = true { didSet { save(autoScrollLyrics, "autoScrollLyrics") } }
 
@@ -589,6 +643,9 @@ final class NotchSettings {
         if defaults.object(forKey: "screenLockActivityEnabled") != nil {
             screenLockActivityEnabled = defaults.bool(forKey: "screenLockActivityEnabled")
         }
+        if defaults.object(forKey: "clockTimerActivityEnabled") != nil {
+            clockTimerActivityEnabled = defaults.bool(forKey: "clockTimerActivityEnabled")
+        }
         if defaults.object(forKey: "calendarActivityEnabled") != nil {
             calendarActivityEnabled = defaults.bool(forKey: "calendarActivityEnabled")
         }
@@ -659,6 +716,11 @@ final class NotchSettings {
         }
         if defaults.object(forKey: "realtimeAudioMeter") != nil {
             realtimeAudioMeter = defaults.bool(forKey: "realtimeAudioMeter")
+        }
+        if defaults.object(forKey: "audioMeterBarCount") != nil {
+            audioMeterBarCount = AudioBandAnalyzer.clampedBandCount(
+                defaults.integer(forKey: "audioMeterBarCount")
+            )
         }
         if defaults.object(forKey: "autoScrollLyrics") != nil {
             autoScrollLyrics = defaults.bool(forKey: "autoScrollLyrics")

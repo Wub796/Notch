@@ -112,6 +112,9 @@ struct ShelfView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(isOn ? Color.blue : NotchTheme.inkMuted)
                 .frame(width: 22, height: 22)
+                // A state toggle's only feedback is its colour, so it fades
+                // between the two rather than flipping on the click.
+                .animation(NotchAnimations.content, value: isOn)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressableButtonStyle())

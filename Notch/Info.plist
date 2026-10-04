@@ -47,6 +47,17 @@
 	<string>Notch shows your upcoming events and meeting join links in the notch timeline.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Notch shows a live preview from your camera so you can check yourself before a call, and reads your face during a Face ID scan to unlock your Mac. The preview runs only while that screen is open, the scan only while it is looking for a face — and frames are processed in memory, never written to disk.</string>
+	<!-- The three protected folders the file catcher watches. macOS will not
+	     raise its "access files in your…" prompt without the matching key for
+	     the folder being read — the read is simply refused, with no prompt and
+	     no record, which makes a Grant button look broken. These describe what
+	     actually happens: a directory listing and a modification date. -->
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Notch watches your Desktop for new screenshots so it can announce them at the notch. Listing that folder reads file names and dates — never the contents of your files.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Only used if you have pointed screenshot saving at your Documents folder: Notch watches it for new screenshots to announce at the notch. File names and dates only — never the contents of your files.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Notch watches your Downloads folder so a finished download can be announced at the notch. Listing that folder reads file names and dates — never the contents of your files.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Notch. All rights reserved.</string>
 	<key>NSLocationUsageDescription</key>

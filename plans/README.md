@@ -65,6 +65,39 @@ opacity, so the Liquid Glass surface is not re-driven on every frame of the fade
 the generation guard stops a slow fade-out from ordering out a pane that has been
 asked back. Still needs a live feel-check on a real lock screen.
 
+## Third pass — the remaining hard cuts
+
+The passes above fixed motion that was *wrong* (bounce on a transport, a
+hand-rolled curve, a fill that stepped). This one goes after motion that was
+missing: transitions whose driving value changed outside any animation
+transaction, so SwiftUI swapped the views outright. Every fix below is a
+driver or an interpolation — no new curves, no new tokens, and the same
+`NotchAnimations` vocabulary the rest of the app already uses.
+
+| Where | Was | Now |
+| --- | --- | --- |
+| `ClipboardWindow` rows | hover and the copy confirmation flipped | `isHovering` / `wasJustCopied` fade, copy glyph `.symbolEffect(.replace)` |
+| `ClipboardWindow` search + history-off page | clear glyph and the whole page popped | `query.isEmpty` and `clipboardHistoryEnabled` drive the form |
+| `WeatherDetailView` | hourly ↔ 5-day strips and the loading placeholder cut | chip click is one transaction; `snapshot == nil` drives the slot |
+| `CameraView` | preview ↔ empty states cut on status | `camera.status` drives the slot, branches carry `.transition(.opacity)` |
+| `CalendarDetailView` | day selection jumped the highlight and cut the agenda | one `.animation(value: selectedDate)` at the root |
+| `LyricsView` / `ThreeDLyricsView` | empty message ↔ lines cut | `lyrics.lines.isEmpty` drives the slot |
+| `AudioDevicesView` | now-playing banner popped on play/pause | `media.isPlaying` joins the two list drivers |
+| `NotchTopBarView` rail | outline → filled snapped while the screen transitioned | `.contentTransition(.interpolate)` on the selection animation |
+| `OnboardingView` permissions | a grant painted the button green in one frame | the three statuses drive the row |
+| `ShelfView` instant-AirDrop toggle | colour flipped | `isOn` fades |
+| `SettingsView` | reveal rows (hover timing, meter rows, calendar leads, clipboard size, media wings, announce duration, accessibility row) appeared on the click | each card animates on the toggle that owns the row |
+| `FaceIDNowPlayingPlayer` | title/artist cut while the artwork crossfaded | `.contentTransition(.opacity)` on both |
+
+Deliberately left alone: the lock-screen player's own window still appears and
+disappears on `orderFront`/`orderOut`, because the window-alpha fade does not
+commit for this accessory app (see `FaceIDNowPlayingView`); and the timer ring
+still steps rather than animating, because its value updates four times a
+second and an animation there would only trail the clock.
+
+Verified with `sh .freebuff/typecheck/shadow-check.sh` (138 files, 0 errors)
+and `git diff --check`. The feel of each change still wants a live run.
+
 ## How to execute
 
 Run any plan with a capable agent, e.g.:

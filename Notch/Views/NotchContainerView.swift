@@ -181,8 +181,9 @@ struct NotchContainerView: View {
             // animating (audio discovery and transient activity updates are
             // asynchronous). Do not let those unrelated changes restart the
             // open/close geometry spring; CollapsedNotchView animates its own
-            // activity swaps, and only the closed slab needs this size spring.
-            .animation(state.mode == .expanded ? nil : notchAnimation, value: state.collapsedActivity)
+            // activity swaps, and only an actual closed-size change needs this
+            // spring. Timer ticks and volume payloads must update in place.
+            .animation(state.mode == .expanded ? nil : notchAnimation, value: state.collapsedSize)
             // The HUD's drop band appears and disappears at a media-key's
             // transient pace, which is faster than the open/close spring — so
             // the slab's grow-and-shrink (and the bar popping in) settle with

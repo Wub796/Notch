@@ -16,14 +16,20 @@ struct NotesView: View {
     /// failed measurement is no worse than before rather than a jump to a corner.
     @State private var textOrigin = CGPoint(x: 15, y: 18)
 
-    init(state: NotchState) {
+    init(state: NotchState, notes: NotesManager? = nil) {
         self.state = state
-        _notes = Bindable(wrappedValue: state.notes)
+        _notes = Bindable(wrappedValue: notes ?? state.notes)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NotchTheme.Space.m) {
             ScreenHeader("Notes", subtitle: subtitle) {
+                if notes.canUndoClear {
+                    ScreenTextButton(title: "Undo Clear", systemImage: "arrow.uturn.backward") {
+                        withAnimation(NotchAnimations.content) { notes.undoClear() }
+                        state.showToast("Notes restored", symbol: "arrow.uturn.backward")
+                    }
+                }
                 ScreenTextButton(title: "Clear", systemImage: "trash") {
                     withAnimation(NotchAnimations.content) { notes.clear() }
                     state.showToast("All notes cleared", symbol: "trash")
@@ -61,13 +67,18 @@ struct NotesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityLabel("Scratchpad")
+        .onDisappear { notes.flush() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
+            notes.flush()
+        }
     }
 
     /// Word count and save state on one line, where every other screen puts
     /// its status — rather than a footer row of its own.
     private var subtitle: String {
         let words = "\(notes.wordCount) word\(notes.wordCount == 1 ? "" : "s")"
-        return notes.lastSavedAt == nil ? words : words + " · Saved"
+        if notes.hasUnsavedChanges { return words + " · Saving…" }
+        return words + " · Saved"
     }
 }
 

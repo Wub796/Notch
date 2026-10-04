@@ -1,8 +1,9 @@
 import CoreAudio
 import Foundation
 
-/// A listen-only tap of everything the machine is playing, reduced to three
-/// band energies.
+/// A listen-only tap of everything the machine is playing, reduced to the
+/// frequency-band energies the closed notch's meter draws — three to five,
+/// however many bars the user asked for.
 ///
 /// This is the visualiser's honest source. A tap carries the mixed output
 /// samples themselves, so the bars can be the music instead of a shape
@@ -23,7 +24,7 @@ import Foundation
 ///   copy is meant to be the only one; a meter that muted would silence the
 ///   Mac the moment the bars started moving.
 ///
-/// Nothing leaves this class except three numbers. The samples are measured
+/// Nothing leaves this class except the band levels. The samples are measured
 /// inside the render callback, mixed to mono into a buffer allocated before
 /// the callback ever runs, and are never copied, queued or written anywhere.
 ///
@@ -93,10 +94,17 @@ final class AudioSpectrumTap {
         stateLock.unlock()
     }
 
-    /// The band energies last measured, 0...1, low/mid/high — empty of audio
+    /// The band energies last measured, 0...1, lowest first — empty of audio
     /// when the tap is not running.
     var bands: [Float] {
-        isRunning ? analyzer.bands : [0, 0, 0]
+        isRunning ? analyzer.bands : [Float](repeating: 0, count: analyzer.bandCount)
+    }
+
+    /// How many bands are measured. Called from the meter's serial control
+    /// queue, never the main thread: this is the same retune a sample-rate
+    /// change performs, and the analyzer is written from one place at a time.
+    func setBandCount(_ count: Int) {
+        analyzer.setBandCount(count)
     }
 
     // MARK: - Control thread

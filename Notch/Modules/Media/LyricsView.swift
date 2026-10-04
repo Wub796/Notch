@@ -24,6 +24,10 @@ struct LyricsView: View {
                     lyricsScroller
                 }
             }
+            // Lines arrive from the engine's own lookup, which finishes a beat
+            // after the track changes — fade the slot rather than cutting from
+            // "Finding lyrics…" to a list on an unrelated frame.
+            .animation(NotchAnimations.content, value: lyrics.lines.isEmpty)
             .frame(maxHeight: .infinity)
         }
     }
@@ -223,6 +227,9 @@ struct ThreeDLyricsView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 2)
+        // Same slot, same reason as the flat view: the carousel replaces its
+        // own empty message when the lyrics land, and used to do it abruptly.
+        .animation(NotchAnimations.content, value: lyrics.lines.isEmpty)
     }
 
     /// What fills the 3D carousel when there are no lyric lines: a quiet

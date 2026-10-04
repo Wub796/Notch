@@ -86,6 +86,13 @@ struct NotchTopBarView: View {
 
     private var trailingControls: some View {
         HStack(spacing: NotchSizing.topBarRailSpacing) {
+            RailButton(
+                symbol: "pin",
+                isSelected: state.isPinned,
+                tint: .orange,
+                help: state.isPinned ? "Unpin notch" : "Pin notch open"
+            ) { state.togglePin() }
+
             // Only while a Focus is on: an idle mask glyph was one more grey
             // icon that said nothing at a glance.
             if let focus = state.activeFocus {
@@ -152,6 +159,14 @@ struct RailButton: View {
                 .symbolVariant(isSelected ? .fill : .none)
                 .font(.system(size: 15.5, weight: .medium))
                 .foregroundStyle(foreground)
+                // Outline → filled is a redraw, not a property SwiftUI can
+                // interpolate, so the glyph used to snap while the panel's own
+                // screen transition was still running. Interpolating crossfades
+                // the two renderings on the selection animation.
+                .contentTransition(.interpolate)
+                .animation(NotchAnimations.content, value: isSelected)
+                .scaleEffect(isHovering && !NotchAnimations.prefersReducedMotion ? 1.08 : 1)
+                .animation(NotchAnimations.hover, value: isHovering)
                 .frame(
                     width: NotchSizing.topBarRailIconSize,
                     height: NotchSizing.topBarRailIconSize
@@ -282,8 +297,12 @@ struct DetailHeaderView<Trailing: View>: View {
             // on the calendar page and the hero on the weather page. It used
             // to sit 18pt in, which read as a control floating beside the page
             // rather than its first element.
-            NotchBackButton {
-                state.select(.home)
+            HStack(spacing: 10) {
+                NotchBackButton { state.select(.home) }
+                RailButton(symbol: "pin", isSelected: state.isPinned, tint: .orange,
+                           help: state.isPinned ? "Unpin notch" : "Pin notch open") {
+                    state.togglePin()
+                }
             }
             .padding(.top, 2)
         }

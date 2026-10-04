@@ -230,7 +230,24 @@ struct TimerWidget: View {
 
     var body: some View {
         Group {
-            if timer.isRunning {
+            if let systemTimer = state.clockTimer.snapshot {
+                VStack(alignment: .leading, spacing: NotchTheme.Space.xs) {
+                    Label(systemTimer.isPaused ? "Clock · Paused" : "Clock Timer", systemImage: "timer")
+                        .font(.notchCaption)
+                        .foregroundStyle(NotchTheme.inkSecondary)
+                    Text(TimerManager.timeString(systemTimer.remaining))
+                        .font(.notchTitle.monospacedDigit())
+                        .foregroundStyle(NotchTheme.inkPrimary)
+                    Button("Manage in Clock") {
+                        NSWorkspace.shared.openApplication(
+                            at: URL(fileURLWithPath: "/System/Applications/Clock.app"),
+                            configuration: NSWorkspace.OpenConfiguration()
+                        )
+                    }
+                    .font(.notchCaption)
+                    .buttonStyle(.link)
+                }
+            } else if timer.isRunning {
                 running
             } else {
                 idle

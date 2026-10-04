@@ -125,8 +125,11 @@ final class ShelfController {
     }
 
     func add(_ urls: [URL]) {
+        var seen = Set(items.map { $0.url.standardizedFileURL })
         let newItems = urls
-            .filter { url in !items.contains { $0.url == url } }
+            .filter { $0.isFileURL }
+            .map(\.standardizedFileURL)
+            .filter { seen.insert($0).inserted }
             .map(Self.makeItem)
         items.insert(contentsOf: newItems, at: 0)
         newItems.forEach(loadThumbnail)

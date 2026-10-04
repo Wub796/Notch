@@ -29,7 +29,10 @@ enum AnimationProfile: String, CaseIterable, Identifiable, Hashable, Sendable {
 /// describes.
 enum NotchAnimations {
     static var prefersReducedMotion: Bool {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        #if DEBUG
+        if CommandLine.arguments.contains("--debug-reduce-motion") { return true }
+        #endif
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
     /// What every animation collapses to under Reduce Motion.
@@ -105,6 +108,23 @@ enum NotchAnimations {
         case .bouncy: return .spring(response: 0.30, dampingFraction: 0.78, blendDuration: 0)
         case .calm: return .spring(response: 0.34, dampingFraction: 0.98, blendDuration: 0)
         }
+    }
+
+    /// Settings panes are information-dense, so they should replace cleanly
+    /// rather than overlap as a crossfade. A short fade-out followed by a
+    /// subtle, distance-based settle makes rapid tab changes feel responsive
+    /// without sending controls sliding across the window.
+    static var settingsPageSwap: AnyTransition {
+        if prefersReducedMotion {
+            return .opacity.animation(reduced)
+        }
+        return .asymmetric(
+            insertion: .opacity
+                .combined(with: .offset(y: 4))
+                .animation(.smooth(duration: 0.24).delay(0.04)),
+            removal: .opacity
+                .animation(.easeOut(duration: 0.12))
+        )
     }
 
     /// Live-activity swaps in the closed notch.
@@ -200,6 +220,16 @@ enum NotchAnimations {
 }
 
 extension NotchAnimations {
+    /// Short action feedback enters separately from the panel's own spring.
+    static var feedback: AnyTransition {
+        guard !prefersReducedMotion else { return .opacity.animation(reduced) }
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: 5))
+                .combined(with: .scale(scale: 0.96)).animation(content),
+            removal: .opacity.animation(.easeOut(duration: 0.12))
+        )
+    }
+
     /// The open panel's content — its header and module — arriving and
     /// leaving with the slab.
     ///

@@ -9,11 +9,13 @@ enum LiveActivity: Equatable {
     /// A lyric line, and how long it is sung for — which paces the scroll of
     /// a line too long for the row.
     case lyrics(line: String, duration: TimeInterval)
-    case timer(remaining: TimeInterval, progress: Double)
+    case timer(remaining: TimeInterval, progress: Double, paused: Bool)
     case trackChange(title: String, artist: String)
     case meetingSoon(title: String, start: Date)
     case battery(percent: Int, charging: Bool, low: Bool)
-    case screenLock(locked: Bool)
+    /// The session locking. Unlocking is deliberately not announced — see the
+    /// observer registration in `start()`.
+    case screenLock
     case focusMode(name: String, symbol: String)
     case eyeBreak(active: Bool)
     case desktopChange(index: Int)
@@ -81,6 +83,7 @@ final class LiveActivityManager {
     private var dismissWork: DispatchWorkItem?
     private var lastPowerSnapshot: PowerMonitor.Snapshot?
     private var wasLowBattery = false
+    private var isStarted = false
 
     private static let volumeHUDDuration: TimeInterval = 1.6
     private static let batteryEventDuration: TimeInterval = 4.0
@@ -92,13 +95,12 @@ final class LiveActivityManager {
 
 
     func start() {
-        if NotchSettings.shared.volumeHUDEnabled {
-            volumeMonitor.onChange = { [weak self] level, muted in
-                guard NotchSettings.shared.volumeHUDEnabled else { return }
-                self?.show(.volume(level: level, muted: muted), for: Self.volumeHUDDuration)
-            }
-            volumeMonitor.start()
+        guard !isStarted else { return }
+        isStarted = true
+        volumeMonitor.onChange = { [weak self] level, muted in
+            self?.showVolume(level: level, muted: muted)
         }
+        syncVolumeMonitoring()
 
         // The power monitor always runs: it is a run-loop source that fires on
         // plug and unplug, so it costs nothing while idle, and the charging
@@ -113,9 +115,14 @@ final class LiveActivityManager {
         }
         powerMonitor.start()
 
-        // Session lock/unlock, announced by the system over the distributed
+        // The session locking, announced by the system over the distributed
         // notification center (DynamicNotch's approach). The tokens are kept so
         // these can be taken back off at shutdown.
+        //
+        // Only the lock half is observed. An "Unlocked" reading lands as the
+        // user finishes typing their password — the one thing they already
+        // know — so the notch dropping open to announce it was pure noise on
+        // top of the session coming back.
         //
         // Registered whether or not the activity is switched on: an observer on
         // an idle notification costs nothing, and subscribing here — the only
@@ -130,16 +137,7 @@ final class LiveActivityManager {
                 guard NotchSettings.shared.liveActivitiesEnabled,
                       NotchSettings.shared.screenLockActivityEnabled
                 else { return }
-                self?.show(.screenLock(locked: true), for: Self.lockEventDuration)
-            },
-            center.addObserver(
-                forName: Notification.Name("com.apple.screenIsUnlocked"),
-                object: nil, queue: .main
-            ) { [weak self] _ in
-                guard NotchSettings.shared.liveActivitiesEnabled,
-                      NotchSettings.shared.screenLockActivityEnabled
-                else { return }
-                self?.show(.screenLock(locked: false), for: Self.lockEventDuration)
+                self?.show(.screenLock, for: Self.lockEventDuration)
             },
         ]
     }
@@ -148,6 +146,7 @@ final class LiveActivityManager {
     /// listeners, the IOKit power run-loop source, and the distributed
     /// notification observers.
     func stop() {
+        isStarted = false
         volumeMonitor.stop()
         powerMonitor.stop()
         for observer in lockObservers {
@@ -157,6 +156,17 @@ final class LiveActivityManager {
         dismissWork?.cancel()
         dismissWork = nil
         transient = nil
+    }
+
+    /// Settings toggles must change the source itself, not just hide its
+    /// output. Re-enabling starts listeners even if launch began with HUD off.
+    func syncVolumeMonitoring() {
+        if isStarted, NotchSettings.shared.volumeHUDEnabled {
+            volumeMonitor.start()
+        } else {
+            volumeMonitor.stop()
+            if case .volume = transient { clearTransient() }
+        }
     }
 
     deinit {

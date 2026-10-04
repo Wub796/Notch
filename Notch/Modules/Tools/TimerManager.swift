@@ -35,7 +35,8 @@ final class TimerManager {
     }
 
     func start(duration: TimeInterval) {
-        guard duration > 0 else { return }
+        guard duration.isFinite, duration > 0 else { return }
+        pausedRemaining = 0
         totalDuration = duration
         remaining = duration
         deadline = Date().addingTimeInterval(duration)
@@ -45,6 +46,7 @@ final class TimerManager {
     }
 
     func togglePause() {
+        guard isRunning else { return }
         if isPaused {
             deadline = Date().addingTimeInterval(pausedRemaining)
             isPaused = false
@@ -99,6 +101,8 @@ final class TimerManager {
         tickTimer?.invalidate()
         tickTimer = nil
         deadline = nil
+        isPaused = false
+        pausedRemaining = 0
         totalDuration = 0
         remaining = 0
         onFinished?()
@@ -127,7 +131,8 @@ final class TimerManager {
     }
 
     static func timeString(_ interval: TimeInterval) -> String {
-        let total = Int(interval.rounded(.up))
+        guard interval.isFinite, interval > 0 else { return "0:00" }
+        let total = Int(min(interval.rounded(.up), Double(Int.max / 2)))
         let hours = total / 3600
         let minutes = (total % 3600) / 60
         let seconds = total % 60

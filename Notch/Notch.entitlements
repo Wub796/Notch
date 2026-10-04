@@ -14,7 +14,20 @@
 	     requested. -->
 	<key>com.apple.security.device.camera</key>
 	<true/>
+	<key>com.apple.security.device.bluetooth</key>
+	<true/>
 	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+	<!-- Location is the same gate, and it was the one missing. Hardened
+	     Runtime plus no location entitlement means locationd refuses to put its
+	     authorization prompt on screen at all — the log says so in as many
+	     words ("Client has supported the hardened runtime but doesn't have the
+	     entitlement, not sending #AuthPrompt message to #CoreLocationAgent") —
+	     and `requestWhenInUseAuthorization()` then returns having done nothing.
+	     From the outside that is a Grant button that does not appear to work:
+	     no dialog, no prompt, no way to consent. Bluetooth gates the same way
+	     for a fresh install, which is why it is here too. -->
+	<key>com.apple.security.personal-information.location</key>
 	<true/>
 	<!-- Deliberately no `keychain-access-groups`. Face ID's session key would
 	     rather be an access-controlled Keychain item — the Keychain then

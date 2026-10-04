@@ -32,6 +32,11 @@ struct CameraView: View {
 
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Status changes arrive from the capture session, not from a
+                // click: starting → running when the hardware answers, or
+                // denied/unavailable when it refuses. Fade the slot instead
+                // of replacing the preview with a hard cut.
+                .animation(NotchAnimations.content, value: camera.status)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { camera.start() }
@@ -65,6 +70,7 @@ struct CameraView: View {
                 title: "Camera access is off",
                 caption: "Turn Notch on under Privacy & Security → Camera."
             )
+            .transition(.opacity)
             .onTapGesture {
                 // The same entry point the permissions page uses: it raises the
                 // system prompt while the answer is still open and opens the
@@ -79,9 +85,11 @@ struct CameraView: View {
                 title: "No camera found",
                 caption: "Nothing is reporting itself as a video device."
             )
+            .transition(.opacity)
 
         case .idle:
             ScreenEmptyState(symbol: "video", title: "Starting the camera…")
+                .transition(.opacity)
         }
     }
 }

@@ -1,0 +1,1295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notch — First-run onboarding (prototype)</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   Tokens
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --ink:        #ffffff;
+  --ink-2:      rgba(255,255,255,.62);
+  --ink-3:      rgba(255,255,255,.45);
+  --ink-4:      rgba(255,255,255,.30);
+  --line:       rgba(255,255,255,.09);
+  --line-2:     rgba(255,255,255,.16);
+  --surface:    rgba(14,14,17,.86);
+  --surface-2:  rgba(255,255,255,.055);
+  --green:      #30D158;
+  --amber:      #FF9F0A;
+  --blue:       #0A84FF;
+
+  --ease-out:   cubic-bezier(.23,1,.32,1);
+  --ease-in:    cubic-bezier(.32,.72,0,1);
+  --ease-move:  cubic-bezier(.77,0,.175,1);
+  --spring:     cubic-bezier(.34,1.32,.64,1);
+}
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  margin:0;
+  background:#050506;
+  color:var(--ink);
+  font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+  font-optical-sizing:auto;
+  -webkit-font-smoothing:antialiased;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+}
+button{ font:inherit; color:inherit; background:none; border:0; padding:0; cursor:pointer; }
+:focus-visible{ outline:2px solid rgba(255,255,255,.6); outline-offset:2px; border-radius:8px; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Desk — the simulated display the window sits on
+   ───────────────────────────────────────────────────────────────────────── */
+.stage{ zoom:var(--zoom, 1); }
+.desk{
+  position:relative;
+  width:1120px; height:760px;
+  border-radius:20px;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.07);
+  box-shadow:
+    0 60px 140px -40px rgba(0,0,0,.9),
+    0 20px 60px -20px rgba(0,0,0,.7),
+    inset 0 1px 0 rgba(255,255,255,.06);
+  isolation:isolate;
+}
+.wallpaper{
+  position:absolute; inset:0;
+  background:
+    radial-gradient(120% 80% at 22% 6%,  rgba(88,104,160,.50) 0%, rgba(88,104,160,0) 62%),
+    radial-gradient(90% 70% at 88% 100%, rgba(150,86,44,.28) 0%, rgba(150,86,44,0) 60%),
+    radial-gradient(70% 60% at 60% 40%,  rgba(40,46,70,.35) 0%, rgba(40,46,70,0) 70%),
+    linear-gradient(180deg,#0e121c 0%, #090b12 48%, #05060a 100%);
+}
+.glow{
+  position:absolute;
+  width:980px; height:760px; left:-180px; top:-260px;
+  background:radial-gradient(closest-side, rgba(140,165,255,.16), rgba(140,165,255,0) 70%);
+  transition:transform .5s var(--ease-out);
+  pointer-events:none;
+}
+.grain{
+  position:absolute; inset:0; pointer-events:none; opacity:.5; mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='.16'/></svg>");
+}
+.vignette{
+  position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(120% 90% at 50% 45%, rgba(0,0,0,0) 55%, rgba(0,0,0,.55) 100%);
+}
+
+/* Menu bar — quiet, gives the notch its context */
+.menubar{
+  position:absolute; top:0; left:0; right:0; height:28px; z-index:20;
+  display:flex; align-items:center; gap:10px;
+  padding:0 14px;
+  font-size:12px; color:rgba(255,255,255,.62);
+  background:linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.035));
+  backdrop-filter:blur(18px) saturate(180%);
+  -webkit-backdrop-filter:blur(18px) saturate(180%);
+  box-shadow:inset 0 -1px 0 rgba(255,255,255,.06);
+  pointer-events:none;
+}
+.menubar .mark{
+  width:13px; height:9px; border-radius:0 0 3px 3px;
+  background:rgba(255,255,255,.82);
+  margin-right:2px;
+}
+.menubar .app{ color:rgba(255,255,255,.92); font-weight:600; letter-spacing:-.005em; }
+.menubar .item{ color:rgba(255,255,255,.52); }
+.menubar .right{ margin-left:auto; display:flex; align-items:center; gap:11px; color:rgba(255,255,255,.66); }
+.menubar svg{ display:block; opacity:.75; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   The notch — real silhouette, sprung between closed pill and open panel
+   ───────────────────────────────────────────────────────────────────────── */
+.notch-wrap{ position:absolute; top:0; left:50%; transform:translateX(-50%); z-index:30; }
+.notch{
+  position:relative;
+  cursor:pointer;
+  will-change:width,height;
+}
+.notch > svg{ position:absolute; inset:0; width:100%; height:100%; display:block;
+  filter:drop-shadow(0 18px 34px rgba(0,0,0,.55)); }
+.halo{
+  position:absolute; left:50%; top:-10px; transform:translateX(-50%);
+  width:340px; height:150px; pointer-events:none; opacity:0;
+  background:radial-gradient(closest-side, rgba(255,255,255,.20), rgba(255,255,255,0) 72%);
+  transition:opacity .5s var(--ease-out);
+}
+.notch-wrap.invite .halo{ opacity:1; animation:breathe 2.6s ease-in-out infinite; }
+@keyframes breathe{ 0%,100%{opacity:.55} 50%{opacity:1} }
+.notch-hint{
+  position:absolute; top:44px; left:50%; transform:translateX(-50%);
+  font-size:11px; letter-spacing:.01em; color:rgba(255,255,255,.42);
+  white-space:nowrap; pointer-events:none;
+  opacity:0; transition:opacity .3s var(--ease-out);
+}
+.notch-wrap.invite .notch-hint{ opacity:1; }
+.notch-wrap.used .notch-hint{ opacity:0; }
+
+/* Closed pill content — artwork + the three-band meter */
+.closed{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:8px;
+  pointer-events:none;
+}
+.closed .art{
+  width:18px; height:18px; border-radius:5px;
+  background:linear-gradient(140deg,#FF8A3D,#B0448F 70%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);
+}
+.meter{ display:flex; align-items:flex-end; gap:2px; height:14px; }
+.meter i{
+  width:3px; height:14px; border-radius:2px; background:rgba(255,255,255,.72);
+  transform-origin:bottom;
+  animation:bar 1.05s ease-in-out infinite alternate;
+}
+.meter i:nth-child(1){ animation-duration:.92s; }
+.meter i:nth-child(2){ animation-duration:.64s; animation-delay:-.2s; }
+.meter i:nth-child(3){ animation-duration:1.18s; animation-delay:-.45s; }
+@keyframes bar{ from{ transform:scaleY(.18);} to{ transform:scaleY(1);} }
+.paused .meter i{ animation-play-state:paused; }
+
+/* Open panel content */
+.panel{
+  position:absolute; inset:0;
+  padding:34px 30px 18px;
+  display:flex; align-items:center; gap:14px;
+  opacity:0; pointer-events:none;
+}
+.panel .cover{
+  width:56px; height:56px; border-radius:12px; flex:none;
+  background:linear-gradient(145deg,#FF9A4D,#B0448F 72%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.16), 0 10px 24px -8px rgba(0,0,0,.8);
+}
+.panel .meta{ flex:1; min-width:0; }
+.panel .title{ font-size:13.5px; font-weight:600; letter-spacing:-.01em; }
+.panel .artist{ font-size:11.5px; color:var(--ink-3); margin-top:1px; }
+.panel .track{
+  margin-top:11px; height:3px; border-radius:2px; background:rgba(255,255,255,.16); overflow:hidden;
+}
+.panel .track span{
+  display:block; height:100%; width:38%; border-radius:2px; background:rgba(255,255,255,.9);
+  transition:width .4s var(--ease-out);
+}
+.panel .times{ display:flex; justify-content:space-between; margin-top:5px; font-size:9.5px; color:var(--ink-4); font-variant-numeric:tabular-nums; }
+.panel .transport{ display:flex; align-items:center; gap:14px; margin-top:9px; color:rgba(255,255,255,.8); }
+.panel .transport button{ display:grid; place-items:center; width:20px; height:20px; border-radius:6px; transition:background .15s ease, transform .12s var(--ease-out); }
+.panel .transport button:hover{ background:rgba(255,255,255,.10); }
+.panel .transport button:active{ transform:scale(.9); }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Onboarding window
+   ───────────────────────────────────────────────────────────────────────── */
+.window{
+  position:absolute; left:50%; top:84px; transform:translateX(-50%);
+  width:460px; height:620px; z-index:10;
+  border-radius:14px;
+  background:var(--surface);
+  backdrop-filter:blur(44px) saturate(150%);
+  -webkit-backdrop-filter:blur(44px) saturate(150%);
+  border:1px solid rgba(255,255,255,.085);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.07) inset,
+    0 44px 90px -26px rgba(0,0,0,.85),
+    0 14px 34px -12px rgba(0,0,0,.6);
+  display:flex; flex-direction:column;
+  overflow:hidden;
+  animation:winIn .42s var(--ease-out) both;
+}
+@keyframes winIn{ from{ opacity:0; transform:translateX(-50%) scale(.985); } to{ opacity:1; transform:translateX(-50%) scale(1); } }
+.window.leaving{ animation:winOut .34s var(--ease-out) both; }
+@keyframes winOut{ to{ opacity:0; transform:translateX(-50%) translateY(-26px) scale(.96); } }
+
+.titlebar{ height:40px; flex:none; position:relative; display:flex; align-items:center; padding:0 14px; }
+.lights{ display:flex; gap:8px; }
+.lights span{ width:12px; height:12px; border-radius:50%; box-shadow:inset 0 0 0 .5px rgba(0,0,0,.25); }
+.lights span:nth-child(1){ background:#FF5F57; }
+.lights span:nth-child(2){ background:#FEBC2E; }
+.lights span:nth-child(3){ background:#28C840; }
+
+.steps{ position:relative; flex:1; min-height:0; }
+.step{
+  position:absolute; inset:0; display:none; flex-direction:column;
+  padding:2px 26px 0;
+}
+.step[data-current="true"]{ display:flex; }
+
+.hero h1{
+  margin:0;
+  font-size:26px; font-weight:640; letter-spacing:-.022em; line-height:1.12;
+}
+.hero p{
+  margin:9px 0 0;
+  font-size:13px; line-height:1.5; color:var(--ink-2); letter-spacing:.002em;
+  max-width:34ch;
+}
+
+/* Step 1 */
+.trycard{
+  margin-top:22px; padding:15px 15px;
+  display:flex; align-items:center; gap:12px;
+  border-radius:12px;
+  background:rgba(255,255,255,.05);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.075);
+  transition:background .3s var(--ease-out), box-shadow .3s var(--ease-out);
+}
+.trycard .pulse{
+  width:30px; height:30px; border-radius:9px; flex:none; display:grid; place-items:center;
+  background:rgba(255,255,255,.075); color:var(--ink-2);
+  transition:color .3s ease, background .3s ease;
+}
+.trycard .t{ display:block; font-size:12.5px; font-weight:590; letter-spacing:-.005em; }
+.trycard .s{ display:block; font-size:11.5px; color:var(--ink-3); margin-top:3px; line-height:1.4; }
+.trycard.done{ background:rgba(48,209,88,.12); box-shadow:inset 0 0 0 1px rgba(48,209,88,.28); }
+.trycard.done .pulse{ background:rgba(48,209,88,.18); color:var(--green); }
+
+.rows-list{ margin-top:26px; }
+.rows-list li{
+  list-style:none; display:flex; align-items:center; gap:13px;
+  padding:15px 2px; border-top:1px solid var(--line);
+}
+.rows-list li:first-child{ border-top:0; }
+.rows-list .ic{ color:var(--ink-3); display:grid; place-items:center; width:20px; flex:none; }
+.rows-list .name{ font-size:12.5px; font-weight:560; min-width:78px; }
+.rows-list .desc{ font-size:11.5px; color:var(--ink-3); line-height:1.35; }
+
+/* Step 2 — permissions */
+.fineprint.bottom{ margin-top:auto; margin-bottom:4px; }
+
+.tile{
+  width:28px; height:28px; border-radius:8px; flex:none; display:grid; place-items:center;
+  background:color-mix(in srgb, var(--tint) 16%, transparent);
+  color:var(--tint);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--tint) 22%, transparent);
+}
+.copy{ flex:1; min-width:0; }
+.copy .name{ display:block; font-size:12.5px; font-weight:560; letter-spacing:-.004em; }
+.copy .why{ display:block; font-size:11px; color:var(--ink-3); margin-top:2px; line-height:1.4; }
+
+/* One ask per screen: the permission, what it buys, and what happens without it. */
+.step.ask{ justify-content:center; padding-bottom:14px; }
+.skip-rest{
+  position:absolute; top:0; right:26px;
+  font-size:11px; font-weight:500; color:var(--ink-4);
+  padding:4px 6px; margin-right:-6px; border-radius:7px;
+  transition:color .16s ease, background .16s ease;
+}
+.skip-rest:hover{ color:var(--ink-2); background:rgba(255,255,255,.06); }
+.tile.big{ width:38px; height:38px; border-radius:11px; }
+.ask-body h1{ margin:17px 0 0; font-size:26px; font-weight:640; letter-spacing:-.022em; line-height:1.15; }
+.ask-body .lede{ margin:10px 0 0; font-size:13px; line-height:1.5; color:var(--ink-2); max-width:36ch; }
+.ask-body .without{ margin:14px 0 0; font-size:11.5px; line-height:1.5; color:var(--ink-4); max-width:42ch; }
+.verdict{ display:flex; align-items:flex-start; gap:7px; margin:16px 0 0; font-size:11.5px; line-height:1.45; }
+.verdict svg{ flex:none; margin-top:2px; }
+.verdict.granted{ color:#5BE47E; }
+.verdict.denied, .verdict.pending{ color:var(--ink-3); }
+.spinner{
+  width:11px; height:11px; border-radius:50%;
+  border:1.5px solid rgba(255,255,255,.22); border-top-color:rgba(255,255,255,.75);
+  animation:spin .7s linear infinite;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
+
+.fineprint{ margin:12px 2px 2px; font-size:10.5px; line-height:1.45; color:var(--ink-4); }
+.recap{ margin-top:auto; padding:14px; border-radius:12px;
+  background:rgba(255,255,255,.045); box-shadow:inset 0 0 0 1px rgba(255,255,255,.06); }
+.recap .t{ display:block; font-size:12px; font-weight:590; letter-spacing:-.005em; }
+.recap .s{ display:block; margin-top:4px; font-size:11.5px; line-height:1.5; color:var(--ink-3); }
+.recap .s b{ color:rgba(255,255,255,.78); font-weight:560; }
+
+/* Step 3 — ready */
+.summary{ display:flex; flex-wrap:wrap; gap:6px; margin-top:20px; }
+.chip{
+  display:inline-flex; align-items:center; gap:6px;
+  height:27px; padding:0 10px 0 8px; border-radius:999px;
+  background:rgba(255,255,255,.06); box-shadow:inset 0 0 0 1px rgba(255,255,255,.07);
+  font-size:11.5px; font-weight:520; color:rgba(255,255,255,.86);
+}
+.chip svg{ color:var(--tint); }
+.chip.empty{ color:var(--ink-3); padding:0 12px; }
+
+.setting{
+  margin-top:22px; padding:13px 0 13px;
+  display:flex; align-items:center; gap:14px; border-top:1px solid var(--line);
+}
+.setting .copy .name{ font-size:12.5px; font-weight:560; }
+.setting .copy .why{ margin-top:2px; }
+.switch{
+  flex:none; width:38px; height:23px; border-radius:999px; padding:2px;
+  background:rgba(255,255,255,.14); transition:background .22s var(--ease-out);
+}
+.switch i{
+  display:block; width:19px; height:19px; border-radius:50%; background:#fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.4);
+  transition:transform .26s var(--spring);
+}
+.switch[aria-checked="true"]{ background:var(--green); }
+.switch[aria-checked="true"] i{ transform:translateX(15px); }
+
+.welcome-note{
+  margin-top:16px; margin-bottom:2px;
+  display:flex; align-items:flex-start; gap:10px;
+  font-size:11.5px; line-height:1.5; color:var(--ink-3);
+}
+.welcome-note svg{ flex:none; margin-top:1px; color:var(--ink-4); }
+
+/* Footer */
+.footer{
+  flex:none; position:relative; z-index:2;
+  padding:10px 26px 16px;
+  background:linear-gradient(to top, rgba(14,14,17,.97) 42%, rgba(14,14,17,.72) 78%, rgba(14,14,17,0));
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+}
+.footer-top{ display:flex; align-items:center; height:20px; margin-bottom:8px; }
+.back{
+  width:24px; height:24px; margin-left:-4px; border-radius:7px; display:grid; place-items:center;
+  color:var(--ink-3); transition:background .16s ease, color .16s ease, opacity .2s ease;
+}
+.back:hover{ background:rgba(255,255,255,.08); color:var(--ink); }
+.back[disabled]{ visibility:hidden; pointer-events:none; }
+.track{
+  position:absolute; left:50%; transform:translateX(-50%);
+  width:168px; height:3px; border-radius:2px; overflow:hidden;
+  background:rgba(255,255,255,.14);
+}
+.track[hidden]{ display:none; }
+.track i{
+  display:block; height:100%; border-radius:2px; background:rgba(255,255,255,.7);
+  transition:width .3s var(--ease-out);
+}
+.counter{ margin-left:auto; font-size:11px; color:var(--ink-4); font-variant-numeric:tabular-nums; }
+.footer-main{ display:flex; align-items:center; justify-content:flex-end; gap:10px; }
+.skip{
+  margin-right:auto; font-size:12.5px; font-weight:520; color:var(--ink-3);
+  padding:6px 8px; margin-left:-8px; border-radius:8px;
+  transition:color .16s ease, background .16s ease;
+}
+.skip:hover{ color:var(--ink); background:rgba(255,255,255,.06); }
+.primary{
+  height:35px; padding:0 18px; border-radius:10px;
+  background:#F2F2F4; color:#0A0A0B; font-size:13px; font-weight:600; letter-spacing:-.008em;
+  transition:background .16s ease, transform .12s var(--ease-out), box-shadow .2s ease;
+}
+.primary:hover{ background:#fff; }
+.primary:active{ transform:scale(.975); }
+.primary:disabled{ opacity:.4; pointer-events:none; }
+.primary.is-granted{
+  background:rgba(48,209,88,.16); color:#5BE47E; pointer-events:none;
+  box-shadow:inset 0 0 0 1px rgba(48,209,88,.3);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Simulated macOS permission prompt
+   ───────────────────────────────────────────────────────────────────────── */
+.scrim{
+  position:absolute; inset:0; z-index:40; background:rgba(0,0,0,.34);
+  animation:scrimIn .24s ease-out both;
+}
+@keyframes scrimIn{ from{ opacity:0 } to{ opacity:1 } }
+.dialog{
+  position:absolute; z-index:41; left:50%; top:50%; width:318px;
+  transform:translate(-50%,-50%);
+  border-radius:12px; padding:20px 20px 16px;
+  background:rgba(38,38,41,.86);
+  backdrop-filter:blur(30px) saturate(170%);
+  -webkit-backdrop-filter:blur(30px) saturate(170%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.12),
+    inset 0 1px 0 rgba(255,255,255,.18),
+    0 30px 70px -18px rgba(0,0,0,.8);
+  text-align:center;
+  animation:dialogIn .2s var(--ease-out) both;
+}
+@keyframes dialogIn{ from{ opacity:0; transform:translate(-50%,-50%) scale(.965); } to{ opacity:1; transform:translate(-50%,-50%) scale(1); } }
+.dialog.out{ animation:dialogOut .16s var(--ease-in) both; }
+@keyframes dialogOut{ to{ opacity:0; transform:translate(-50%,-50%) scale(.98); } }
+.dialog img{ width:52px; height:52px; display:block; margin:0 auto 12px; }
+.dialog .dtitle{ font-size:12.5px; font-weight:600; line-height:1.4; letter-spacing:-.005em; }
+.dialog .dsub{ font-size:11px; line-height:1.45; color:var(--ins-2, rgba(255,255,255,.6)); margin-top:6px; }
+.dialog .dactions{ display:flex; gap:8px; justify-content:flex-end; margin-top:18px; }
+.dbtn{
+  height:28px; padding:0 12px; border-radius:7px; font-size:12px; font-weight:500;
+  background:rgba(255,255,255,.12); box-shadow:inset 0 0 0 .5px rgba(255,255,255,.14);
+  transition:background .14s ease, transform .1s var(--ease-out);
+}
+.dbtn:hover{ background:rgba(255,255,255,.2); }
+.dbtn:active{ transform:scale(.97); }
+.dbtn.default{ background:var(--blue); box-shadow:none; color:#fff; }
+.dbtn.default:hover{ background:#2f97ff; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Prototype chrome (deliberately not in the product's visual language)
+   ───────────────────────────────────────────────────────────────────────── */
+.chrome{
+  position:absolute; bottom:14px; left:50%; transform:translateX(-50%); z-index:35;
+  display:flex; gap:10px; align-items:center;
+}
+.chrome button{
+  height:26px; padding:0 12px; border-radius:6px;
+  font:500 10.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing:.06em; text-transform:uppercase;
+  color:#9aa0a6; background:rgba(20,21,24,.85);
+  border:1px dashed rgba(255,255,255,.22);
+  transition:color .15s ease, border-color .15s ease;
+}
+.chrome button:hover{ color:#e8eaed; border-color:rgba(255,255,255,.4); }
+
+/* Toast for the finished state */
+.toast{
+  position:absolute; z-index:36; bottom:56px; left:50%; transform:translateX(-50%);
+  padding:9px 14px; border-radius:10px; font-size:12px; color:rgba(255,255,255,.9);
+  background:rgba(28,28,31,.82); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.1), 0 18px 40px -12px rgba(0,0,0,.8);
+  animation:toastIn .3s var(--ease-out) both;
+}
+@keyframes toastIn{ from{ opacity:0; transform:translate(-50%,8px); } to{ opacity:1; transform:translate(-50%,0); } }
+.toast.out{ animation:toastOut .22s var(--ease-in) both; }
+@keyframes toastOut{ to{ opacity:0; transform:translate(-50%,6px); } }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Preference fallbacks
+   ───────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce){
+  /* Reduced motion keeps every state change, as a cross-fade. */
+  *, *::before, *::after{
+    animation-duration:.001ms !important;
+    animation-delay:0ms !important;
+    transition-duration:.001ms !important;
+    transition-delay:0ms !important;
+  }
+  .wallpaper,.glow{ transition:none !important; }
+  .halo{ animation:none !important; opacity:0 !important; }
+  .meter i{ animation:none !important; transform:scaleY(.62); }
+}
+@media (prefers-reduced-transparency: reduce){
+  .window{ background:#0c0c0e; backdrop-filter:none; -webkit-backdrop-filter:none; }
+  .menubar{ background:rgba(10,10,12,.92); backdrop-filter:none; -webkit-backdrop-filter:none; }
+  .footer{ background:#0c0c0e; backdrop-filter:none; -webkit-backdrop-filter:none; }
+  .dialog{ background:#232326; backdrop-filter:none; -webkit-backdrop-filter:none; }
+  .toast{ background:#1c1c1f; backdrop-filter:none; -webkit-backdrop-filter:none; }
+}
+@media (prefers-contrast: more){
+  .window{ border-color:rgba(255,255,255,.34); }
+  .ask-body .without{ color:rgba(255,255,255,.7); }
+  .hero p,.copy .why,.trycard .s{ color:rgba(255,255,255,.78); }
+  .fineprint{ color:rgba(255,255,255,.68); }
+}
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="desk" id="desk">
+    <div class="wallpaper"></div>
+    <div class="glow" id="glow"></div>
+    <div class="grain"></div>
+    <div class="vignette"></div>
+
+    <div class="menubar">
+      <span class="mark"></span>
+      <span class="app">Notch</span>
+      <span class="item">Settings</span>
+      <span class="item">Help</span>
+      <div class="right">
+        <svg width="15" height="11" viewBox="0 0 15 11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+          <path d="M1 3.6a10 10 0 0 1 13 0"/><path d="M3.6 6.2a6.4 6.4 0 0 1 7.8 0"/><circle cx="7.5" cy="9" r=".9" fill="currentColor" stroke="none"/>
+        </svg>
+        <svg width="22" height="11" viewBox="0 0 22 11" fill="none" stroke="currentColor" stroke-width="1.1">
+          <rect x=".7" y=".7" width="18" height="9.6" rx="3"/><path d="M20.4 4v3" stroke-linecap="round"/><rect x="2.4" y="2.4" width="12" height="6.2" rx="1.6" fill="currentColor" stroke="none"/>
+        </svg>
+        <span id="clock">Tue 9:41 AM</span>
+      </div>
+    </div>
+
+    <!-- The notch -->
+    <div class="notch-wrap invite" id="notchWrap">
+      <div class="halo"></div>
+      <div class="notch" id="notch" role="button" tabindex="0"
+           aria-label="The notch — hover to peek, click to open">
+        <svg id="notchSvg" viewBox="0 0 150 30" preserveAspectRatio="none" aria-hidden="true">
+          <path id="notchPath" fill="#050506" stroke="rgba(255,255,255,.07)" stroke-width="1"></path>
+        </svg>
+        <div class="closed" id="closed">
+          <span class="art"></span>
+          <span class="meter"><i></i><i></i><i></i></span>
+        </div>
+        <div class="panel" id="panel">
+          <div class="cover"></div>
+          <div class="meta">
+            <div class="title">Sunset Drive</div>
+            <div class="artist">Aurora Lane</div>
+            <div class="track"><span id="progress"></span></div>
+            <div class="times"><span id="elapsed">1:24</span><span>3:47</span></div>
+            <div class="transport">
+              <button type="button" aria-label="Previous" id="btnPrev">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><path d="M3 1h1.4v10H3zM10 1v10L4.4 6z"/></svg>
+              </button>
+              <button type="button" aria-label="Play or pause" id="btnPlay">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" id="glyphPlay"><path d="M2 1h3.2v10H2zM6.8 1H10v10H6.8z"/></svg>
+              </button>
+              <button type="button" aria-label="Next" id="btnNext">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><path d="M7.6 1H9v10H7.6zM2 1v10l5.6-5z"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="notch-hint">hover me</div>
+    </div>
+
+    <!-- Onboarding window -->
+    <div class="window" id="win">
+      <div class="titlebar">
+        <div class="lights" aria-hidden="true"><span></span><span></span><span></span></div>
+      </div>
+      <div class="steps" id="steps">
+
+        <!-- Step 1 — welcome -->
+        <section class="step" data-kind="welcome" data-current="true" aria-label="Welcome">
+          <div class="hero">
+            <h1>Meet your notch.</h1>
+            <p>The black strip at the top of your Mac. Hover it to peek, click it to open the panel, and drop things on it to shelve them.</p>
+          </div>
+
+          <div class="trycard" id="trycard">
+            <span class="pulse" id="tryPulse">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 12.6V3.4M4.6 6.8 8 3.4l3.4 3.4"/>
+              </svg>
+            </span>
+            <span>
+              <span class="t" id="tryTitle">Try it right now</span>
+              <span class="s" id="trySub">Point at the notch above this window — it opens on hover.</span>
+            </span>
+          </div>
+
+          <ul class="rows-list">
+            <li>
+              <span class="ic">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3.4 2.2 12 6.4l-3.6 1.2-1.2 3.6z"/>
+                </svg>
+              </span>
+              <span class="name">Hover</span>
+              <span class="desc">Peek at what's playing.</span>
+            </li>
+            <li>
+              <span class="ic">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3.4 2.2 12 6.4l-3.6 1.2-1.2 3.6z"/><path d="M11.4 11.4a3 3 0 1 0 0-6"/>
+                </svg>
+              </span>
+              <span class="name">Click</span>
+              <span class="desc">Open the full panel, and keep it open.</span>
+            </li>
+            <li>
+              <span class="ic">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2.2 10.4v1.8a1.6 1.6 0 0 0 1.6 1.6h8.4a1.6 1.6 0 0 0 1.6-1.6v-1.8M8 2.4v7.4M5 6.8 8 9.8l3-3"/>
+                </svg>
+              </span>
+              <span class="name">Drop</span>
+              <span class="desc">Shelve a file or a snippet, drag it back out later.</span>
+            </li>
+          </ul>
+
+          <p class="fineprint bottom">Notch lives in your menu bar — no Dock icon, no window to manage.</p>
+        </section>
+
+        <!-- Steps 2…10 — one permission per screen, built from PERMS in the
+             script so the order lives beside the permission list itself. -->
+
+        <!-- Last step — ready -->
+        <section class="step" data-kind="ready" aria-label="Ready">
+          <div class="hero">
+            <h1>You're all set.</h1>
+            <p id="readyLede">Notch is running in your menu bar, watching the notch.</p>
+          </div>
+
+          <div class="summary" id="summary"></div>
+
+          <div class="setting">
+            <span class="copy">
+              <span class="name">Launch Notch at login</span>
+              <span class="why">Starts with your Mac, quietly in the menu bar.</span>
+            </span>
+            <button class="switch" id="loginSwitch" role="switch" aria-checked="true" aria-label="Launch Notch at login"><i></i></button>
+          </div>
+
+          <div class="recap">
+            <span class="t">Worth remembering</span>
+            <span class="s"><b>Hover</b> peeks at what's playing. <b>Click</b> opens the panel and keeps it. <b>Drop</b> a file on the notch to shelve it. Prefer keys? Set a shortcut in Settings&nbsp;→&nbsp;Notch.</span>
+          </div>
+
+          <div class="welcome-note">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <circle cx="8" cy="8" r="6.2"/><path d="M8 7.2v4M8 5.1v.1"/>
+            </svg>
+            <span>Everything you skipped lives in <strong style="color:rgba(255,255,255,.72);font-weight:520">Settings&nbsp;→&nbsp;Privacy</strong>, and Notch asks again the first time a feature actually needs it.</span>
+          </div>
+        </section>
+
+      </div>
+
+      <div class="footer">
+        <div class="footer-top">
+          <button class="back" id="back" aria-label="Back" disabled>
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9.8 3.6 5.4 8l4.4 4.4"/>
+            </svg>
+          </button>
+          <div class="track" id="track" aria-hidden="true"><i id="trackFill"></i></div>
+          <span class="counter" id="counter"></span>
+        </div>
+        <div class="footer-main">
+          <button class="skip" id="later" hidden>Not now</button>
+          <button class="primary" id="primary">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="chrome" id="chrome">
+      <button id="replay" type="button">Prototype · Replay flow</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────────
+   Helpers
+   ───────────────────────────────────────────────────────────────────────── */
+const $ = (s, r = document) => r.querySelector(s);
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const smoothstep = (t, a, b) => { const x = clamp((t - a) / (b - a), 0, 1); return x * x * (3 - 2 * x); };
+const EASE_OUT = 'cubic-bezier(.23,1,.32,1)';
+const EASE_IN  = 'cubic-bezier(.32,.72,0,1)';
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const APP_ICON = 'data:image/png;base64,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';
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Notch silhouette — a direct port of Notch/Views/NotchShape.swift
+   (Apple's continuous corners, squeezed to fit, exactly as the app draws it)
+   ───────────────────────────────────────────────────────────────────────── */
+const REACH = 1.5286649466;
+const FIRST = [0.0749114, 0.6314939], INNER_FIRST = [0.1690600, 0.3728240],
+      INNER_SECOND = [0.3728240, 0.1690600], SECOND = [0.6314939, 0.0749114];
+const OUTER = [0.96, 0.2430462], INNER = [0.82, 0.0915639];
+
+function notchPath(w, h, topR, bottomR) {
+  const f = v => (Math.round(v * 100) / 100);
+  const top = clamp(topR, 0, w / 2);
+  const bottom = clamp(bottomR, 0, w / 2 - top);
+  const bodyLeft = top, bodyRight = w - top;
+  const sideRoom = h / 2, bottomRoom = w / 2 - top;
+
+  const corners = [
+    { at: [bodyLeft, 0],  u: [0, 1],  v: [-1, 0], r: top,    roomU: sideRoom,   roomV: top },
+    { at: [bodyLeft, h],  u: [1, 0],  v: [0, -1], r: bottom, roomU: bottomRoom, roomV: sideRoom },
+    { at: [bodyRight, h], u: [0, -1], v: [-1, 0], r: bottom, roomU: sideRoom,   roomV: bottomRoom },
+    { at: [bodyRight, 0], u: [1, 0],  v: [0, 1],  r: top,    roomU: top,        roomV: sideRoom },
+  ];
+
+  let d = '';
+  corners.forEach((c, index) => {
+    const roomU = Math.max(c.roomU, 0), roomV = Math.max(c.roomV, 0);
+    const er = Math.min(Math.max(c.r, 0), roomU, roomV);
+    const reachU = Math.min(REACH * er, roomU);
+    const reachV = Math.min(REACH * er, roomV);
+    const limitU = er > 0 ? reachU / er : 0;
+    const limitV = er > 0 ? reachV / er : 0;
+    const control = (line, limit) =>
+      (limit <= 1 ? line[0] * limit : line[0] + line[1] * (limit - 1)) * er;
+    const P = (u, v) => [c.at[0] + c.u[0] * u + c.v[0] * v, c.at[1] + c.u[1] * u + c.v[1] * v];
+    const I = o => P(o[0] * er, o[1] * er);
+
+    const start = P(0, reachV);
+    const arcs = [
+      [P(0, control(OUTER, limitV)), P(0, control(INNER, limitV)), I(FIRST)],
+      [I(INNER_FIRST), I(INNER_SECOND), I(SECOND)],
+      [P(control(INNER, limitU), 0), P(control(OUTER, limitU), 0), P(reachU, 0)],
+    ];
+
+    d += (index === 0 ? 'M' : 'L') + f(start[0]) + ' ' + f(start[1]);
+    for (const a of arcs) {
+      d += 'C' + f(a[0][0]) + ' ' + f(a[0][1]) + ' ' + f(a[1][0]) + ' ' + f(a[1][1]) + ' ' + f(a[2][0]) + ' ' + f(a[2][1]);
+    }
+  });
+  return d + 'Z';
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   The notch: spring between the closed pill and the open panel
+   ───────────────────────────────────────────────────────────────────────── */
+const CLOSED = { w: 150, h: 30,  top: 16, bottom: 18 };
+const OPEN   = { w: 336, h: 138, top: 26, bottom: 30 };
+
+const notch = { t: 0, v: 0, target: 0, pinned: false, used: false };
+
+const notchEl = $('#notch'), notchPathEl = $('#notchPath'), notchSvg = $('#notchSvg');
+const closedContent = $('#closed'), panelContent = $('#panel'), notchWrap = $('#notchWrap');
+
+function renderNotch() {
+  const t = clamp(notch.t, 0, 1);
+  const w = lerp(CLOSED.w, OPEN.w, t);
+  const h = lerp(CLOSED.h, OPEN.h, t);
+  notchEl.style.width = w + 'px';
+  notchEl.style.height = h + 'px';
+  notchSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  notchPathEl.setAttribute('d', notchPath(w, h, lerp(CLOSED.top, OPEN.top, t), lerp(CLOSED.bottom, OPEN.bottom, t)));
+
+  closedContent.style.opacity = 1 - smoothstep(t, 0.12, 0.55);
+  const openA = smoothstep(t, 0.45, 0.95);
+  panelContent.style.opacity = openA;
+  panelContent.style.pointerEvents = openA > 0.6 ? 'auto' : 'none';
+}
+
+let raf = null;
+// Critically damped spring — response 0.34s, no overshoot — integrated in fixed
+// sub-steps so the motion is identical on a 120Hz display and a stalled frame.
+const OMEGA = (2 * Math.PI) / 0.34;
+function integrate(dt) {
+  const a = -OMEGA * OMEGA * (notch.t - notch.target) - 2 * OMEGA * notch.v;
+  notch.v += a * dt;
+  notch.t += notch.v * dt;
+}
+function tick(now) {
+  const last = tick.last || now;
+  let remaining = Math.min((now - last) / 1000, 0.25);
+  tick.last = now;
+  while (remaining > 0) { const step = Math.min(1 / 120, remaining); integrate(step); remaining -= step; }
+
+  const settled = Math.abs(notch.t - notch.target) < 0.0008 && Math.abs(notch.v) < 0.006;
+  if (settled) { notch.t = notch.target; notch.v = 0; tick.last = 0; renderNotch(); raf = null; return; }
+  renderNotch();
+  raf = requestAnimationFrame(tick);
+}
+function retarget(target) {
+  notch.target = target;
+  if (reduceMotion) { notch.t = target; notch.v = 0; renderNotch(); return; }
+  if (raf === null) { tick.last = 0; raf = requestAnimationFrame(tick); }
+}
+
+function openNotch(pin) {
+  if (pin) notch.pinned = true;
+  retarget(1);
+  markUsed();
+}
+function closeNotch(force) {
+  if (notch.pinned && !force) return;
+  notch.pinned = false;
+  retarget(0);
+}
+function markUsed() {
+  if (notch.used) return;
+  notch.used = true;
+  notchWrap.classList.add('used');
+  notchWrap.classList.remove('invite');
+  $('#trycard').classList.add('done');
+  $('#tryTitle').textContent = "That's it.";
+  $('#trySub').textContent = 'Hover peeks, click pins it open, Esc lets it close.';
+  $('#tryPulse').innerHTML =
+    '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3.4 8.4 2.8 2.8 6.4-6.4"/></svg>';
+}
+
+notchEl.addEventListener('pointerenter', () => openNotch(false));
+notchEl.addEventListener('pointerleave', () => closeNotch(false));
+notchEl.addEventListener('click', e => {
+  if (e.target.closest('.transport')) return;      // transport clicks aren't a toggle
+  if (notch.pinned) closeNotch(true); else openNotch(true);
+});
+notchEl.addEventListener('focus', () => openNotch(false));
+notchEl.addEventListener('blur', () => closeNotch(false));
+notchEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); notch.pinned ? closeNotch(true) : openNotch(true); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNotch(true); });
+
+// Demo transport: pause only pauses the demo, but it does pause it.
+let playing = true;
+const progress = $('#progress'), elapsed = $('#elapsed');
+$('#btnPlay').addEventListener('click', () => {
+  playing = !playing;
+  notchEl.classList.toggle('paused', !playing);
+  $('#btnPlay').innerHTML = playing
+    ? '<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M2 1h3.2v10H2zM6.8 1H10v10H6.8z"/></svg>'
+    : '<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M3 1.4v9.2L10.4 6z"/></svg>';
+});
+let seconds = 84;
+setInterval(() => {
+  if (!playing) return;
+  seconds = (seconds + 1) % 227;
+  progress.style.width = (28 + (seconds / 227) * 62).toFixed(1) + '%';
+  elapsed.textContent = Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+}, 1000);
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Permissions — the nine real integrations, in System Settings order.
+   Each one gets its own screen in the flow: one ask, one answer, next.
+   ───────────────────────────────────────────────────────────────────────── */
+const ICONS = {
+  accessibility: '<circle cx="8" cy="3.4" r="1.7"/><path d="M2.8 6.3h10.4M8 6.5v3.1M8 9.6 5.5 13.6M8 9.6l2.5 4"/>',
+  calendar:      '<rect x="2.2" y="3.6" width="11.6" height="10.2" rx="2.2"/><path d="M2.2 6.9h11.6M5.6 2.2v2.6M10.4 2.2v2.6"/>',
+  location:      '<path d="M8 13.8s4.5-4.1 4.5-7A4.5 4.5 0 0 0 3.5 6.8c0 2.9 4.5 7 4.5 7Z"/><circle cx="8" cy="6.8" r="1.7"/>',
+  music:         '<circle cx="5.4" cy="11.6" r="1.9"/><circle cx="11.4" cy="10.6" r="1.9"/><path d="M7.3 11.6V4.1l6-1.5v8"/>',
+  screen:        '<rect x="1.9" y="3" width="12.2" height="8.4" rx="2"/><path d="M6.3 13.6h3.4M4.9 8.6V7.2M6.8 9.5V6.4M8.7 8.7V7.3M10.6 9.6V6.3"/>',
+  folder:        '<path d="M1.9 5.4c0-1 .8-1.8 1.8-1.8h2.2l1.5 1.7h5c1 0 1.8.8 1.8 1.8v4.2c0 1-.8 1.8-1.8 1.8H3.7c-1 0-1.8-.8-1.8-1.8V5.4Z"/>',
+  camera:        '<path d="M2 6c0-1 .8-1.8 1.8-1.8h1.1l1-1.5h4.2l1 1.5h1.1c1 0 1.8.8 1.8 1.8v4.2c0 1-.8 1.8-1.8 1.8H3.8c-1 0-1.8-.8-1.8-1.8V6Z"/><circle cx="8" cy="8.1" r="2.1"/>',
+  bluetooth:     '<path d="M7 1.9v12.2l3.4-3-4.6-4 4.6-4L7 1.9"/>',
+  notifications: '<path d="M4.2 11.2V7.7a3.8 3.8 0 0 1 7.6 0v3.5l.9 1.3H3.3l.9-1.3Z"/><path d="M6.6 12.7a1.6 1.6 0 0 0 2.8 0"/>',
+};
+
+const PERMS = [
+  { id:'accessibility', name:'Accessibility', tint:'#8E8E93', kind:'settings',
+    head:'Media keys, the volume and brightness HUDs, and global hotkeys.',
+    without:'Without it, macOS keeps its own media-key routing and the notch stays out of your shortcuts.',
+    title:'“Notch” would like to control this computer using accessibility features.',
+    sub:'macOS keeps this one behind a switch in System Settings.',
+    confirm:'Open System Settings' },
+
+  { id:'calendar', name:'Calendar', tint:'#0A84FF', kind:'allow',
+    head:'Today at the notch, with one-click meeting links.',
+    without:'Without it, the schedule stays empty and the notch skips meetings entirely.',
+    title:'“Notch” would like to access your Calendar.',
+    sub:'Used to show today at the notch — nothing is shared or sent anywhere.',
+    confirm:'Allow' },
+
+  { id:'location', name:'Location', tint:'#30D158', kind:'allow', delay:900,
+    head:'Weather for where you actually are.',
+    without:'Without it, weather falls back to a rough guess based on your network.',
+    title:'“Notch” would like to use your current location.',
+    sub:'Used for the forecast only.',
+    confirm:'Allow' },
+
+  { id:'music', name:'Music & Player Automation', tint:'#FF8A3D', kind:'allow',
+    head:'Drive Apple Music and Spotify directly — play, skip, scrub, and read lyrics.',
+    without:'Without it, the notch still follows whatever is already playing, and only that.',
+    title:'“Notch” wants to control Music.',
+    sub:'Automation consent is granted per player, not per app.',
+    confirm:'OK' },
+
+  { id:'screen', name:'Screen & Audio Recording', tint:'#BF5AF2', kind:'settings',
+    head:'The three-band meter and per-app volume. Audio only — never pixels.',
+    without:'Without it, the meter stays idle and the mixer cannot take an app over.',
+    title:'“Notch” would like to record this computer’s screen and audio.',
+    sub:'Only the audio is read, in memory, to draw the meter and mix one app.',
+    confirm:'Open System Settings' },
+
+  { id:'files', name:'Files & Folders', tint:'#5E5CE6', kind:'allow',
+    head:'Finished downloads and new screenshots, announced the moment they land.',
+    without:'Without it, files you drop on the notch still work — only arrivals go unannounced.',
+    title:'“Notch” would like to access files in your Downloads folder.',
+    sub:'macOS asks for these the first time Notch reads one.',
+    confirm:'OK' },
+
+  { id:'camera', name:'Camera', tint:'#64D2FF', kind:'allow',
+    head:'Face ID and the camera screen. Frames are processed in memory.',
+    without:'Without it, the camera screen stays empty and Face ID cannot see you.',
+    title:'“Notch” would like to access the camera.',
+    sub:'The camera is only opened while you are looking at it — the light stays off otherwise.',
+    confirm:'Allow' },
+
+  { id:'bluetooth', name:'Bluetooth', tint:'#0A84FF', kind:'allow',
+    head:'Names and battery levels for your paired audio accessories.',
+    without:'Without it, accessories are still listed, just without names or battery.',
+    title:'“Notch” would like to use Bluetooth.',
+    sub:'Reads paired accessories only — it never scans or connects.',
+    confirm:'Allow' },
+
+  { id:'notifications', name:'Notifications', tint:'#FFD60A', kind:'allow',
+    head:'A finished timer can reach you when the notch is closed.',
+    without:'Without it, a finished timer is only ever shown inside the notch.',
+    title:'“Notch” would like to send you notifications.',
+    sub:'Timers only. Nothing else is ever posted.',
+    confirm:'Allow' },
+];
+
+const state = {};                                   // id -> idle | pending | granted | denied
+PERMS.forEach(p => state[p.id] = 'idle');
+const permById = id => PERMS.find(p => p.id === id);
+const grantedIds = () => PERMS.filter(p => state[p.id] === 'granted').map(p => p.id);
+
+function iconSvg(id, size = 16) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+    stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round">${ICONS[id]}</svg>`;
+}
+const CHECK = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m3.2 8.4 2.9 2.9 6.7-6.6"/></svg>';
+
+/* The flow: welcome → nine asks → ready.
+
+   The ask order is not the enumeration order. `PERMS` stays in System Settings
+   order (that is what Settings → Privacy matches, and it is where a returning
+   visitor looks); the flow leads instead with what is instant and immediately
+   visible, and leaves the two asks that send someone off to System Settings for
+   the end — where the easy wins have already paid for the trip. */
+const ASK_ORDER = [
+  'calendar', 'location', 'music', 'notifications', 'camera',
+  'bluetooth', 'files', 'screen', 'accessibility',
+];
+const stepsHost = $('#steps');
+const readySection = $('.step[data-kind="ready"]');
+
+ASK_ORDER.forEach(id => {
+  const p = permById(id);
+  const section = document.createElement('section');
+  section.className = 'step ask';
+  section.dataset.perm = p.id;
+  section.dataset.state = 'idle';
+  section.setAttribute('aria-label', p.name);
+  section.innerHTML = `
+    <button class="skip-rest" type="button">Skip the rest</button>
+    <div class="ask-body">
+      <span class="tile big" style="--tint:${p.tint}">${iconSvg(p.id, 20)}</span>
+      <h1>${p.name}</h1>
+      <p class="lede">${p.head}</p>
+      <p class="without">${p.without}</p>
+      <p class="verdict" hidden></p>
+    </div>`;
+  readySection.before(section);
+});
+
+const steps = [...stepsHost.querySelectorAll('.step')];
+const LAST = steps.length - 1;
+const kindOf = i => steps[i].dataset.kind || (steps[i].dataset.perm ? 'ask' : 'other');
+
+const backBtn = $('#back'), laterBtn = $('#later'), primary = $('#primary');
+const track = $('#track'), trackFill = $('#trackFill'), counter = $('#counter');
+
+let index = 0;
+let finished = false;
+let dialogOpen = false;
+
+/* ── The simulated system prompt ────────────────────────────────────────── */
+function askPermission(id) {
+  const p = permById(id);
+  dialogOpen = true;
+  refreshFooter();
+
+  const scrim = document.createElement('div');
+  scrim.className = 'scrim';
+  const dialog = document.createElement('div');
+  dialog.className = 'dialog';
+  dialog.setAttribute('role', 'dialog');
+  dialog.setAttribute('aria-modal', 'true');
+  dialog.setAttribute('aria-label', p.title);
+  dialog.innerHTML = `
+    <img src="${APP_ICON}" alt="">
+    <div class="dtitle">${p.title}</div>
+    <div class="dsub">${p.sub}</div>
+    <div class="dactions">
+      <button class="dbtn deny" type="button">${p.kind === 'settings' ? 'Deny' : "Don't Allow"}</button>
+      <button class="dbtn default" type="button">${p.confirm}</button>
+    </div>`;
+  $('#desk').append(scrim, dialog);
+  dialog.querySelector('.dbtn.default').focus();
+
+  const close = () => {
+    dialogOpen = false;
+    refreshFooter();
+    scrim.remove();
+    const kill = () => dialog.remove();
+    dialog.classList.add('out');
+    if (reduceMotion) kill(); else dialog.addEventListener('animationend', kill, { once: true });
+  };
+
+  const grant = () => {
+    if (p.kind === 'settings') {
+      // Out of band: the visitor is off in System Settings, so the screen waits.
+      setState(id, 'pending');
+      close();
+      setTimeout(() => decide(id, 'granted'), 2600);
+    } else {
+      setState(id, 'pending');
+      setTimeout(() => { close(); decide(id, 'granted'); }, reduceMotion ? 0 : (p.delay || 320));
+    }
+  };
+  const deny = () => { close(); decide(id, 'denied'); };
+
+  dialog.querySelector('.dbtn.default').addEventListener('click', grant);
+  dialog.querySelector('.dbtn.deny').addEventListener('click', deny);
+  dialog.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); deny(); }
+    if (e.key === 'Enter') { e.preventDefault(); grant(); }
+  });
+}
+
+function announce(text) { $('#live').textContent = text; }
+
+function setState(id, next) {
+  state[id] = next;
+  const step = steps.find(s => s.dataset.perm === id);
+  if (!step) return;
+  step.dataset.state = next;
+  const verdict = step.querySelector('.verdict');
+  if (next === 'idle') { verdict.hidden = true; verdict.textContent = ''; }
+  if (next === 'pending') {
+    verdict.hidden = false;
+    verdict.className = 'verdict pending';
+    verdict.innerHTML = '<span class="spinner"></span>' +
+      (permById(id).kind === 'settings' ? 'In System Settings — waiting for the switch.' : 'Waiting for macOS…');
+  }
+  if (next === 'granted') {
+    verdict.hidden = false;
+    verdict.className = 'verdict granted';
+    verdict.innerHTML = CHECK + 'Granted. Notch picks it up straight away.';
+  }
+  if (next === 'denied') {
+    verdict.hidden = false;
+    verdict.className = 'verdict denied';
+    verdict.innerHTML = 'Not granted — you can change that any time in Settings → Privacy.';
+  }
+  if (index === steps.indexOf(step)) refreshFooter();
+}
+
+/* A grant confirms, then the flow carries on by itself. A refusal doesn't
+   move anything: the visitor says when they're done with this screen. */
+function decide(id, result) {
+  setState(id, result);
+  const i = steps.findIndex(s => s.dataset.perm === id);
+  announce(result === 'granted' ? `${permById(id).name} granted` : `${permById(id).name} not granted`);
+  if (result === 'granted') {
+    setTimeout(() => { if (index === i) advance(); }, reduceMotion ? 250 : 850);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Moving through the flow
+   ───────────────────────────────────────────────────────────────────────── */
+function advance() { index < LAST ? setStep(index + 1, 1) : finish(); }
+
+function refreshFooter() {
+  const kind = kindOf(index);
+  backBtn.disabled = index === 0;
+  track.hidden = kind === 'welcome';
+  trackFill.style.width = (index / LAST * 100).toFixed(1) + '%';
+  counter.textContent = kind === 'ask' ? `${grantedIds().length} of ${PERMS.length} granted` : '';
+
+  if (kind === 'ask') {
+    const st = state[steps[index].dataset.perm];
+    laterBtn.hidden = st === 'granted' || st === 'denied';
+    primary.disabled = st === 'pending' || dialogOpen;
+    primary.textContent = st === 'pending' ? 'Waiting…'
+      : st === 'granted' ? 'Granted'
+      : st === 'denied' ? 'Next'
+      : 'Grant Access';
+    primary.classList.toggle('is-granted', st === 'granted');
+  } else {
+    laterBtn.hidden = true;
+    primary.disabled = dialogOpen;
+    primary.textContent = kind === 'ready' ? 'Start Using Notch' : 'Continue';
+    primary.classList.remove('is-granted');
+  }
+}
+
+function setStep(i, dir) {
+  const prev = steps[index];
+  const next = steps[i];
+  index = i;
+
+  if (kindOf(i) === 'ready') paintReady();
+
+  for (const s of steps) {
+    s.setAttribute('aria-hidden', s === next ? 'false' : 'true');
+    if (s === next) s.dataset.current = 'true'; else delete s.dataset.current;
+  }
+  next.style.display = 'flex';
+  next.style.opacity = '1';
+
+  if (prev !== next) {
+    if (reduceMotion) {
+      prev.style.display = 'none';
+    } else {
+      prev.animate(
+        [{ opacity: 1, transform: 'translateX(0)' }, { opacity: 0, transform: `translateX(${-dir * 16}px)` }],
+        { duration: 190, easing: EASE_IN, fill: 'forwards' });
+      // Timers, not animation.finished: the step must leave the layout even if
+      // the compositor is stalled, or two screens would be on top of each other.
+      setTimeout(() => { prev.style.display = 'none'; }, 210);
+      next.animate(
+        [{ opacity: 0, transform: `translateX(${dir * 22}px)` }, { opacity: 1, transform: 'translateX(0)' }],
+        { duration: 300, easing: EASE_OUT });
+    }
+  }
+
+  refreshFooter();
+  notchWrap.classList.toggle('invite', kindOf(i) === 'welcome' && !notch.used);
+}
+
+primary.addEventListener('click', () => {
+  const kind = kindOf(index);
+  if (kind === 'welcome') { setStep(1, 1); return; }
+  if (kind === 'ask') {
+    const id = steps[index].dataset.perm;
+    if (state[id] === 'idle') { askPermission(id); return; }   // one ask, on its own screen
+    advance();                                                 // already answered -> carry on
+    return;
+  }
+  finish();
+});
+
+backBtn.addEventListener('click', () => { if (index > 0) setStep(index - 1, -1); });
+laterBtn.addEventListener('click', advance);
+stepsHost.addEventListener('click', e => {
+  if (e.target.closest('.skip-rest')) { setStep(LAST, 1); }
+});
+
+document.addEventListener('keydown', e => {
+  if (dialogOpen || finished) return;
+  const target = e.target instanceof Element ? e.target : null;
+  if (target === notchEl || target?.closest('.transport')) return;
+  if (e.key === 'ArrowRight' && index < LAST) setStep(index + 1, 1);
+  if (e.key === 'ArrowLeft' && index > 0) setStep(index - 1, -1);
+  if (e.key === 'Enter' && !e.repeat && kindOf(index) === 'ask' && !primary.disabled) primary.click();
+});
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Ready, closing, replaying
+   ───────────────────────────────────────────────────────────────────────── */
+function paintReady() {
+  const ids = grantedIds();
+  $('#summary').innerHTML = ids.length
+    ? ids.map(id => {
+        const p = permById(id);
+        return `<span class="chip" style="--tint:${p.tint}">${iconSvg(id, 12)}${p.name}</span>`;
+      }).join('')
+    : '<span class="chip empty">Nothing granted yet — Settings can change that any time.</span>';
+  $('#readyLede').textContent = ids.length
+    ? `${ids.length} of ${PERMS.length} on. Notch is already running, up in your menu bar.`
+    : 'Notch is running in your menu bar, watching the notch.';
+}
+
+/* End on the notch, not on a settings screen (peak–end). */
+let toastTimer = null;
+function toast(text) {
+  const old = $('.toast'); if (old) old.remove();
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = text;
+  $('#desk').append(el);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.classList.add('out');
+    el.addEventListener('animationend', () => el.remove(), { once: true });
+  }, 4200);
+}
+
+/* Done means done: the window leaves the screen, and the notch is what is left. */
+function finish() {
+  if (finished) return;
+  finished = true;
+  dialogOpen = false;
+  notchWrap.classList.remove('invite');
+  const win = $('#win');
+  win.classList.add('leaving');
+  setTimeout(() => {
+    win.style.display = 'none';
+    notch.used = true;
+    notchWrap.classList.add('used');
+    notchWrap.classList.remove('invite');
+    openNotch(true);
+    const n = grantedIds().length;
+    toast(n ? `Notch is ready — ${n} of ${PERMS.length} permissions on.` : 'Notch is ready — no permissions needed.');
+    $('#replay').focus();
+  }, reduceMotion ? 0 : 380);
+  // The demo panel closes again after a beat, leaving the notch as the app leaves it.
+  setTimeout(() => closeNotch(true), 5200);
+}
+
+$('#replay').addEventListener('click', () => {
+  finished = false;
+  location.search && history.replaceState(null, '', location.pathname);   // drop review hooks
+  PERMS.forEach(p => setState(p.id, 'idle'));
+
+  notch.used = false; notch.pinned = false;
+  notch.t = 0; notch.v = 0; notch.target = 0; notchWrap.classList.remove('used');
+  renderNotch();
+
+  $('#trycard').classList.remove('done');
+  $('#tryTitle').textContent = 'Try it right now';
+  $('#trySub').textContent = 'Point at the notch above this window — it opens on hover.';
+  $('#tryPulse').innerHTML =
+    '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12.6V3.4M4.6 6.8 8 3.4l3.4 3.4"/></svg>';
+
+  const win = $('#win');
+  win.style.display = '';
+  win.classList.remove('leaving');
+  if (!reduceMotion) {
+    win.animate(
+      [{ opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(.98)' },
+       { opacity: 1, transform: 'translateX(-50%) translateY(0) scale(1)' }],
+      { duration: 380, easing: EASE_OUT });
+  }
+
+  index = LAST;              // so the jump back to the start reads as a forward move
+  setStep(0, 1);
+  const t = $('.toast'); if (t) t.remove();
+});
+
+/* Login toggle */
+const loginSwitch = $('#loginSwitch');
+loginSwitch.addEventListener('click', () => {
+  const on = loginSwitch.getAttribute('aria-checked') === 'true';
+  loginSwitch.setAttribute('aria-checked', String(!on));
+});
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Scene plumbing: clock, pointer glow, zoom, live region
+   ───────────────────────────────────────────────────────────────────────── */
+const clock = $('#clock');
+function tickClock() {
+  const now = new Date();
+  clock.textContent = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) +
+    ' ' + now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+tickClock(); setInterval(tickClock, 20000);
+
+const desk = $('#desk'), glow = $('#glow');
+desk.addEventListener('pointermove', e => {
+  if (reduceMotion) return;
+  const r = desk.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width - 0.5;
+  const y = (e.clientY - r.top) / r.height - 0.5;
+  glow.style.transform = `translate(${(x * 26).toFixed(1)}px, ${(y * 18).toFixed(1)}px)`;
+});
+
+function fitZoom() {
+  const z = Math.min(1, (innerWidth - 48) / 1120, (innerHeight - 40) / 760);
+  document.documentElement.style.setProperty('--zoom', z.toFixed(3));
+}
+fitZoom();
+addEventListener('resize', fitZoom);
+
+const live = document.createElement('div');
+live.id = 'live';
+live.setAttribute('aria-live', 'polite');
+live.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);';
+document.body.append(live);
+
+/* Go */
+renderNotch();
+setStep(0, 1);
+
+/* Review hook — deep-link straight to any screen:
+   ?step=4  ·  ?granted=accessibility,calendar  ·  ?dialog=location  ·  ?done=1  */
+const params = new URLSearchParams(location.search);
+const preGranted = params.get('granted');
+if (preGranted) {
+  preGranted.split(',').forEach(id => { if (state[id] !== undefined) setState(id, 'granted'); });
+}
+const preStep = parseInt(params.get('step') ?? '', 10);
+if (!Number.isNaN(preStep)) setStep(clamp(preStep, 0, LAST), 1);
+const preDialog = params.get('dialog');
+if (preDialog) {
+  const i = steps.findIndex(s => s.dataset.perm === preDialog);
+  if (i >= 0) { setStep(i, 1); setTimeout(() => askPermission(preDialog), 350); }
+}
+if (params.get('done') === '1') setTimeout(finish, 500);
+
+</script>
+</body>
+</html>

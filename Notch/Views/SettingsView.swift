@@ -40,31 +40,49 @@ struct SettingsView: View {
     /// The header and tab bar float over the scroll content as overlays so
     /// scrolled rows pass underneath them rather than being pushed aside.
     private var contentPage: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            pageBody
-                .padding(.horizontal, SettingsMetrics.contentHorizontalPadding)
-                .padding(.top, SettingsMetrics.headerHeight + 4)
-                .padding(.bottom, SettingsMetrics.pageBottomInset)
-                // Without an explicit top alignment the scroll view centers
-                // short pages vertically, leaving a large gap between the
-                // header and the first row.
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-        .overlay(alignment: .top) {
-            // Blur first, header content on top — so it fades whatever
-            // scrolls beneath both without ever softening the buttons
-            // themselves.
-            ZStack(alignment: .top) {
-                ProgressiveHeaderBlur(height: SettingsMetrics.headerBlurHeight)
-                header
+        ScrollViewReader { scrollProxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    Color.clear
+                        .frame(height: 1)
+                        .id("settings-page-top")
+
+                    pageBody
+                        .padding(.horizontal, SettingsMetrics.contentHorizontalPadding)
+                        .padding(.top, SettingsMetrics.headerHeight + 4)
+                        .padding(.bottom, SettingsMetrics.pageBottomInset)
+                        // Without an explicit top alignment the scroll view centers
+                        // short pages vertically, leaving a large gap between the
+                        // header and the first row.
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
             }
+            .onChange(of: selection) { _, _ in
+                // Keep the scroll view alive for the page transition; reset its
+                // offset independently so the selection animation never animates
+                // the old page's scroll position along with the new content.
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    scrollProxy.scrollTo("settings-page-top", anchor: .top)
+                }
+            }
+            .overlay(alignment: .top) {
+                // Blur first, header content on top — so it fades whatever
+                // scrolls beneath both without ever softening the buttons
+                // themselves.
+                ZStack(alignment: .top) {
+                    ProgressiveHeaderBlur(height: SettingsMetrics.headerBlurHeight)
+                    header
+                }
+            }
+            .overlay(alignment: .bottom) {
+                SettingsTabBar(selection: $selection)
+                    .padding(.bottom, SettingsMetrics.tabBarBottomInset)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .onPreferenceChange(HeaderTrailingActionKey.self) { headerTrailingAction = $0 }
         }
-        .overlay(alignment: .bottom) {
-            SettingsTabBar(selection: $selection)
-                .padding(.bottom, SettingsMetrics.tabBarBottomInset)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onPreferenceChange(HeaderTrailingActionKey.self) { headerTrailingAction = $0 }
     }
 
     /// Leading side stays empty — the window's real traffic lights are drawn
@@ -117,8 +135,7 @@ struct SettingsView: View {
                 }
             }
             .id(selection)
-            .transition(.opacity.combined(with: .offset(y: 4)))
-            .animation(SettingsMetrics.tabSelectionAnimation, value: selection)
+            .transition(NotchAnimations.settingsPageSwap)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -284,6 +301,10 @@ private struct GeneralSettingsPane: View {
                         .toggleStyle(.switch)
                 }
             }
+            // Flipping the switch above reveals the two timing rows beneath
+            // it; keyed on the toggle, they ease in with the divider that
+            // closes the row above instead of appearing on the click.
+            .animation(NotchAnimations.content, value: settings.expandOnHover)
 
             SettingsCard(title: "Motion") {
                 SettingsRow(
@@ -827,6 +848,10 @@ private struct MediaSettingsPane: View {
                 )
             }
         }
+        // Both switches own a row that only exists while they are on, so the
+        // card animates its own changes on either of them.
+        .animation(NotchAnimations.content, value: settings.showMediaWings)
+        .animation(NotchAnimations.content, value: settings.sneakPeekEnabled)
     }
 
     private var lyricsCard: some View {
@@ -847,9 +872,13 @@ private struct MediaSettingsPane: View {
     }
 
     /// The visualiser's source. The measured option is a genuine reading of
-    /// the output mix — a CoreAudio tap, split into the three bands the bars
-    /// draw — which macOS gates behind audio access, so the row under it says
-    /// what that costs and where to change the answer.
+    /// the output mix — a CoreAudio tap, split into the bands the bars draw —
+    /// which macOS gates behind audio access, so the row under it says what
+    /// that costs and where to change the answer.
+    ///
+    /// The animation sits on the card itself — outside the content builder —
+    /// so it can cover the row above the reveal as well as the rows in it
+    /// (the row's trailing divider hands over to them).
     @ViewBuilder
     private var visualizerCard: some View {
         SettingsCard(title: "Visualiser") {
@@ -858,7 +887,8 @@ private struct MediaSettingsPane: View {
                 tint: .indigo,
                 title: "Real-Time Audio Meter",
                 subtitle: settings.realtimeAudioMeter
-                    ? "Bars show measured low, mid and high frequency magnitudes."
+                    ? "Bars show \(settings.audioMeterBarCount) measured frequency "
+                        + "ranges of the output mix."
                     : "Off: the waveform stays idle instead of faking frequency motion.",
                 showsDivider: settings.realtimeAudioMeter
             ) {
@@ -868,6 +898,28 @@ private struct MediaSettingsPane: View {
             }
 
             if settings.realtimeAudioMeter {
+                SettingsRow(
+                    systemImage: "chart.bar.fill",
+                    tint: .indigo,
+                    title: "Bars",
+                    subtitle: "How many frequency ranges the meter measures and draws. "
+                        + "More bars split the same spectrum finer: the bottom stays "
+                        + "bass, the top stays air.",
+                    showsDivider: true
+                ) {
+                    Picker("", selection: $settings.audioMeterBarCount) {
+                        ForEach(
+                            AudioBandAnalyzer.minimumBandCount ... AudioBandAnalyzer.maximumBandCount,
+                            id: \.self
+                        ) { count in
+                            Text("\(count)").tag(count)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 120)
+                }
+
                 SettingsRow(
                     systemImage: "record.circle",
                     tint: .indigo,
@@ -890,6 +942,10 @@ private struct MediaSettingsPane: View {
                 }
             }
         }
+        // The meter's own rows — bar count and audio access — appear when it
+        // is switched on, and the divider on the row above hands over to them;
+        // both move on the toggle's transaction.
+        .animation(NotchAnimations.content, value: settings.realtimeAudioMeter)
     }
 
     /// What the meter can and cannot do here, in order of specificity: the
@@ -904,8 +960,8 @@ private struct MediaSettingsPane: View {
             return reason
         }
         return "macOS gates reading audio behind this permission. While sound is "
-            + "playing, the meter measures the output's low, mid and high bands in "
-            + "memory and stops with playback."
+            + "playing, the meter measures the output's frequency bands in memory "
+            + "and stops with playback."
     }
 
     private func toggleRow(
@@ -923,6 +979,7 @@ private struct MediaSettingsPane: View {
 
 private struct ActivitiesSettingsPane: View {
     @Bindable var settings = NotchSettings.shared
+    private var clockTimer: ClockTimerMonitor { .shared }
 
     var body: some View {
         SettingsPane {
@@ -974,6 +1031,10 @@ private struct ActivitiesSettingsPane: View {
                     }
                 }
             }
+            // Access can be granted from here or in System Settings, so the
+            // row arrives on a permission change rather than a click; without
+            // this the divider above it also snapped to its new state.
+            .animation(NotchAnimations.content, value: needsAccessibility)
 
             SettingsCallout(
                 text: "The notch can only draw the volume and brightness levels "
@@ -1004,6 +1065,42 @@ private struct ActivitiesSettingsPane: View {
                     reminderLeadsRow
                 }
 
+                SettingsRow(
+                    systemImage: "timer",
+                    tint: .orange,
+                    title: "Clock Timers",
+                    subtitle: settings.liveActivitiesEnabled
+                        ? "Running and paused timers from Siri or Clock stay visible."
+                        : "Turn on All Live Activities to show Clock timers."
+                ) {
+                    Toggle("", isOn: $settings.clockTimerActivityEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .accessibilityLabel("Show Siri and Clock timers")
+                }
+
+                if settings.clockTimerActivityEnabled, settings.liveActivitiesEnabled {
+                    SettingsRow(
+                        systemImage: clockTimer.access == .ready ? "checkmark.circle.fill" : "info.circle",
+                        tint: clockTimer.access == .ready ? .green : .orange,
+                        title: "Clock Timer Access",
+                        subtitle: clockTimer.access.detail
+                    ) {
+                        VStack(alignment: .trailing, spacing: 6) {
+                            if clockTimer.access == .fullDiskAccessRequired {
+                                Button("Open Full Disk Access") {
+                                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                }
+                                .buttonStyle(.link)
+                            }
+                            Button("Check Again") { clockTimer.reload() }
+                                .disabled(clockTimer.access == .checking)
+                        }
+                    }
+                }
+
                 toggleRow("bolt.fill", .yellow, "Battery and Power Events",
                           $settings.powerEventEnabled)
                 SettingsRow(
@@ -1021,12 +1118,15 @@ private struct ActivitiesSettingsPane: View {
 
                 toggleRow("moon.fill", .purple, "Focus Mode Changes",
                           $settings.focusChangeEnabled)
-                toggleRow("lock.fill", .gray, "Lock and Unlock",
+                toggleRow("lock.fill", .gray, "Screen Lock",
                           $settings.screenLockActivityEnabled)
                 toggleRow("airpodspro", .cyan, "Accessory Battery Levels",
                           $settings.showAccessoryBattery,
                           showsDivider: false)
             }
+            // Calendar events reveal their lead-time chips, which is the one
+            // row in this card that comes and goes.
+            .animation(NotchAnimations.content, value: settings.calendarActivityEnabled)
 
             // The notch's own indicators: each has its own switch rather than
             // being part of the live-activity master, because none of them is a
@@ -1054,7 +1154,8 @@ private struct ActivitiesSettingsPane: View {
                     SettingsRow(
                         systemImage: "number",
                         tint: .pink,
-                        title: "History Size"
+                        title: "Recent History Size",
+                        subtitle: "Pinned copies are kept separately and never removed by this limit."
                     ) {
                         Picker("", selection: $settings.clipboardMaxCapacity) {
                             ForEach([10, 25, 50, 100], id: \.self) {
@@ -1084,6 +1185,8 @@ private struct ActivitiesSettingsPane: View {
                         .toggleStyle(.switch)
                 }
             }
+            // History being on is what puts the capacity row in the card.
+            .animation(NotchAnimations.content, value: settings.clipboardHistoryEnabled)
         }
     }
 
@@ -1136,6 +1239,9 @@ private struct ActivitiesSettingsPane: View {
                     )
                 }
                 .foregroundStyle(isOn ? Color.white : Color.primary)
+                // The chip's only feedback is its fill, so it eases between
+                // selected and not rather than flipping.
+                .animation(NotchAnimations.content, value: isOn)
         }
         .buttonStyle(.plain)
         .help(lead.help)
@@ -1170,6 +1276,8 @@ private struct PrivacySettingsPane: View {
 
     var body: some View {
         Form {
+            accessSummary
+
             Section {
                 ForEach(IntegrationPermissions.Integration.allCases) { integration in
                     PermissionRow(integration: integration)
@@ -1186,11 +1294,6 @@ private struct PrivacySettingsPane: View {
                     + "open.")
             }
 
-            Section {
-                Button("Re-check Now") {
-                    permissions.refresh(probeFolders: true)
-                }
-            }
         }
         .formStyle(.grouped)
         // `probeFolders` only from here. Checking access to the folders the file
@@ -1208,6 +1311,76 @@ private struct PrivacySettingsPane: View {
             // Settings, and a stale row would read as "nothing happened".
             permissions.refresh(probeFolders: true)
         }
+    }
+}
+
+extension PrivacySettingsPane {
+    /// The overall picture, above the per-permission rows.
+    ///
+    /// The rows answer "what is the state of this one"; this answers "is the
+    /// app actually able to do what it says it does" — which is the question
+    /// somebody opens this pane with. It is also the only place the flow can be
+    /// run again, since it deliberately never reappears on its own.
+    private var accessSummary: some View {
+        Section {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(summaryTint)
+                    .frame(width: 7, height: 7)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(summaryTitle)
+                        .fontWeight(.medium)
+                    if let detail = summaryDetail {
+                        Text(detail)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Button("Re-check Now") {
+                    permissions.refresh(probeFolders: true)
+                }
+                .controlSize(.small)
+            }
+
+            Button("Run the welcome again") {
+                AppDelegate.shared?.showOnboarding()
+            }
+            .controlSize(.small)
+        } header: {
+            Text("Access")
+        } footer: {
+            Text("The welcome asks one permission at a time and skips whatever is already on, "
+                + "so running it again is short. It never opens by itself after the first run.")
+        }
+    }
+
+    /// Counts, in the same words the rows below use.
+    private var summaryTitle: String {
+        "\(count(of: .granted)) of \(IntegrationPermissions.Integration.allCases.count) integrations on"
+    }
+
+    /// The rest of the states, and only the ones that exist: a page of zeroes
+    /// reads as a report rather than as an answer.
+    private var summaryDetail: String? {
+        var parts: [String] = []
+        let refused = count(of: .denied)
+        let notAsked = count(of: .notDetermined)
+        let unreadable = count(of: .unknown)
+        if refused > 0 { parts.append("\(refused) refused") }
+        if notAsked > 0 { parts.append("\(notAsked) not asked") }
+        if unreadable > 0 { parts.append("\(unreadable) unreadable right now") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private var summaryTint: Color {
+        count(of: .granted) == IntegrationPermissions.Integration.allCases.count ? .green : .orange
+    }
+
+    private func count(of status: IntegrationPermissions.Status) -> Int {
+        IntegrationPermissions.Integration.allCases.filter {
+            permissions.status(for: $0) == status
+        }.count
     }
 }
 

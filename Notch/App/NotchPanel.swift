@@ -46,6 +46,11 @@ final class NotchPanel: NSPanel {
 
     override var canBecomeMain: Bool { false }
 
+    override func cancelOperation(_ sender: Any?) {
+        guard state?.mode == .expanded else { return }
+        state?.collapse()
+    }
+
     /// Traces every click that reaches the panel, and what hit testing made of
     /// it. The window sees a click before any view does, so a press that logs
     /// nothing here never arrived; a press that logs "no view" was delivered

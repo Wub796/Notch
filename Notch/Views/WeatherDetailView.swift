@@ -32,8 +32,10 @@ struct WeatherDetailView: View {
 
                         if state.showsDailyForecast {
                             dailyStrip(weather)
+                                .transition(.opacity)
                         } else {
                             hourlyStrip(weather)
+                                .transition(.opacity)
                         }
                     }
                 }
@@ -42,6 +44,10 @@ struct WeatherDetailView: View {
                 unavailable
             }
         }
+        // The snapshot lands from the service, so the loading placeholder and
+        // the forecast trade places on their own; without a value-bound
+        // animation the swap was a hard cut in the middle of the page.
+        .animation(NotchAnimations.content, value: state.weather.snapshot == nil)
         .onAppear {
             state.weather.refresh()
         }

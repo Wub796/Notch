@@ -81,9 +81,10 @@ struct HomeDashboardSizing: Equatable {
     let marqueeWidth: CGFloat
     /// Ceiling on the artist line under the title.
     let artistWidth: CGFloat
-    /// Gap between the cover and the title column. Also the column's own cap,
-    /// so the transport row stays centred under the text rather than drifting
-    /// right when the card takes spare width.
+    /// Gap between the cover and the title column. The transport row is
+    /// pinned to that column's leading edge rather than centred under the
+    /// text, so this gap is also the constant distance from the cover's rim
+    /// to the buttons, whatever track is playing.
     let coverGap: CGFloat
 
     /// The cover's side, in both arrangements. Deliberately not stepped down:

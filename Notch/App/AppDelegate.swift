@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Explicit app-lifetime route for views hosted in standalone AppKit windows.
@@ -52,6 +53,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installWakeObservers()
 
         #if DEBUG
+        if CommandLine.arguments.contains("--debug-experience-check") {
+            OnboardingExperienceCheck.run(state: state, reportURL: Self.promptLogURL())
+        }
+        if CommandLine.arguments.contains("--debug-workflow-check") {
+            WorkflowCheck.run(state: state, reportURL: Self.promptLogURL())
+        }
         // Screenshot hooks for development: there is no other way to drive the
         // panel from a script, because opening it needs either a click or the
         // global hotkey and both require Accessibility.
@@ -129,6 +136,194 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Held open so an unrelated click elsewhere cannot close it
                 // before it has been looked at.
                 self.state.isPinned = true
+            }
+        }
+        if CommandLine.arguments.contains("--debug-onboarding-finish-check") {
+            let flagBefore = NotchSettings.shared.hasCompletedOnboarding
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let window = self?.onboardingController?.window else { return }
+                // Exercise the real default button through its keyboard event.
+                guard let event = NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil,
+                    characters: "\r", charactersIgnoringModifiers: "\r",
+                    isARepeat: false, keyCode: 36
+                ) else { return }
+                _ = window.performKeyEquivalent(with: event)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                let report = "onboarding.closed=\(self?.onboardingController == nil)\n"
+                    + "handoff.expanded=\(self?.state.mode == .expanded)\n"
+                    + "handoff.pinned=\(self?.state.isPinned == true)\n"
+                print(report)
+                if let logURL = Self.promptLogURL() {
+                    try? report.write(to: logURL, atomically: true, encoding: .utf8)
+                }
+                self?.onboardingController?.window?.delegate = nil
+                self?.onboardingController = nil
+                NotchSettings.shared.hasCompletedOnboarding = flagBefore
+                NSApp.terminate(nil)
+            }
+        }
+        if CommandLine.arguments.contains("--debug-onboarding-check") {
+            // Prints whether the first-run window actually made it on screen,
+            // and whether the flow's content fits the window it is drawn in.
+            // The seen-it flag is put back as it was found before terminating:
+            // a check run must not use up somebody's first run.
+            // A window that is built and never ordered front is the exact
+            // failure this hook exists to catch; a fitting size taller than the
+            // hosting view is content that would be clipped.
+            let flagBefore = NotchSettings.shared.hasCompletedOnboarding
+            // Which verb each ask wears — Continue, or Grant Access — depends
+            // on answers that settle asynchronously (and folders need listing
+            // before they are known at all), so the probe starts early enough
+            // to be in the report.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                IntegrationPermissions.shared.refresh(probeFolders: true)
+                // Forced, so the check measures the flow even when the seen-it
+                // flag is already set — the flag is put back as it was found
+                // before this run ends.
+                self?.presentOnboardingIfNeeded(force: true)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                var lines = ["onboarding-check"]
+                lines.append("policy=\(NSApp.activationPolicy() == .accessory ? "accessory" : "other")")
+                let onboarding = self?.onboardingController?.window
+                for (index, window) in NSApp.windows.enumerated() {
+                    lines.append(
+                        "window[\(index)] onboarding=\(window === onboarding) "
+                            + "class=\(type(of: window)) frame=\(NSStringFromRect(window.frame)) "
+                            + "visible=\(window.isVisible) level=\(window.level.rawValue)"
+                    )
+                }
+                if let window = self?.onboardingController?.window {
+                    lines.append("window.visible=\(window.isVisible)")
+                    lines.append("window.activeSpace=\(window.isOnActiveSpace)")
+                    lines.append("window.frame=\(NSStringFromRect(window.frame))")
+                    lines.append("window.screen=\(window.screen?.localizedName ?? "none")")
+                    if let hosting = window.contentView {
+                        lines.append("content.frame=\(NSStringFromRect(hosting.frame))")
+                        // Measured on detached probes, width-constrained so the
+                        // text wraps the way it does on screen: a hosting view
+                        // that is somebody's content view cannot be asked any
+                        // more without answering about the window instead.
+                        let measured = self.map {
+                            OnboardingWindowController.measuredContentHeights(state: $0.state)
+                        } ?? []
+                        for entry in measured {
+                            lines.append("content.step[\(entry.step)].natural=\(entry.height)")
+                        }
+                        let extremes = OnboardingWindowController.measuredReadyExtremes()
+                            + OnboardingWindowController.measuredAskExtremes()
+                        for entry in extremes {
+                            lines.append("content.\(entry.label)=\(entry.height)")
+                        }
+                        // The tallest of every screen at this machine's state and
+                        // of the last screen at both of its extremes.
+                        let tallest = max(
+                            measured.map(\.height).max() ?? 0,
+                            extremes.map(\.height).max() ?? 0
+                        )
+                        lines.append("content.tallest=\(tallest)")
+                        lines.append("content.fits=\(tallest <= hosting.frame.height)")
+                    }
+                } else {
+                    lines.append("window=nil")
+                }
+                // Every screen is walked, granted or not: what an answer macOS
+                // already holds changes is the button's verb — Continue rather
+                // than Grant Access — not whether the ask is shown.
+                let granted = IntegrationPermissions.Integration.allCases.filter {
+                    IntegrationPermissions.shared.status(for: $0) == .granted
+                }
+                // Off, and out of chances to be asked: macOS has already
+                // recorded an answer, so no screen can prompt for it.
+                let unaskable = IntegrationPermissions.Integration.allCases.filter {
+                    !granted.contains($0)
+                        && !IntegrationPermissions.shared.canPrompt(for: $0)
+                }
+                // The real geometry the welcome's miniature is meant to be a
+                // picture of, so the two can be compared as numbers.
+                if let state = self?.state {
+                    let notch = state.safeNotchSize
+                    let home = state.expandedSize(for: .home)
+                    let audio = state.expandedSize(for: .audio)
+                    lines.append("geometry.notch=\(notch.width)x\(notch.height)")
+                    lines.append("geometry.home=\(home.width)x\(home.height)")
+                    lines.append("geometry.audio=\(audio.width)x\(audio.height)")
+                    lines.append(
+                        "geometry.cornerOpen=\(NotchSizing.cornerRadiusInsets.opened.top)"
+                            + "/\(NotchSizing.cornerRadiusInsets.opened.bottom)"
+                            + " cornerClosed=\(NotchSizing.cornerRadiusInsets.closed.top)"
+                            + "/\(NotchSizing.cornerRadiusInsets.closed.bottom)"
+                    )
+                    lines.append(
+                        "geometry.sideInsetAudio=\(NotchSizing.contentSideInset(for: .audio))"
+                            + " bottomInsetAudio=\(NotchSizing.contentBottomInset(for: .audio))"
+                            + " sideInsetHome=\(NotchSizing.contentSideInset(for: .home))"
+                    )
+                }
+                if let state = self?.state {
+                    let demo = OnboardingDemoGeometry.current(state: state)
+                    lines.append(
+                        contentsOf: demo.report(drawnAt: OnboardingWindowController.width - 52)
+                    )
+                }
+                lines.append("flow.granted=[\(granted.map(\.rawValue).joined(separator: ","))]")
+                lines.append("flow.unaskable=[\(unaskable.map(\.rawValue).joined(separator: ","))]")
+                lines.append("flow.screens=\(OnboardingStep.all.count)")
+                let report = lines.joined(separator: "\n")
+                print(report)
+                // Same escape hatch the prompt check has: a run launched the way
+                // a person launches the app (`open`) has no stdout to read.
+                if let logURL = Self.promptLogURL() {
+                    try? (report + "\n").write(to: logURL, atomically: true, encoding: .utf8)
+                }
+                // AppKit closes every window on the way out, and a close
+                // completes onboarding — which would mark a first run as used
+                // no matter what the flag is set back to. Detached first.
+                self?.onboardingController?.window?.delegate = nil
+                self?.onboardingController = nil
+                NotchSettings.shared.hasCompletedOnboarding = flagBefore
+                NSApp.terminate(nil)
+            }
+        }
+        if let index = CommandLine.arguments.firstIndex(of: "--debug-render-onboarding"),
+           index + 1 < CommandLine.arguments.count {
+            // Draws the welcome screen's miniature offscreen to a PNG, with its
+            // panel open, so the picture's geometry can be measured on a machine
+            // with no screen-recording permission and nobody at the keyboard.
+            renderOnboardingDemo(to: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+        }
+        if let index = CommandLine.arguments.firstIndex(of: "--debug-permission-prompts"),
+           index + 1 < CommandLine.arguments.count,
+           let integration = IntegrationPermissions.Integration(
+               rawValue: CommandLine.arguments[index + 1]
+           ) {
+            schedulePermissionPromptCheck(integration)
+        }
+        if CommandLine.arguments.contains("--debug-clock-timer-check") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self else { return }
+                let timer = self.state.clockTimer
+                let snapshot = timer.snapshot
+                let report = [
+                    "clock-timer-check",
+                    "access=\(timer.access)",
+                    "detail=\(timer.access.detail)",
+                    "timer.present=\(snapshot != nil)",
+                    "timer.paused=\(snapshot?.isPaused ?? false)",
+                    "timer.remaining=\(snapshot?.remaining ?? 0)",
+                    "activity=\(self.state.collapsedActivity?.kind ?? "idle")",
+                    "closed.height=\(self.state.collapsedSize.height)",
+                    "notch.height=\(self.state.adjustedNotchSize.height)",
+                ].joined(separator: "\n")
+                print(report)
+                if let logURL = Self.promptLogURL() {
+                    try? (report + "\n").write(to: logURL, atomically: true, encoding: .utf8)
+                }
+                NSApp.terminate(nil)
             }
         }
         if CommandLine.arguments.contains("--debug-timer") {
@@ -344,11 +539,242 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func presentOnboardingIfNeeded() {
-        guard !NotchSettings.shared.hasCompletedOnboarding else { return }
-        onboardingController = OnboardingWindowController(state: state) { [weak self] in
+    /// The flow's last move is the product itself.
+    ///
+    /// The window closes and the notch opens — once, held for a beat — so the
+    /// thing the last screens configured is the thing that happens next. The
+    /// hold is released afterwards and the panel goes back to its own rules
+    /// (hover to peek, click to pin): a welcome that leaves a panel stuck open
+    /// is a welcome somebody has to tidy up.
+    private func revealNotchAfterOnboarding() {
+        // A scripted run would otherwise get the panel dropped over whatever it
+        // was looking at.
+        guard !CommandLine.arguments.contains("--debug-onboarding-check") else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self else { return }
+            // Never onto the camera screen: expanding there turns it on.
+            if self.state.tab == .camera { self.state.select(.home) }
+            self.state.select(.home)
+            self.state.isPinned = true
+            let handoffPinRevision = self.state.pinRevision
+            self.state.expand()
+            self.windowController?.showPanel()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.state.showToast("Welcome — pin keeps this open, Escape closes", symbol: "sparkles")
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7) { [weak self] in
+                guard let self, self.state.mode == .expanded,
+                      self.state.pinRevision == handoffPinRevision else { return }
+                self.state.isPinned = false
+                if !self.state.isHovering, self.state.settings.autoCollapseOnMouseExit {
+                    self.state.collapse()
+                }
+            }
+        }
+    }
+
+    /// Menu bar: show the welcome again, deliberately.
+    ///
+    /// Onboarding is a first-run thing, so this is the only way back to it
+    /// without editing defaults — and it closes the loop for anyone who
+    /// dismissed it before reading it.
+    func showOnboarding() {
+        NotchSettings.shared.hasCompletedOnboarding = false
+        presentOnboardingIfNeeded(force: true)
+    }
+
+    /// Renders the welcome screen at the window's real size, twice scale, with
+    /// the demo's panel open — or closed, with `--closed` — then ends the run.
+    @MainActor
+    private func renderOnboardingDemo(to url: URL) {
+        let startsOpen = !CommandLine.arguments.contains("--closed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self else { return }
+            // What this run's picture is made of, printed as well as drawn: the
+            // rendered PNG can then be checked against the numbers rather than
+            // against a second run's idea of them.
+            let geometry = OnboardingDemoGeometry.current(state: self.state)
+            print("render.panelOpen=\(startsOpen)")
+            for line in geometry.report(drawnAt: OnboardingWindowController.width - 52) {
+                print(line)
+            }
+            let renderer = ImageRenderer(
+                content: OnboardingWelcomeView(state: self.state, startsOpen: startsOpen)
+                    .frame(
+                        width: OnboardingWindowController.width,
+                        height: OnboardingWindowController.height
+                    )
+            )
+            renderer.scale = 2
+            defer { NSApp.terminate(nil) }
+            guard let image = renderer.nsImage,
+                  let tiff = image.tiffRepresentation,
+                  let rep = NSBitmapImageRep(data: tiff),
+                  let png = rep.representation(using: .png, properties: [:]),
+                  (try? png.write(to: url)) != nil
+            else {
+                print("render-onboarding: failed")
+                return
+            }
+            print("render-onboarding: wrote \(url.path)")
+        }
+    }
+
+    /// Raises one real consent prompt and reports what macOS did with it.
+    ///
+    /// "The button did nothing" has two causes that look identical from the
+    /// outside: a prompt that is up and still waiting to be answered, and a
+    /// request macOS answered at once because it had nothing to ask. The
+    /// request's completion separates them — while a prompt is on screen the
+    /// completion is withheld — so this prints which of the two happened, for
+    /// one integration at a time.
+    ///
+    /// One integration per process on purpose: two prompts would otherwise sit
+    /// on top of each other, and the process ending while a prompt is up
+    /// dismisses it without recording a decision either way. Both the seen-it
+    /// flag and the "we asked" record are put back as they were found.
+    private func schedulePermissionPromptCheck(_ integration: IntegrationPermissions.Integration) {
+        let permissions = IntegrationPermissions.shared
+        let key = "requested.\(integration.rawValue)"
+        let requestedBefore = UserDefaults.standard.object(forKey: key)
+        let flagBefore = NotchSettings.shared.hasCompletedOnboarding
+
+        // Findings also go to a file when asked for one, because the launch
+        // context changes the answer: a build launched from a terminal is
+        // attributed to that terminal for consent purposes, where the same
+        // build opened the way a person opens it is attributed to itself. The
+        // faithful run (`open -n Notch.app --args …`) has no stdout to read.
+        let logURL = Self.promptLogURL()
+        func record(_ line: String) {
+            print(line)
+            guard let logURL else { return }
+            let previous = (try? String(contentsOf: logURL, encoding: .utf8)) ?? ""
+            try? (previous + line + "\n").write(to: logURL, atomically: true, encoding: .utf8)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            let before = permissions.status(for: integration)
+            record(
+                "prompt-check integration=\(integration.rawValue) "
+                    + "signal=\(Self.promptSignal(for: integration)) before=\(before.rawValue) "
+                    + "canPrompt=\(permissions.canPrompt(for: integration))"
+            )
+
+            guard permissions.canPrompt(for: integration) else {
+                record(
+                    "prompt-check result=skipped reason=already-decided "
+                        + "note=\(permissions.notes[integration] ?? "-")"
+                )
+                Self.endPermissionPromptCheck(requestedBefore, key: key, flag: flagBefore)
+                return
+            }
+
+            var answered = false
+            let started = Date()
+            let window: TimeInterval = 6
+
+            permissions.request(integration) {
+                answered = true
+                record(
+                    "prompt-check answered=yes after="
+                        + String(format: "%.2f", Date().timeIntervalSince(started))
+                        + "s status=\(permissions.status(for: integration).rawValue)"
+                )
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + window) {
+                if !answered {
+                    record(
+                        "prompt-check answered=no within=\(Int(window))s "
+                            + "verdict=\(Self.promptVerdict(for: integration))"
+                    )
+                }
+                record(
+                    "prompt-check after.status=\(permissions.status(for: integration).rawValue) "
+                        + "note=\(permissions.notes[integration] ?? "-")"
+                )
+                Self.endPermissionPromptCheck(requestedBefore, key: key, flag: flagBefore)
+            }
+        }
+    }
+
+    /// Where a check run writes its findings, when `--prompt-log` names a path.
+    /// Removed first, so a stale report cannot be mistaken for a new one.
+    ///
+    /// A run launched from a terminal is attributed to that terminal for
+    /// consent purposes — the same binary then answers questions about
+    /// permissions differently than when it is opened the way a person opens
+    /// it. Reports are therefore written to a file as well, so the faithful run
+    /// (`open -n Notch.app --args …`) can be read back.
+    private static func promptLogURL() -> URL? {
+        guard let index = CommandLine.arguments.firstIndex(of: "--prompt-log"),
+              index + 1 < CommandLine.arguments.count
+        else { return nil }
+        let url = URL(fileURLWithPath: CommandLine.arguments[index + 1])
+        try? FileManager.default.removeItem(at: url)
+        return url
+    }
+
+    /// How much a withheld completion proves, per integration. The camera,
+    /// calendar, notification and Apple Events prompts block until they are
+    /// answered, so an unanswered request means one is on screen; the two that
+    /// are granted out of band and the two that finish on a timer can only ever
+    /// be reported as "no prompt observed".
+    private static func promptSignal(for integration: IntegrationPermissions.Integration) -> String {
+        switch integration {
+        case .camera, .calendar, .notifications, .music: "held-while-prompting"
+        case .accessibility, .screenCapture: "polled-out-of-band"
+        case .filesAndFolders, .location, .bluetooth: "read-or-timer"
+        }
+    }
+
+    private static func promptVerdict(for integration: IntegrationPermissions.Integration) -> String {
+        switch integration {
+        case .camera, .calendar, .notifications, .music: "prompt-on-screen"
+        default: "no-prompt-observed"
+        }
+    }
+
+    private static func endPermissionPromptCheck(_ requestedBefore: Any?, key: String, flag: Bool) {
+        if let requestedBefore {
+            UserDefaults.standard.set(requestedBefore, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        NotchSettings.shared.hasCompletedOnboarding = flag
+        NSApp.terminate(nil)
+    }
+
+    /// Presents the first-run flow.
+    ///
+    /// Shown once per user, and the flag that decides it lives in
+    /// `NotchSettings` — that is, in this account's defaults, not in the app
+    /// bundle. Deleting and reinstalling the app therefore does *not* bring the
+    /// welcome back: "the first time this Mac opens Notch" means exactly that,
+    /// and a second install is not a second first run. The two deliberate ways
+    /// back in are `--show-onboarding` for a build being reviewed, and the menu
+    /// bar's "Show Welcome Again".
+    private func presentOnboardingIfNeeded(force: Bool = false) {
+        let forced = force || CommandLine.arguments.contains("--show-onboarding")
+        guard forced || !NotchSettings.shared.hasCompletedOnboarding else { return }
+
+        // A permission check raises real system prompts, one per run: the flow
+        // window over the top of them would be answering a different question.
+        guard !CommandLine.arguments.contains("--debug-permission-prompts") else { return }
+
+        // Never a second window: asking again brings the open one forward.
+        if let onboardingController {
+            onboardingController.present()
+            return
+        }
+
+        onboardingController = OnboardingWindowController(state: state) { [weak self] ending in
             NotchSettings.shared.hasCompletedOnboarding = true
             self?.onboardingController = nil
+            guard ending == .finished else { return }
+            self?.revealNotchAfterOnboarding()
         }
         onboardingController?.present()
     }
