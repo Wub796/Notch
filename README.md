@@ -1,3 +1,6 @@
+<h1 align="center">
+  <br>
+
 ```text
   ███╗   ██╗ ██████╗ ████████╗ ██████╗██╗  ██╗
   ████╗  ██║██╔═══██╗╚══██╔══╝██╔════╝██║  ██║
@@ -6,6 +9,18 @@
   ██║ ╚████║╚██████╔╝   ██║   ╚██████╗██║  ██║
   ╚═╝  ╚═══╝ ╚═════╝    ╚═╝    ╚═════╝╚═╝  ╚═╝
 ```
+
+  Notch
+  <br>
+</h1>
+
+<p align="center">
+  <a href="https://github.com/Wub796/Notch/releases"><img src="https://img.shields.io/badge/macOS-14.0%2B%20Sonoma%20%7C%20Sequoia-black?style=flat-square&logo=apple&logoColor=white" alt="macOS 14.0+"></a>
+  <img src="https://img.shields.io/badge/Swift-6.0-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6">
+  <img src="https://img.shields.io/badge/Xcode-16%2B-1575F9?style=flat-square&logo=xcode&logoColor=white" alt="Xcode 16">
+  <a href="THIRD-PARTY-NOTICES.md"><img src="https://img.shields.io/badge/License-MIT%20%2F%20Notices-blue?style=flat-square" alt="License"></a>
+  <img src="https://img.shields.io/badge/Arch-Apple%20Silicon%20%7C%20Intel-purple?style=flat-square" alt="Universal Architecture">
+</p>
 
 ```text
  ┌──────────────────────────────────────────────────────────────┐
@@ -27,27 +42,60 @@
  └──────────────────────────────────────────────────────────────┘
 ```
 
-A native macOS menu bar utility that turns the area around your camera notch into an interactive workspace.
+Say hello to **Notch**, a native macOS utility that turns your camera notch into an interactive workspace! Say goodbye to dead screen space: with Notch, the area around your camera transforms into a dynamic music control center, complete with a real-time three-band audio meter and full playback controls.
 
-Hover to peek at media, weather, or live activities; click to pin the panel open; press Escape to put it away. When closed, it stays completely idle—no background audio polling, no periodic timers, and no Dock icon.
+That's just the start: Notch also gives you a per-app audio mixer (with volume boost up to 400%), on-device Face ID unlock, a temporary file shelf with AirDrop support, calendar integration, system HUD replacements, and full multi-monitor support with simulated notch mode!
+
+When closed, Notch stays completely idle—no background audio polling, no periodic timers, and no Dock icon.
 
 ---
 
-## Quick start
+## Installation
 
-### 1. Download and install
-1. Download the latest `Notch.zip` (or `Notch-<version>.zip`) from the [Releases](https://github.com/Wub796/Notch/releases) page.
-2. Unzip the downloaded file to extract **Notch.app**.
+**System Requirements:**
+- macOS **14.0 Sonoma** or later (macOS 14.2+ recommended for per-app audio mixer & real-time spectrum meter)
+- Apple Silicon or Intel Mac
+- Mac with a physical notch, or any Mac / external display using Simulated Notch Mode
+
+---
+
+### Option 1: Download and Install Manually
+
+1. Download the latest **`Notch.zip`** from the [Releases](https://github.com/Wub796/Notch/releases) page.
+2. Unzip the archive to extract **Notch.app**.
 3. Move **Notch.app** into your `/Applications` folder.
-4. Open **Notch** from Applications.
-5. If macOS asks to confirm opening an app downloaded from the Internet, click **Open**.
+4. Launch **Notch** from Applications.
 
-### 2. First launch
-On first launch, a welcome guide introduces the gestures and walks through optional permissions.
-- Every permission is optional: click **Not now** or press **Skip the rest** (`⇧⌘S`) to jump straight to the app.
-- Notch sits in your menu bar and attaches to your display. It works on both MacBooks with a physical notch and non-notch Macs using its simulated notch mode.
+> [!IMPORTANT]
+> If macOS warns that Notch is from an unidentified developer on first launch, you will need to approve it once before the app will open. Use one of the methods below.
 
-### 3. Gestures & shortcuts
+#### Recommended: Terminal (Always Works)
+
+After moving Notch to your Applications folder, run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Notch.app"
+```
+
+Then open the app normally.
+
+#### Alternative: System Settings
+
+1. Try to open the app — you will see a security warning.
+2. Click **OK** to dismiss it.
+3. Open **System Settings** > **Privacy & Security**.
+4. Scroll to the bottom and click **Open Anyway** next to the Notch prompt.
+5. Confirm when prompted.
+
+---
+
+### Option 2: Building from Source
+
+See [Building from Source](#building-from-source) below.
+
+---
+
+## Usage
 
 ```text
        Hover                    Click                      Escape
@@ -57,33 +105,43 @@ On first launch, a welcome guide introduces the gestures and walks through optio
   ╰──────────────╯       ╰──────────────────╯       ╰────────────────╯
 ```
 
-| Action | How to trigger |
-| :--- | :--- |
-| **Peek** | Hover over the notch. Moving the pointer away collapses it. |
-| **Pin Open** | Click the notch (or click the pin icon `[P]` in the header) to keep it open while dragging files or tweaking sliders. |
-| **Dismiss** | Press `Esc` while the panel is focused. |
-| **Drop Shelf** | Drag any file, snippet, or link toward the top-center of your screen to reveal the shelf drop target. |
-| **Quick Look** | Select any item on the shelf and press `Space` to preview it. |
-| **Global Toggle** | Set a custom keyboard shortcut in **Settings → Notch** to toggle the panel from anywhere. |
+- **Hover** over your notch to peek at your music, weather, and timers. Move your cursor away to dismiss it.
+- **Click** the notch to pin the panel open so you can adjust volume sliders, drop files, or inspect calendars. Click the pin icon (`[P]`) in the header to return to hover behavior.
+- **Press `Esc`** while the panel is focused to put it away immediately.
+- **Drag & drop** any file, image, or link to the top-center of your screen to stash it on the shelf.
+- **Press `Space`** on any stashed shelf item to preview it with Quick Look.
+- **Set a global hotkey** in **Settings → Notch** to toggle the workspace from anywhere on your keyboard.
 
 ---
 
-## What's inside
+## 📋 Features
 
-- **Now Playing & Lyrics** — Album artwork, playback controls, progress scrubbers, and live lyrics for Apple Music and Spotify.
-- **Real-time three-band meter** — Measured spectral energy across low, mid, and high frequencies drawn beside the camera cutout on the closed notch.
-- **Per-app audio mixer** — Independent volume levels (up to 400% with soft-knee clipping), output device routing, 10-band EQ, AutoEQ headphone correction, loudness compensation, and DDC/CI external display volume.
-- **Face ID unlock** — Enrolls your face on-device and types your password at the lock screen via Accessibility. Encrypted in Keychain behind Touch ID.
-- **Drop shelf** — A temporary surface for files and text. Drag anything up to the notch; drag out to any app, trigger AirDrop, or inspect with Quick Look.
-- **System telemetry** — Real-time CPU usage, memory pressure, battery health, and network bandwidth.
-- **Calendar & Weather** — Hourly and 5-day weather forecasts; week-at-a-glance agenda with one-click meeting links.
-- **Live activities** — Compact dynamic indicators for volume, brightness, battery, focus states, and macOS Clock/Siri timers.
-- **Camera mirror** — A quick mirror inside the notch to verify your lighting and framing before joining a call.
-- **Simulated notch** — Runs on any display, including notchless MacBooks, Mac mini, Mac Studio, and external monitors.
+- [x] Now Playing playback controls, scrubbers, and live lyrics (Apple Music & Spotify) 🎧
+- [x] Real-time three-band hardware frequency meter (FFT) on the closed notch 📊
+- [x] Per-app audio mixer with volume levels up to 400% (+12 dB boost) 🎛️
+- [x] Soft-knee analog-style clipping above unity to prevent digital distortion 🎚️
+- [x] 10-band parametric equalizer with acoustic presets 🎵
+- [x] AutoEQ headphone correction profile import 🎧
+- [x] Loudness compensation for low-volume listening 🔈
+- [x] DDC/CI external monitor speaker volume control 🖥️
+- [x] Face ID biometric unlock for lock and wake screens (on-device ArcFace ML) 👤
+- [x] Temporary file shelf with AirDrop and Finder integration 📚
+- [x] Quick Look preview on shelf items 🔍
+- [x] System HUD replacements (volume, brightness) 🎚️💡
+- [x] Live hardware telemetry (CPU, RAM, battery health, network bandwidth) 📈
+- [x] Calendar agenda with one-click video conference links 📆
+- [x] Weather station with hourly and 5-day forecasts ⛅️
+- [x] Siri and macOS Clock timer mirroring ⏱️
+- [x] Pre-call camera framing mirror 📷
+- [x] Physical notch & simulated notch mode for external displays 🖥️
+- [x] macOS Shortcuts app & Siri automation actions ⚡
+- [x] Full Reduce Motion compliance and zero idle CPU wakeups 🍃
 
 ---
 
-## Per-app audio mixer
+## Deep-Dive Features
+
+### Per-App Audio Mixer
 
 The mixer uses CoreAudio's process tap API (`AudioHardwareCreateProcessTap`, macOS 14.2+) to intercept audio from individual apps rather than altering system-wide output:
 
@@ -112,7 +170,7 @@ The mixer uses CoreAudio's process tap API (`AudioHardwareCreateProcessTap`, mac
 
 ---
 
-## The closed-notch frequency meter
+### The Closed-Notch Frequency Meter
 
 Beside the camera cutout on the closed notch, a real-time three-band meter visualizes output audio:
 
@@ -134,7 +192,7 @@ Each of the three bars represents measured spectral energy from an in-memory FFT
 
 ---
 
-## Face ID unlock
+### Face ID Unlock
 
 Ported from Jonathan Zhou's [Glance](https://github.com/jonnyoo/glance) (MIT), Face ID lets you unlock your Mac from the notch on wake and lock screens. It is **off by default**.
 
@@ -152,9 +210,9 @@ What you should know before enabling it:
 
 ---
 
-## Display modes
+### Display Modes
 
-Notch adapts seamlessly depending on the display:
+Notch adapts seamlessly depending on your display:
 
 ```text
   Physical Display (MacBook)           External Monitor / Notchless Mac
@@ -170,7 +228,7 @@ Notch adapts seamlessly depending on the display:
 
 ---
 
-## Siri and Clock timers
+### Siri and Clock Timers
 
 Enable **Settings → Activities → All Live Activities → Clock Timers** to mirror active and paused timers from the macOS Clock app or timers started hands-free with Siri.
 - Notch reads timers locally from the system store and never modifies, cancels, or dismisses them.
@@ -179,38 +237,40 @@ Enable **Settings → Activities → All Live Activities → Clock Timers** to m
 
 ---
 
-## Drop shelf
+## Building from Source
 
-The Shelf is a scratchpad for files, images, and text snippets:
-- Drag any file, URL, or image to the notch to drop it onto the shelf.
-- Tap Spacebar to preview any stashed item with Quick Look.
-- Drag items back out to Mail, Slack, Finder, or hit the AirDrop action.
+### Prerequisites
+
+- **macOS 14.0 or later**
+- **Xcode 16.0 or later** with Swift 6 support
+
+### Build Steps
+
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/Wub796/Notch.git
+   cd Notch
+   ```
+
+2. **Open the Project in Xcode**:
+   ```bash
+   open Notch.xcodeproj
+   ```
+
+3. **Build and Run**:
+   - Set your Apple Developer Team under target signing settings.
+   - Select the `Notch` scheme and press `Cmd + R` (Run) or `Cmd + B` (Build).
+
+> [!NOTE]
+> An Apple Developer ID signed and notarized build is required for login-at-launch registration and automated Sparkle updates to function in production.
 
 ---
 
-## Requirements
+## Permissions & Privacy
 
-| Feature | macOS 14.0 – 14.1 | macOS 14.2+ |
-| :--- | :---: | :---: |
-| **Workspace & Shelf** | Supported | Supported |
-| **Media & Lyrics** | Supported | Supported |
-| **Calendar, Weather, Telemetry** | Supported | Supported |
-| **Face ID Unlock** | Supported | Supported |
-| **Per-App Audio Mixer** | Unavailable* | Supported (CoreAudio Tap) |
-| **Real-Time 3-Band Meter** | Idle* | Supported (In-Memory FFT) |
+Notch makes zero network requests (except for WeatherKit weather queries) and collects zero telemetry or analytics. All processing happens on-device.
 
-*\*CoreAudio Process Taps were introduced in macOS 14.2. On macOS 14.0 and 14.1, process-tapping features are disabled while all other modules remain fully active.*
-
-- **Displays**: MacBook Air and MacBook Pro physical notch displays, external monitors, and non-notch Macs via Simulated Notch Mode.
-- **Architecture**: Universal binary (Apple Silicon & Intel).
-
----
-
-## Permissions & privacy
-
-Notch makes zero network requests (except for WeatherKit queries) and collects zero telemetry or analytics. All processing happens on-device.
-
-| Permission | Needed For | Detail |
+| Permission | Needed For | Privacy Guarantee |
 | :--- | :--- | :--- |
 | **Calendar** | Upcoming events & meeting links | Read-only; kept in memory. |
 | **Location** | Weather forecast | Used solely for WeatherKit queries. |
@@ -223,15 +283,15 @@ Manage permissions anytime in **Settings → Privacy** or **System Settings → 
 
 ---
 
-## Uninstalling
+## Clean Uninstallation
 
 1. Quit Notch from the menu bar menu.
 2. Move **Notch.app** from Applications to the Trash.
-3. To delete saved preferences:
+3. *(Optional)* To erase all saved application preferences:
    ```bash
    defaults delete com.notchapp.Notch
    ```
-4. If you used Face ID, remove your stored Keychain credentials and face templates:
+4. *(Optional)* If you used Face ID, remove your stored Keychain credentials and face templates:
    ```bash
    security delete-generic-password -s com.notchapp.Notch.faceID
    rm -f "$HOME/Library/Application Support/Notch/face-identities.enc"
@@ -239,28 +299,21 @@ Manage permissions anytime in **Settings → Privacy** or **System Settings → 
 
 ---
 
-## Building from source
+## 🤝 Contributing
 
-1. Requires macOS 14.0+ and **Xcode 16.0+**.
-2. Clone the repository:
-   ```bash
-   git clone https://github.com/Wub796/Notch.git
-   cd Notch
-   ```
-3. Open `Notch.xcodeproj`.
-4. Set your Apple Developer Team in target signing settings.
-5. Select the `Notch` scheme and press `⌘B` (Build) or `⌘R` (Run).
-
-A Developer ID signed and notarized build is required for login items, keychain access groups, and automated Sparkle updates.
+Contributions, bug reports, and pull requests are welcome! Feel free to open an issue or submit a PR on GitHub.
 
 ---
 
-## Third-party credits
+## 🎉 Acknowledgments
 
-- **[Glance](https://github.com/jonnyoo/glance)** (MIT © Jonathan Zhou) — Face ID pipeline, ArcFace alignment, liveness heuristics, lock-screen monitor, and the Settings window chrome.
+We would like to express our gratitude to the authors and maintainers of the open-source projects that made this possible:
+
+- **[Glance](https://github.com/jonnyoo/glance)** (*MIT © 2026 Jonathan Zhou*) — Face ID detection, ArcFace embedding pipeline, liveness heuristics, lock-screen monitor, and the Settings window chrome.
 - **[InsightFace](https://github.com/deepinsight/insightface)** — Pretrained ArcFace `w600k_mbf` model weights bundled in `ArcFace.mlpackage` (research/non-commercial license).
-- **[FineTune](https://github.com/ronitsingh10/FineTune)** (GPL-3.0 © Ronit Singh) — Design reference for the per-app audio mixer. Notch's mixer is a clean-room implementation written directly against public CoreAudio process tap interfaces, sharing no code or assets with FineTune.
-- **[AutoEQ](https://github.com/jaakkopasanen/AutoEq)** (MIT © Jaakko Pasanen) — Headphone correction curve parser and profile formats.
-- **[Lakr233/SkyLightWindow](https://github.com/Lakr233/SkyLightWindow)** (MIT © Lakr Aream) — Window-server integration for raising panels above the macOS login screen.
+- **[FineTune](https://github.com/ronitsingh10/FineTune)** (*GPL-3.0 © Ronit Singh*) — Design reference for the per-app audio mixer architecture. Notch's mixer is a clean-room implementation written directly against public CoreAudio process tap interfaces, sharing no code or assets with FineTune.
+- **[AutoEQ](https://github.com/jaakkopasanen/AutoEq)** (*MIT © Jaakko Pasanen*) — Headphone correction curve parser and profile formats.
+- **[Lakr233/SkyLightWindow](https://github.com/Lakr233/SkyLightWindow)** (*MIT © Lakr Aream*) — Window-server integration for raising panels above the macOS login screen.
+- **[Sparkle](https://sparkle-project.org/)** — Secure, automated software updates for macOS.
 
-See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for full licensing details.
+For a full list of licenses and attributions, please see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
