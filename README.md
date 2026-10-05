@@ -36,10 +36,11 @@ Hover to peek at media, weather, or live activities; click to pin the panel open
 ## Quick start
 
 ### 1. Download and install
-1. Download `Notch-<version>.dmg` from the [Releases](https://github.com/Wub796/Notch/releases) page.
-2. Open the downloaded `.dmg` and drag **Notch** into your **Applications** folder.
-3. Open **Notch** from Applications.
-4. If macOS asks to confirm opening an app downloaded from the Internet, click **Open**.
+1. Download the latest `Notch.zip` (or `Notch-<version>.zip`) from the [Releases](https://github.com/Wub796/Notch/releases) page.
+2. Unzip the downloaded file to extract **Notch.app**.
+3. Move **Notch.app** into your `/Applications` folder.
+4. Open **Notch** from Applications.
+5. If macOS asks to confirm opening an app downloaded from the Internet, click **Open**.
 
 ### 2. First launch
 On first launch, a welcome guide introduces the gestures and walks through optional permissions.
