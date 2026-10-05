@@ -1,5 +1,3 @@
-# Notch
-
 <div align="center">
 
 ```text
