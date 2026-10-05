@@ -1,8 +1,10 @@
 ```text
-   _  _   ___   _____  ___   _   _ 
-  | \| | / _ \ |_   _|/ __| | |_| |
-  | .` || (_) |  | | | (__  |  _  |
-  |_|\_| \___/   |_|  \___| |_| |_|
+  ███╗   ██╗ ██████╗ ████████╗ ██████╗██╗  ██╗
+  ████╗  ██║██╔═══██╗╚══██╔══╝██╔════╝██║  ██║
+  ██╔██╗ ██║██║   ██║   ██║   ██║     ███████║
+  ██║╚██╗██║██║   ██║   ██║   ██║     ██╔══██║
+  ██║ ╚████║╚██████╔╝   ██║   ╚██████╗██║  ██║
+  ╚═╝  ╚═══╝ ╚═════╝    ╚═╝    ╚═════╝╚═╝  ╚═╝
 ```
 
 ```text
@@ -34,17 +36,17 @@ Hover to peek at media, weather, or live activities; click to pin the panel open
 ## Quick start
 
 ### 1. Download and install
-1. Download the latest `Notch-<version>.dmg` from the [Releases](https://github.com/Wub796/Notch/releases) page.
+1. Download `Notch-<version>.dmg` from the [Releases](https://github.com/Wub796/Notch/releases) page.
 2. Open the downloaded `.dmg` and drag **Notch** into your **Applications** folder.
 3. Open **Notch** from Applications.
 4. If macOS asks to confirm opening an app downloaded from the Internet, click **Open**.
 
 ### 2. First launch
-On first launch, a welcome guide introduces the gestures and lets you grant optional permissions.
+On first launch, a welcome guide introduces the gestures and walks through optional permissions.
 - Every permission is optional: click **Not now** or press **Skip the rest** (`⇧⌘S`) to jump straight to the app.
 - Notch sits in your menu bar and attaches to your display. It works on both MacBooks with a physical notch and non-notch Macs using its simulated notch mode.
 
-### 3. Basic gestures
+### 3. Gestures & shortcuts
 
 ```text
        Hover                    Click                      Escape
@@ -54,18 +56,21 @@ On first launch, a welcome guide introduces the gestures and lets you grant opti
   ╰──────────────╯       ╰──────────────────╯       ╰────────────────╯
 ```
 
-- **Hover** over the notch to peek at your music, weather, and timers. Moving the pointer away closes it.
-- **Click** the notch to pin the panel open so you can adjust volume sliders, drop files, or inspect calendars. Click the pin icon (`[P]`) in the header to return to hover behavior.
-- **Press `Esc`** while the panel is focused to dismiss it immediately.
-- **Drag & drop** any file, image, or link to the top-center of your screen to stash it on the shelf.
-- **Global hotkey**: Set a keyboard shortcut in **Settings → Notch** to toggle the panel from anywhere.
+| Action | How to trigger |
+| :--- | :--- |
+| **Peek** | Hover over the notch. Moving the pointer away collapses it. |
+| **Pin Open** | Click the notch (or click the pin icon `[P]` in the header) to keep it open while dragging files or tweaking sliders. |
+| **Dismiss** | Press `Esc` while the panel is focused. |
+| **Drop Shelf** | Drag any file, snippet, or link toward the top-center of your screen to reveal the shelf drop target. |
+| **Quick Look** | Select any item on the shelf and press `Space` to preview it. |
+| **Global Toggle** | Set a custom keyboard shortcut in **Settings → Notch** to toggle the panel from anywhere. |
 
 ---
 
 ## What's inside
 
 - **Now Playing & Lyrics** — Album artwork, playback controls, progress scrubbers, and live lyrics for Apple Music and Spotify.
-- **Real-time three-band meter** — Measured energy across low, mid, and high frequencies drawn beside the camera cutout on the closed notch.
+- **Real-time three-band meter** — Measured spectral energy across low, mid, and high frequencies drawn beside the camera cutout on the closed notch.
 - **Per-app audio mixer** — Independent volume levels (up to 400% with soft-knee clipping), output device routing, 10-band EQ, AutoEQ headphone correction, loudness compensation, and DDC/CI external display volume.
 - **Face ID unlock** — Enrolls your face on-device and types your password at the lock screen via Accessibility. Encrypted in Keychain behind Touch ID.
 - **Drop shelf** — A temporary surface for files and text. Drag anything up to the notch; drag out to any app, trigger AirDrop, or inspect with Quick Look.
@@ -77,17 +82,6 @@ On first launch, a welcome guide introduces the gestures and lets you grant opti
 
 ---
 
-## How it works
-
-### Gestures & lifecycle
-
-The panel lives behind the menu bar and follows Apple's continuous-corner geometry (`NotchShape`).
-
-- **Zero idle overhead**: Polling stops completely when the notch is closed (`NotchState`). The closed notch relies on push-based system observers, so idle CPU usage is zero.
-- **Fluid motion**: Transitions use critically damped springs (`response: 0.34s`). When macOS "Reduce Motion" is enabled, slide sweeps fall back to simple opacity fades.
-
----
-
 ## Per-app audio mixer
 
 The mixer uses CoreAudio's process tap API (`AudioHardwareCreateProcessTap`, macOS 14.2+) to intercept audio from individual apps rather than altering system-wide output:
@@ -96,6 +90,16 @@ The mixer uses CoreAudio's process tap API (`AudioHardwareCreateProcessTap`, mac
  [Spotify]    -------o----------  75%    [EQ: Harman Target]  [Route: AirPods Max]
  [Safari]     -------------o---- 130%    [Boost +2.5 dB]      [Route: Built-in]
  [Display]    ---------o--------  65%    (DDC/CI hardware control channel)
+```
+
+```text
+     Output Level
+          ▲
+     400% │ . . . . . . . . . . . . ╭─────── Soft-knee ceiling (+12 dB)
+          │                       ╭─╯
+     100% │                 ╭─────╯ (Unity)
+          │           ╭─────╯
+        0 └───────────┴──────────────────► Input Level
 ```
 
 - **Zero footprint until adjusted**: An app's audio stream is never tapped or touched until you move its slider. Resetting a strip detaches the tap and returns the app directly to native CoreAudio handling.
@@ -116,9 +120,10 @@ Beside the camera cutout on the closed notch, a real-time three-band meter visua
                │  •  ♫   ▂ ▃ ▅    94% │
                ╰─────────▲─▲─▲────────╯
                          │ │ │
-                         │ │ └── High (Cymbals, Air)
-                         │ └──── Mid  (Vocals, Instruments)
-                         └────── Low  (Kick, Bass)
+  20 Hz – 250 Hz ────────┘ │ └──────── 4 kHz – 20 kHz
+  (Kick, Sub, Bass)        │           (Cymbals, Air)
+                    250 Hz – 4 kHz
+                    (Vocals, Snare, Keys)
 ```
 
 Each of the three bars represents measured spectral energy from an in-memory FFT of the output mix: low (bass), mid (speech/instruments), and high (cymbals/air).
@@ -146,12 +151,39 @@ What you should know before enabling it:
 
 ---
 
+## Display modes
+
+Notch adapts seamlessly depending on the display:
+
+```text
+  Physical Display (MacBook)           External Monitor / Notchless Mac
+  ──────────────────╮       ╭───────   ────────────────────────────────────────
+                    │   •   │                         ╭───────────────╮
+                    ╰───────╯                         │    •   ♫ 84%  │
+             (Hardware bezel cutout)                  ╰───────────────╯
+                                                    (Floating simulated pill)
+```
+
+- **Physical notch**: Snaps flush to the top bezel, matching Apple's continuous-corner curvature (`NotchShape`).
+- **Simulated notch**: Floats as an unobtrusive status pill at the top of any external monitor or older Mac screen.
+
+---
+
 ## Siri and Clock timers
 
 Enable **Settings → Activities → All Live Activities → Clock Timers** to mirror active and paused timers from the macOS Clock app or timers started hands-free with Siri.
 - Notch reads timers locally from the system store and never modifies, cancels, or dismisses them.
 - On macOS releases that store Clock timers in a protected SQLite database, Notch requires **Full Disk Access** in **System Settings → Privacy & Security**. Full Disk Access is used solely to read this local file; no data leaves your Mac.
 - Notch's built-in timers (in Tools) do not require Full Disk Access.
+
+---
+
+## Drop shelf
+
+The Shelf is a scratchpad for files, images, and text snippets:
+- Drag any file, URL, or image to the notch to drop it onto the shelf.
+- Tap Spacebar to preview any stashed item with Quick Look.
+- Drag items back out to Mail, Slack, Finder, or hit the AirDrop action.
 
 ---
 
