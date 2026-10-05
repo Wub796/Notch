@@ -1,202 +1,338 @@
 # Notch
 
-Notch is a native macOS utility that turns the area around your Mac's notch into a small, interactive workspace. Hover to open temporarily, or click to pin the panel open. Use the pin control to return to hover behavior, or press Escape while the panel has keyboard focus to close it.
+<div align="center">
 
-Notch runs as a menu bar application. It does not add an icon to the Dock, and it keeps the rest of the screen available for normal use.
+```text
+  ███╗   ██╗ ██████╗ ████████╗ ██████╗██╗  ██╗
+  ████╗  ██║██╔═══██╗╚══██╔══╝██╔════╝██║  ██║
+  ██╔██╗ ██║██║   ██║   ██║   ██║     ███████║
+  ██║╚██╗██║██║   ██║   ██║   ██║     ██╔══██║
+  ██║ ╚████║╚██████╔╝   ██║   ╚██████╗██║  ██║
+  ╚═╝  ╚═══╝ ╚═════╝    ╚═╝    ╚═════╝╚═╝  ╚═╝
+```
 
-## What Notch does
+### The fluid, interactive workspace for your Mac's notch.
 
-- Shows currently playing music, artwork, playback controls, progress, and lyrics.
-- Displays weather, the current date, and upcoming calendar events.
-- Provides a temporary file shelf for dropped files and text, with AirDrop and Finder actions.
-- Shows system information such as CPU, memory, battery, and network activity.
-- Offers quick access to audio devices, timers, notes, clipboard history, and other utilities.
-- **Per-app audio mixer** — gives any app its own level (including a boost past 100%), mute, output
-  device, equalizer and headphone correction. See [Per-app audio](#per-app-audio) below.
-- **A three-band meter** beside the artwork on the closed notch: each of the three bars is the measured
-  energy of its own range of frequencies — low, mid and high — taken from the output mix, so a kick fills
-  the first and cymbals the third. It needs macOS 14.2 and audio access; without either the waveform
-  stays idle rather than suggesting that a volume setting is frequency data.
-- **Face ID** — recognizes your face from the notch on lock and wake, and can unlock the Mac by typing
-your password for you. Off by default; see [Face ID](#face-id) below before turning it on.
-- Displays compact live activities for music, volume, battery, meetings, focus changes, and other events.
-- Supports hover, click, scroll, keyboard shortcut, pinning, and configurable animation behavior.
-- Includes a settings window for appearance, behavior, permissions, dashboard widgets, and integrations.
+[![macOS 14.0+](https://img.shields.io/badge/macOS-14.0%2B-black?style=flat-square&logo=apple&logoColor=white)](https://www.apple.com/macos)
+[![Swift 6](https://img.shields.io/badge/Swift-6.0-F05138?style=flat-square&logo=swift&logoColor=white)](https://swift.org)
+[![Xcode 16+](https://img.shields.io/badge/Xcode-16%2B-1575F9?style=flat-square&logo=xcode&logoColor=white)](https://developer.apple.com/xcode)
+[![License](https://img.shields.io/badge/License-MIT%20%2F%20Notices-blue?style=flat-square)](THIRD-PARTY-NOTICES.md)
+[![Architecture](https://img.shields.io/badge/Architecture-Apple%20Silicon%20%7C%20Intel-8A2BE2?style=flat-square)]()
 
-## Requirements
+</div>
 
-- macOS 14.0 or later
-- A Mac with a physical notch, or any Mac running Notch in its simulated notch mode
-- A signed build for login items, notarization, and Sparkle updates to work correctly
+---
 
-## Installation
+```text
++-----------------------------------------------------------------------------------+
+|  Finder  File  Edit  View         ╭───────────────╮        Tue 9:41 AM   (•) 94%  |
+|                                   │  •  ~ :|: 94% │  <-- Hardware Notch Cutout    |
+| ──────────────────────────────────┴─╮           ╭─┴────────────────────────────── |
+|                                     │   HOVER   │                                 |
+|                                     v  or CLICK v                                 |
+|   ╭───────────────────────────────────────────────────────────────────────────╮   |
+|   │ ♫ Starboy - The Weeknd                  [|<]  [ || ]  [>|]       [P]  [X] │   |
+|   │ =========================o============================= 02:14 / 03:50     │   |
+|   │ ───────────────────────────────────────────────────────────────────────── │   |
+|   │  [Audio Mixer]    [Shelf]         [Calendar]      [Telemetry]     [Tools] │   |
+|   │                                                                           │   |
+|   │  Spotify      ====o===== 70%   |  Drop files here to stash, AirDrop,      │   |
+|   │  Safari       ======o=== 90%   |  or share across apps seamlessly.        │   |
+|   │  Podcasts     ==o======= 40%   |                                          │   |
+|   ╰───────────────────────────────────────────────────────────────────────────╯   |
+|                                                                                   |
++-----------------------------------------------------------------------------------+
+```
 
-### Install from a DMG
+**Notch** transforms the dead screen space around your MacBook's camera cutout—or creates a simulated island on any external monitor—into a fluid, spring-animated, interactive workspace.
 
+Hover to peek at what's playing, check the weather, or monitor live activities. Click to pin the workspace open for deep control: mix volume per app up to 400%, stash files into a drag-and-drop shelf, monitor system telemetry, or unlock your Mac with your face.
+
+Built natively in Swift and SwiftUI with custom continuous-corner geometry (`NotchShape`), Notch runs discreetly in your menu bar with **zero Dock clutter** and **zero idle CPU wakeups**.
+
+---
+
+## 🧭 At a Glance
+
+| Module | What It Does |
+| :--- | :--- |
+| **🎛️ Per-App Audio Mixer** | Independent volume sliders (up to 400% boost with soft clipping), output routing, 10-band EQ, AutoEQ profile import, and DDC external monitor speaker control. |
+| **🎵 Now Playing & Spectrum** | Apple Music & Spotify playback, live lyrics, album art, plus a real-time **3-band hardware frequency meter** on the closed notch. |
+| **👤 Face ID Unlock** | Biometric face unlock on lock screen and wake using on-device ML with liveness checks, encrypted behind Touch ID in Keychain. |
+| **📁 Drop Shelf** | Temporary stash for files, images, and text snippets. Drag in from anywhere; drag out, AirDrop, or Quick Look. |
+| **⏱️ Live Activities & Timers** | Dynamic HUD pills for volume, brightness, battery charging, focus modes, plus native sync with macOS Clock & Siri timers. |
+| **📊 Telemetry & System Gauges** | Real-time CPU usage, memory pressure, battery health, and network throughput at a glance. |
+| **📅 Calendar & Weather** | Hourly and 5-day weather forecasts with automatic geolocation; week-at-a-glance agenda with one-click meeting links. |
+| **🧰 Tools & Notes** | Instant scratchpad notes, clipboard history manager, timers, stopwatch, and a pre-call camera framing mirror. |
+| **🖥️ Simulated Notch** | Seamlessly supports MacBooks without a physical notch, Mac mini, Mac Studio, and multi-monitor setups. |
+
+---
+
+## ⚡ Interaction & Gestures
+
+```text
+       Hover                    Click                      Escape
+  ╭──────────────╮       ╭──────────────────╮       ╭────────────────╮
+  │     PEEK     │  ──►  │    PIN OPEN      │  ──►  │    DISMISS     │
+  │ Quick status │       │ Interactive work │       │ Instant close  │
+  ╰──────────────╯       ╰──────────────────╯       ╰────────────────╯
+```
+
+- **Hover over the Notch** — Temporarily peeks open the workspace. Move your cursor away and it smoothly contracts back into the notch bezel.
+- **Click to Pin (📌)** — Pins the workspace open so it stays in place while you tweak sliders, organize files, or inspect calendars. Click the pin icon in the rail or detail headers to return to hover mode.
+- **Press `Esc`** — Instantly dismisses the open panel whenever it has keyboard focus.
+- **Drag & Drop** — Drag any file, URL, or image snippet toward the top center of your display to immediately reveal the Shelf drop zone.
+- **Global Hotkey** — Configure a custom keyboard shortcut in **Settings → Notch** to toggle the panel from anywhere without touching the mouse.
+- **Fluid Spring Physics** — All transitions utilize critically damped springs (`response: 0.34s`) and Apple continuous corners (`NotchShape`). If system **Reduce Motion** is enabled, motion gracefully shifts to subtle opacity fades.
+
+---
+
+## 🎛️ Per-App Audio Mixer
+
+The Audio Mixer rewrites sound on a per-application basis rather than altering the entire system output:
+
+```text
+ [Spotify]    ──────●──────────  80%     [EQ: Harman]   [Route: AirPods Max]
+ [Safari]     ───────────●───── 125%     [Boost +2dB]   [Route: Studio Display]
+ [Discord]    ────●────────────  50%     [Mute]         [Route: Built-in]
+ [Display]    ───────●─────────  75%     (DDC/CI hardware control channel)
+```
+
+- **0% to 400% Volume (+12 dB Boost)**: Push quiet streams or podcasts well past macOS limits. Soft-knee clipping above unity ensures boosted tracks saturate gracefully instead of creating harsh digital distortion.
+- **Per-App Routing & Mute**: Route music to external speakers while keeping Discord or Zoom pinned to your headphones.
+- **10-Band Parametric EQ**: Apply fine-grained equalization per app with built-in curves (Bass Boost, Acoustic, Vocal, Flat, etc.).
+- **AutoEQ Headphone Correction**: Import measured correction profiles for thousands of headphone models from [AutoEQ](https://github.com/jaakkopasanen/AutoEq). Files are stored as standard profiles in `~/Library/Application Support/Notch/AutoEQ` and can be edited or backed up anytime.
+- **Dynamic Loudness Compensation**: Automatically preserves low-end bass response as you lower playback volume according to psychoacoustic curves.
+- **DDC/CI External Monitor Control**: Controls speakers inside external monitors over the display's hardware DDC/CI control channel—driving hardware that macOS itself cannot adjust natively.
+- **Siri & Shortcuts Integration**: Control app volume, mute, EQ profiles, and display volume directly via the macOS Shortcuts app, Siri, or keyboard macros.
+- **Non-Destructive CoreAudio Tap**: Utilizes CoreAudio Process Taps (`AudioHardwareCreateProcessTap`, macOS 14.2+). An app's audio path is **only** tapped when you adjust its slider; resetting the strip instantly detaches the tap and returns native audio handling.
+
+---
+
+## 🎵 Now Playing & 3-Band Spectrum Meter
+
+### Real-Time Hardware Spectrum
+When music is playing, the closed notch features a hardware-style three-band visualizer right beside the camera cutout:
+
+```text
+           ╭────────────────────────────────────────╮
+           │   •   ♫ Starboy    ▂ ▃ ▅    ⚡ 94%     │
+           ╰────────────────────▲─▲─▲───────────────╯
+                                │ │ │
+                                │ │ └── High (Cymbals, Air)
+                                │ └──── Mid  (Vocals, Keys)
+                                └────── Low  (Kick, Bass)
+```
+
+- **True Measured Energy**: Each bar maps to real frequency bands (Low, Mid, High) calculated via in-memory FFT analysis of the live audio mix. A bass kick fills the left bar; hi-hats and cymbals light up the right.
+- **Privacy Guaranteed**: Audio samples are processed strictly in volatile memory for FFT visualization and are **never recorded, cached, or written to disk**. Requires macOS 14.2+ and system Audio Capture permission. When inactive, the visualizer remains cleanly idle.
+
+---
+
+## 👤 Face ID Unlock for Mac
+
+Notch brings seamless biometric face unlock to macOS lock and wake screens, ported from Jonathan Zhou's [Glance](https://github.com/jonnyoo/glance):
+
+```text
+ ┌────────────────────────────────────────────────────────┐
+ │                      MAC LOCK SCREEN                   │
+ │                                                        │
+ │                   ╭──────────────────╮                 │
+ │                   │  (•)  Scanning…  │                 │
+ │                   ╰────────┬─────────╯                 │
+ │                            │                           │
+ │               On-Device ArcFace Embedding              │
+ │                            │                           │
+ │                    Liveness Verification               │
+ │               (Rejects static photos/screens)          │
+ │                            │                           │
+ │             Touch ID Keychain Session Key (256-bit)    │
+ │                            │                           │
+ │           Synthesized Keystroke Authentication         │
+ │                            ▼                           │
+ │                      [ Mac Unlocked ]                  │
+ └────────────────────────────────────────────────────────┘
+```
+
+> [!IMPORTANT]
+> **Face ID is disabled by default.** Please read the security model below before turning it on in Settings.
+
+### Security Model & Honest Disclosures
+- **No TrueDepth Camera**: MacBooks lack infrared dot projectors and structured-light depth sensors. Notch uses on-device computer vision and liveness detection: printed photos and phone screen images are rejected with high confidence, but a high-resolution video of your face may not be reliably rejected. Treat this feature as an **ergonomic convenience**, not a high-assurance biometric barrier.
+- **Synthesized Keystrokes**: Because macOS provides no public API for third-party apps to authorize a login session, Face ID functions by securely typing your stored password into the login window's password field. This requires the **Accessibility** permission.
+- **Hardware-Backed Encryption**: Your password is encrypted with AES-256 using a key stored in the macOS Keychain behind **Touch ID**. Face identities are stored as 512-dimensional vector embeddings—never raw camera images. The session key is held in memory only while authorized, and re-locks automatically after an idle interval you define.
+
+---
+
+## 📁 Drop Shelf
+
+Need to move a screenshot, PDF, or text snippet between spaces, full-screen apps, or windows?
+
+1. **Drag** any item up to the notch.
+2. The notch expands into the **Shelf** drop target.
+3. **Drop** items onto the shelf to stash them.
+4. **Retrieve** later: drag them out into Slack, Mail, Finder, preview them with Spacebar (Quick Look), or trigger native **AirDrop** with one click.
+
+---
+
+## ⏱️ Live Activities & Siri / Clock Timers
+
+Notch hosts compact live activities that inform you without stealing focus:
+- **Audio HUD & Brightness**: Sleek, modern replacements for the oversized legacy system volume and display brightness overlays.
+- **Battery & Power Alerts**: Charging status, time remaining, and low-battery warnings.
+- **Focus & Meeting Alerts**: Upcoming calendar notifications with one-tap Google Meet / Zoom launch buttons.
+- **Siri & macOS Clock Timers**: Turn on **Settings → Activities → All Live Activities → Clock Timers** to mirror active and paused timers created in the native macOS Clock app or started hands-free with Siri.
+
+> [!NOTE]
+> On modern macOS releases that protect Clock's database, timer mirroring requires **Full Disk Access** in System Settings. Notch reads the timer store locally and never modifies, cancels, or transmits your timer data.
+
+---
+
+## 📊 System Telemetry, Weather & Tools
+
+- **Hardware Telemetry**: Keep an eye on system health without opening Activity Monitor: per-core CPU usage, RAM pressure, battery cycles, and active network upload/download bandwidth.
+- **Weather Station**: Real-time conditions, precipitation chances, hourly forecast curve, and 5-day outlook with automatic location lookup.
+- **Calendar & Agenda**: Week-at-a-glance calendar detail view with calendar color-coding and direct video conference links.
+- **Camera Mirror**: A one-click live mirror centered inside the notch to verify your lighting, framing, and hair before jumping into a meeting.
+- **Notes & Clipboard**: Quick scratchpad for temporary notes and a multi-item clipboard history buffer.
+
+---
+
+## 💻 System Requirements & Compatibility
+
+| Feature | macOS 14.0 – 14.1 | macOS 14.2+ (Recommended) |
+| :--- | :---: | :---: |
+| **Expanded Island & Workspace** | ✅ Supported | ✅ Supported |
+| **Media Player & Controls** | ✅ Supported | ✅ Supported |
+| **Drop Shelf & Telemetry** | ✅ Supported | ✅ Supported |
+| **Calendar, Weather, Notes, Tools** | ✅ Supported | ✅ Supported |
+| **Face ID Unlock** | ✅ Supported | ✅ Supported |
+| **Per-App Audio Mixer** | ⚠️ Unavailable* | ✅ Supported (CoreAudio Tap) |
+| **Real-Time 3-Band Spectrum** | ⚠️ Idle* | ✅ Supported (In-Memory FFT) |
+
+*\*CoreAudio Process Taps were introduced in macOS 14.2. On macOS 14.0 and 14.1, Notch cleanly disables process-tapping features while keeping all other modules fully active.*
+
+- **Displays**: Native support for MacBook Air and MacBook Pro physical notch displays, external monitors, and non-notch Macs via **Simulated Notch Mode**.
+- **Architecture**: Universal binary (Apple Silicon M1/M2/M3/M4 & Intel x86_64).
+
+---
+
+## 📦 Installation
+
+### Download DMG
 1. Download the latest `Notch-<version>.dmg` from the [Releases](https://github.com/Wub796/Notch/releases) page.
-2. Open the downloaded DMG.
-3. Drag **Notch** into the **Applications** folder shown in the DMG window.
-4. Eject the DMG.
-5. Open **Notch** from Applications.
+2. Open the downloaded `.dmg`.
+3. Drag **Notch.app** into your **Applications** folder.
+4. Eject the disk image and launch Notch from Applications.
+5. If macOS prompts that the app was downloaded from the Internet, click **Open**.
 
-If macOS asks whether you want to open an app downloaded from the Internet, choose **Open**. Only install DMGs downloaded from a release source you trust.
+### First-Launch Onboarding
+On your first launch, an interactive welcome window introduces you to the notch gestures and walks through optional permissions:
+- Every permission is **optional**: click **Not now** or press **Skip the rest** (`⇧⌘S`) to jump straight to the summary.
+- The onboarding flow respects **Reduce Motion** (replaces slide sweeps with fades) and guards against accidental double-clicks.
 
-### First launch
+---
 
-Notch appears in the menu bar and attaches itself to the display selected in Settings. On the first launch, a welcome window explains the basic gestures and optional permissions.
+## 🛡️ Privacy & Permissions
 
-Notch asks only for permissions needed by the features you use:
+Notch is engineered with a strict **local-first, privacy-by-design** philosophy. No telemetry, no analytics, no external trackers, and zero network calls beyond live weather queries.
 
-- **Calendar** — upcoming events and meeting links.
-- **Location** — accurate weather for your area.
-- **Automation** — reading and controlling Apple Music or Spotify.
-- **Audio capture** — only if your macOS asks for it when the mixer takes over an app's audio, or when
-  the real-time meter reads the output mix to draw its three bars. Samples are measured in memory and
-  never recorded or written anywhere; see [Per-app audio](#per-app-audio).
-- **Accessibility** — optional replacement of the system volume and brightness HUDs, and required by
-  Face ID to type your password at the lock screen.
-- **Input Monitoring** — only if you use the Face ID "on space" trigger. Usually already satisfied by
-  the Accessibility grant, so Notch normally never appears under it.
+Permissions are requested only when you actively enable features that depend on them:
 
-You can grant or manage these permissions later from **Settings → Privacy** or from **System Settings → Privacy & Security**.
+| Permission | Why It's Needed | Privacy Guarantee |
+| :--- | :--- | :--- |
+| **Calendar** | Shows upcoming events and agenda. | Read locally; never transmitted. |
+| **Location** | Fetches local weather conditions and hourly forecasts. | Used solely for WeatherKit / weather queries. |
+| **Automation** | Reads track info and controls Apple Music and Spotify. | AppleScript events restricted to music players. |
+| **Audio Capture** | Powers the Per-App Mixer tap and real-time 3-band FFT spectrum. | Measured in volatile memory; **never** recorded or saved. |
+| **Accessibility** | Enables HUD replacement and lock-screen Face ID password typing. | Required to synthesize login keystrokes. |
+| **Full Disk Access** | *(Optional)* Mirrors native Siri and Clock app timers. | Read-only access to local Clock database; zero data egress. |
 
-To start using Notch, hover over or click the notch. Clicking pins it open so it will not disappear while you read or reach for a control. The pin button is available in both the main rail and detail headers. You can also use the keyboard shortcut configured in **Settings → Notch**.
+Manage or revoke permissions anytime in **Settings → Privacy** or **System Settings → Privacy & Security**.
 
-Onboarding is optional: each permission has **Not now**, and **Skip the rest** (⇧⌘S) takes you straight to the summary. Progress counts screens, not grants. Brief navigation guards prevent a double-click from skipping a question. Reduce Motion replaces decorative travel, ripples, and light sweeps with fades; paused demo meters do not keep sampling.
+---
 
-## Siri and Clock timers
+## ⚙️ Settings & Customization
 
-Enable **Settings → Activities → All Live Activities → Clock Timers** to mirror running
-and paused timers set on this Mac, including timers started with Siri. Notch reads timers
-locally and never changes, pauses, or dismisses Clock's timers; manage them in Clock.
-Timers set on an iPhone or HomePod are not Mac timers and are not mirrored.
+Inspired by [Glance](https://github.com/jonnyoo/glance), Notch features a unified settings window with progressive header blurs, continuous corner cards, and a floating pill tab bar:
 
-On macOS versions that migrate Clock's timers to a protected database, grant **Notch**
-access in **System Settings → Privacy & Security → Full Disk Access**, then quit and
-reopen Notch. Settings → Activities shows the actual connection status and a direct
-link to that pane. Full Disk Access is broad, optional macOS permission: this integration
-uses it only to read Clock's timer store. No timer data leaves your Mac.
+- **Notch**: Toggle physical vs. simulated notch, adjust dimensions, set hover sensitivity, and assign global hotkeys.
+- **Audio & Mixer**: Manage default audio output devices, equalizer curves, AutoEQ imports, and DDC display volume.
+- **Activities**: Toggle live HUD replacements, timer mirroring, and battery notifications.
+- **Face ID**: Configure biometric thresholds, liveness detection strictness, idle re-lock timeouts, and enrolled identities.
+- **Dashboard & Widgets**: Reorder, show, or hide tabs (Shelf, Telemetry, Weather, Calendar, Notes, Tools).
 
-Notifications permission is only for alerts from Notch's own timers; it does not enable
-Siri/Clock timer detection. Notch's timers in Home and Tools work without Full Disk Access.
+---
 
-## Face ID
+## 🔄 Updating Notch
 
-Face ID comes from [Glance](https://github.com/jonnyoo/glance) (MIT) and is **off by default**. When it
-is on, the notch appears by itself at the lock screen, looks for an enrolled face, and — if it finds one
-and the liveness checks agree it is a real person — types your stored password into the login window.
+Notch includes integrated update checking powered by [Sparkle](https://sparkle-project.org/):
+- Notch automatically checks for signed, notarized updates in the background.
+- To check manually:
+  - Click the Notch menu bar item → **Check for Updates…**
+  - Or open **Settings → About → Check for Updates…**
 
-Read this before enabling it:
+---
 
-- **This is not Face ID as an iPhone does it.** MacBook cameras have no depth sensor, so a reflection
-  cannot be measured and a flat image cannot be ruled out by geometry alone. With liveness checking on,
-  a printed photo and a photo on a phone screen are rejected with reasonable confidence; a *video* of
-  you is not reliably rejected.
-- **macOS offers no way for an app to authorize a login.** Face ID logs in the only way a third-party
-  app can: by synthesizing the keystrokes for your password into the lock screen's own field. That is
-  why the feature needs Accessibility.
-- **The password is stored encrypted, not in plaintext.** It is sealed with a 256-bit key that lives in
-  the keychain behind Touch ID, alongside the face templates — which are 512-number embeddings, never
-  images. The key is held in memory only while a Touch ID-authorized session is live, and re-locks
-  after the idle interval you choose.
-
-Treat it as a convenience, not a security upgrade: anyone who has your unlocked Mac and a recording of
-your face is not stopped by it.
-
-## Updating Notch
-
-Notch checks for updates automatically when a signed release is available. To check immediately, use:
-
-- The menu bar item → **Check for Updates…**
-- **Settings → About → Check for Updates…**
-
-When an update is available, Sparkle downloads and verifies the signed release before installing it. Notch then relaunches with the new version. You can continue to use the current version if you postpone the update.
-
-## Uninstalling
+## 🧹 Clean Uninstallation
 
 1. Quit Notch from the menu bar menu.
-2. Open Applications in Finder.
-3. Move **Notch.app** to the Trash.
-4. Empty the Trash if you want to remove the application immediately.
+2. Drag **Notch.app** from Applications to the Trash.
+3. *(Optional)* To erase all saved application preferences, run:
+   ```bash
+   defaults delete com.notchapp.Notch
+   ```
+4. *(Optional)* If you enrolled in Face ID, remove your encrypted credentials and face templates:
+   ```bash
+   security delete-generic-password -s com.notchapp.Notch.faceID
+   rm -f "$HOME/Library/Application Support/Notch/face-identities.enc"
+   ```
 
-Notch stores preferences in your user account. To remove those preferences as well, open Terminal and run:
+---
 
-```bash
-defaults delete com.notchapp.Notch
-```
+## 🛠️ Building from Source
 
-This does not revoke permissions previously granted in System Settings. Remove those separately from **System Settings → Privacy & Security** if desired.
+### Prerequisites
+- macOS 14.0 or later
+- [Xcode 16.0+](https://developer.apple.com/xcode) or later with Swift 6 support
 
-Face ID's stored password and face templates stay in your keychain and Application Support until you
-remove them with **Settings → Face ID → Password → Remove** (hold the button down to confirm), or run:
+### Build Steps
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Wub796/Notch.git
+   cd Notch
+   ```
+2. Open the project in Xcode:
+   ```bash
+   open Notch.xcodeproj
+   ```
+3. In Xcode, navigate to the **Notch** target signing settings and select your Apple Developer team.
+4. Select the **Notch** scheme and press **⌘B** to build or **⌘R** to run.
 
-```bash
-security delete-generic-password -s com.notchapp.Notch.faceID
-rm -f "$HOME/Library/Application Support/Notch/face-identities.enc"
-```
+> [!NOTE]
+> An Apple Developer ID signed and notarized build is required for login items, keychain access groups, and automated Sparkle updates to function in production.
 
-## Per-app audio
+---
 
-The **Mixer** surface on the Audio screen rewrites a single app's audio instead of the whole system's.
-Each app gets its own level from silence to 400% (a +12 dB boost, with soft clipping above unity so a
-boosted track clips gracefully rather than digitally), a mute, an output device, a ten-band equalizer
-with built-in curves, an imported headphone correction, and loudness compensation that keeps the low end
-as you listen more quietly. The speakers inside an external display appear alongside the apps, set over
-the display's own control channel — they are not an audio device macOS lists, so nothing else can reach
-them.
+## 📜 Third-Party Notices & Attribution
 
-How it works, and what that means for you:
+Notch builds upon outstanding open-source projects:
 
-- **An app is only taken over when you change it.** Nothing runs in the background: the app's own audio
-  path is untouched until you move its slider, and resetting it hands the app straight back. This is
-  also why the mixer can be switched off entirely without breaking anything.
-- **It needs macOS 14.2 or later.** The mechanism is CoreAudio's process tap API, which does not exist
-  before 14.2. On 14.0 and 14.1 the feature reports itself as unavailable rather than offering controls
-  that do nothing — those releases also removed CoreAudio's older per-process level property, which is
-  why per-app volume needs a tap at all.
-- **It replaces the app's output rather than adding to it.** The tap takes the app's audio and the mixer
-  plays it back through the chosen device, so what you hear is the mixed signal and never a doubled one.
-- **A newer macOS may ask for audio-capture permission** the first time an app is taken over. If taking
-  an app over fails with a CoreAudio error on a release that asks, allow Notch under
-  **System Settings → Privacy & Security**, then switch the mixer off and on.
-- **Your settings are per app, not per process.** They are keyed by bundle identifier and kept in your
-  preferences, so they survive relaunches, updates and reboots.
+- **[Glance](https://github.com/jonnyoo/glance)** (*MIT © 2026 Jonathan Zhou*):
+  Face ID detection, ArcFace embedding pipeline, liveness heuristics, lock-screen monitor, and the Settings window chrome.
+- **[InsightFace](https://github.com/deepinsight/insightface)**:
+  Pretrained ArcFace `w600k_mbf` weights utilized by the Face ID module (`ArcFace.mlpackage`), distributed under InsightFace's research/non-commercial license.
+- **[FineTune](https://github.com/ronitsingh10/FineTune)** (*GPL-3.0 © Ronit Singh*):
+  Design inspiration for the per-app audio mixer architecture. Notch contains a clean-room implementation written directly against public CoreAudio process tap interfaces, sharing no code or assets.
+- **[AutoEQ](https://github.com/jaakkopasanen/AutoEq)** (*MIT © Jaakko Pasanen*):
+  Headphone compensation curve format and profile dataset definitions.
+- **[Lakr233/SkyLightWindow](https://github.com/Lakr233/SkyLightWindow)** (*MIT © Lakr Aream*):
+  SkyLight window-server integration for displaying panels over the macOS lock screen.
 
-### Headphone corrections
+Full licensing details and disclosures are documented in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
-AutoEQ publishes measured corrections for thousands of headphones as plain text — how a given pair
-deviates from a target curve. Import one under **Settings → System → Headphone Corrections**, then
-choose it for an app in the mixer. Imported profiles are kept as files in
-`~/Library/Application Support/Notch/AutoEQ`, so they can be backed up, edited, or added by hand.
+---
 
-### Shortcuts
-
-Every one of the mixer's operations is available to Shortcuts (and to Siri, and the Action button): set
-an app's volume, mute it, apply an equalizer curve, switch loudness compensation, reset an app, switch
-the mixer off, and set an external display's volume. They act on the running app's mixer, so they are
-visible in the Shortcuts editor without any setup here.
-
-## The settings window
-
-The Settings window is [Glance](https://github.com/jonnyoo/glance)'s as well: one translucent panel with
-the selected page scrolling under a blurred header and a floating pill tab bar along the bottom, and the
-same row cards, option tiles, and sliders throughout. Face ID's page is Glance's six settings pages
-(General, Face, Password, Camera, Recognition, About) folded into one tab, since Notch has a tab per
-feature where Glance has one per Face ID page.
-
-## Building from source
-
-1. Open `Notch.xcodeproj` in Xcode 16 or later.
-2. Select your Apple Developer team under the target's signing settings.
-3. Select the `Notch` scheme and build or run.
-
-A Developer ID signed and notarized build is required for normal distribution, login-at-launch registration, and Sparkle updates.
-
-## Third-party notices
-
-Face ID is a port of [Glance](https://github.com/jonnyoo/glance) (MIT © Jonathan Zhou). The recognition
-model bundled with it originates from InsightFace and carries its own terms, which are not the same as
-the code's. The per-app audio mixer follows the design of
-[FineTune](https://github.com/ronitsingh10/FineTune) (GPL-3.0 © Ronit Singh) but shares no code with it,
-and the headphone-correction format it reads is [AutoEQ](https://github.com/jaakkopasanen/AutoEq)'s
-(MIT). All of this is set out in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+<div align="center">
+<sub>Crafted with precision for macOS. Enjoy your notch.</sub>
+</div>
