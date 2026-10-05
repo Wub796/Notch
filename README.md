@@ -297,6 +297,37 @@ Manage permissions anytime in **Settings → Privacy** or **System Settings → 
 
 ---
 
+## 🌐 Marketing Website & Static Deployment
+
+The Notch marketing website is a fully self-contained, zero-build static site with interactive 3D WebGL scenes, continuous squircle geometry, and procedural Web Audio demonstrations. It deploys to Cloudflare Pages/Workers, Netlify, Vercel, or GitHub Pages.
+
+A pre-configured [`wrangler.jsonc`](wrangler.jsonc) is included in the project root pointing assets directly to `./website`.
+
+### 5-Step Deployment Guides
+
+#### Cloudflare Pages / Workers
+1. In the **Cloudflare Dashboard**, navigate to **Compute (Workers & Pages)** → **Create application** → **Pages** (or **Workers**) → **Connect to Git**.
+2. Select the repository and choose branch `main`.
+3. In **Build settings**, set **Framework preset** to `None` (or leave default if deploying as Worker with Static Assets).
+4. Set **Build command** to empty (`None`) and **Build output directory** to `website` (or leave as is if using Wrangler; `wrangler.jsonc` automatically routes to `./website`).
+5. Click **Save and Deploy**. Caching policies and strict CSP in `_headers` are applied automatically.
+
+#### Netlify
+1. Log into **Netlify** and click **Add new site** → **Import an existing project**.
+2. Authorize your Git provider and select the Notch repository.
+3. Set **Branch to deploy** to `main`.
+4. Leave **Build command** empty and set **Publish directory** to `website` (or `/`).
+5. Click **Deploy Notch**.
+
+#### GitHub Pages
+1. In your GitHub repository, navigate to **Settings** → **Pages**.
+2. Under **Build and deployment** → **Source**, choose **Deploy from a branch**.
+3. Under **Branch**, select `main` and set folder to `/ (root)`.
+4. Click **Save**.
+5. Your site is live at `https://<username>.github.io/<repo>/` (or custom domain).
+
+---
+
 ## 🤝 Contributing
 
 Contributions, bug reports, and pull requests are welcome! Feel free to open an issue or submit a PR on GitHub.

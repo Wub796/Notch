@@ -1,0 +1,906 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notch — Your Mac's Notch, Finally Useful</title>
+<meta name="description" content="A native macOS utility that turns the area around the MacBook notch into a small interactive workspace. Hover to peek, click to pin open, Esc to dismiss.">
+<meta name="theme-color" content="#0e0e11">
+<meta name="color-scheme" content="dark">
+<link rel="canonical" href="https://notch.app/">
+
+<!-- Favicons & Apple Touch Icon (vendored in /assets/) -->
+<link rel="icon" type="image/x-icon" href="./assets/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon.png">
+
+<!-- Open Graph & Social Sharing -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://notch.app/">
+<meta property="og:title" content="Notch — Your Mac's Notch, Finally Useful">
+<meta property="og:description" content="A native macOS utility that turns the area around the MacBook notch into an interactive workspace. Hover to peek, click to pin open, per-app audio mixer, and Face ID.">
+<meta property="og:image" content="./assets/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Notch — Your Mac's Notch, Finally Useful">
+<meta name="twitter:description" content="Turns the MacBook notch into a responsive workspace. Music, file shelf, system gauges, and per-app audio mixer.">
+<meta name="twitter:image" content="./assets/og-image.png">
+
+<!-- SoftwareApplication JSON-LD Schema -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Notch",
+  "operatingSystem": "macOS 14+",
+  "applicationCategory": "UtilitiesApplication",
+  "description": "A native macOS utility that turns the area around the MacBook notch into a small interactive workspace.",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "url": "https://notch.app/",
+  "downloadUrl": "https://github.com/Wub796/Notch/releases",
+  "softwareVersion": "1.0.2"
+}
+</script>
+
+<!-- Stylesheet (Relative Path) -->
+<link rel="stylesheet" href="./css/styles.css">
+
+<!-- Optional Privacy-Friendly Analytics (Uncomment if needed)
+<script defer data-domain="notch.app" src="https://plausible.io/js/script.js"></script>
+-->
+</head>
+
+<body>
+
+<!-- Accessible Screen-Reader Announcement Region -->
+<div id="aria-announcer" role="status" aria-live="polite"></div>
+
+<!-- Initial Notch Expansion Loader -->
+<div id="loader">
+  <div class="loader-pill"></div>
+  <div class="loader-text">Initializing Notch Workspace…</div>
+</div>
+
+<!-- WebGL Background Container & Overlays -->
+<div id="webgl-container"></div>
+<div class="ambient-glow"></div>
+<div class="noise-grain"></div>
+<div id="webgl-fallback">3D accelerated view unavailable. Running in high-performance flat mode.</div>
+
+<!-- Custom Notch Cursor -->
+<div id="custom-cursor"></div>
+
+<!-- Top macOS Simulated Menu Bar -->
+<header class="top-menu-bar" role="banner">
+  <div class="menu-left">
+    <svg class="apple-logo-icon" viewBox="0 0 170 170" aria-label="Apple">
+      <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.69-3.04-7.69-7.85-12-14.44-6-9.22-10.88-19.89-14.62-32.01-3.74-12.11-5.61-23.75-5.61-34.91 0-14.54 3.63-26.75 10.89-36.63 7.26-9.87 16.5-14.93 27.72-15.17 4.13 0 9.07 1.15 14.81 3.45 5.74 2.3 9.4 3.51 10.99 3.62 1.95-.22 5.86-1.54 11.72-3.95 5.86-2.41 10.93-3.48 15.2-3.21 11.52.88 20.89 5.37 28.11 13.48-10.02 6.09-14.9 14.64-14.65 25.64.25 9.14 3.84 16.73 10.77 22.77 6.93 6.04 15.22 9.5 24.87 10.38-2.61 7.62-6.09 15.54-10.44 23.77zm-32.41-118.9c0 6.64-2.48 12.87-7.44 18.68-5.74 6.74-12.81 10.73-21.21 11.97-.22-1.3-.33-2.6-.33-3.9 0-6.86 2.65-13.44 7.95-19.74 2.65-3.15 5.92-5.77 9.81-7.85 3.89-2.09 7.63-3.24 11.22-3.46 0 1.43 0 2.87 0 4.3z"/>
+    </svg>
+    <span class="menu-app-name">Notch</span>
+    <a href="#sec-deadspace" class="menu-item">Workspace</a>
+    <a href="#sec-music" class="menu-item">Music</a>
+    <a href="#sec-mixer" class="menu-item">Mixer</a>
+    <a href="#sec-privacy" class="menu-item">Privacy</a>
+  </div>
+
+  <div class="menu-right">
+    <div class="status-icon">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+    </div>
+    <div class="status-icon">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+    </div>
+    <div class="status-icon" id="clock-display">Sun 7:00 PM</div>
+  </div>
+</header>
+
+<!-- Interactive Hero Notch Component -->
+<div class="notch-center-anchor" id="notch-anchor">
+  <div class="notch-breathing-ring" id="notch-halo"></div>
+
+  <div class="notch-container" id="notch" role="button" tabindex="0" aria-label="Interactive macOS Notch workspace" aria-expanded="false">
+    <svg class="notch-svg" id="notch-svg" viewBox="0 0 156 32">
+      <path id="notch-path" d=""></path>
+    </svg>
+
+    <div class="notch-content">
+      <!-- Closed Pill View -->
+      <div class="notch-closed-view" id="closed-view">
+        <div class="notch-pill-thumb"></div>
+        <div class="notch-pill-camera"></div>
+        <div class="notch-pill-meter" id="closed-meter">
+          <div class="bar" style="height: 4px;"></div>
+          <div class="bar" style="height: 8px;"></div>
+          <div class="bar" style="height: 6px;"></div>
+        </div>
+      </div>
+
+      <!-- Open 3:1 Panel View -->
+      <div class="notch-open-view" id="open-view">
+        <div class="open-top-row">
+          <div class="open-album-art">
+            <canvas id="open-art-canvas" width="58" height="58"></canvas>
+          </div>
+          <div class="open-track-meta">
+            <div class="open-track-title" id="notch-track-title">Midnight Silicon</div>
+            <div class="open-track-artist" id="notch-track-artist">Aura Core • Spatial Audio</div>
+            <span class="open-track-badge">Lossless 24-bit</span>
+          </div>
+          <button class="open-pin-btn" id="pin-toggle-btn" aria-label="Pin notch open" title="Click to pin open">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
+          </button>
+        </div>
+
+        <div class="open-scrubber-row">
+          <span id="elapsed-time">1:42</span>
+          <div class="open-scrubber-bar" id="hero-scrubber">
+            <div class="open-scrubber-progress" id="hero-scrubber-progress"></div>
+          </div>
+          <span id="remaining-time">-2:18</span>
+        </div>
+
+        <div class="open-controls-row">
+          <div class="playback-buttons">
+            <button class="ctrl-btn" id="btn-shuffle" aria-label="Shuffle">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+            </button>
+            <button class="ctrl-btn" id="btn-prev" aria-label="Previous track">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2"></line></svg>
+            </button>
+            <button class="ctrl-btn play-pause-btn" id="btn-play" aria-label="Play or pause audio">
+              <svg id="play-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            </button>
+            <button class="ctrl-btn" id="btn-next" aria-label="Next track">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2"></line></svg>
+            </button>
+          </div>
+          <div class="extra-buttons">
+            <button class="ctrl-btn" id="btn-heart" aria-label="Favorite">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+            </button>
+            <button class="ctrl-btn" id="btn-lyrics-quick" aria-label="Lyrics">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notch-hint-pill" id="notch-hint">Hover to peek • Click to pin • Esc to close</div>
+</div>
+
+<!-- Continuous Scroll Storyflow -->
+<main class="story-wrapper">
+
+  <!-- Section 0: Hero -->
+  <section class="story-section" id="sec-hero">
+    <div class="section-content">
+      <div class="section-tag"><span class="dot"></span> Native macOS Utility</div>
+      <h1 class="headline-hero">Your notch,<br>finally useful.</h1>
+      <p class="lead-hero">Notch transforms the hardware cutout into an elegant, interactive workspace. Glance at live music, drop files on the fly, adjust per-app audio, and pin widgets open when you need them.</p>
+
+      <div class="hero-cta-group">
+        <a href="https://github.com/Wub796/Notch/releases" target="_blank" rel="noopener noreferrer" class="btn-primary" id="hero-download-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          Download for Mac
+        </a>
+        <a href="#sec-deadspace" class="btn-secondary">
+          See what it does
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </a>
+      </div>
+
+      <div class="hero-subnote">Requires macOS 14+ • Works on any Mac (simulated notch mode for external screens)</div>
+    </div>
+  </section>
+
+  <!-- Section 1: Dead space -->
+  <section class="story-section" id="sec-deadspace">
+    <div class="section-content">
+      <div class="section-tag"><span class="dot amber"></span> 01 • Reclaim The Void</div>
+      <h2 class="headline-section">Dead space no longer wasted.</h2>
+      <p class="lead-section">On standard MacBooks, the pixels directly surrounding the notch do nothing. Notch bridges the empty black bezel into a responsive surface ready at the touch of your cursor.</p>
+
+      <div class="dead-space-demo">
+        <div class="mac-bezel-sim">
+          <div class="bezel-top-edge">
+            <span>Apple Menu</span>
+            <div class="hardware-notch-mock">
+              <span style="font-size:10px; color:rgba(255,255,255,0.4);">Hardware Sensor Bar</span>
+            </div>
+            <span>Control Center</span>
+          </div>
+          <div class="wasted-strip" id="wasted-strip">
+            <span>◄ 214 pt dead zone ►</span>
+            <span>◄ 214 pt dead zone ►</span>
+          </div>
+        </div>
+        <div class="dead-controls-bar">
+          <button class="btn-secondary" id="toggle-highlight-pixels">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+            Highlight Wasted Pixels
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 2: Now Playing -->
+  <section class="story-section" id="sec-music">
+    <div class="section-content">
+      <div class="section-tag"><span class="dot"></span> 02 • High Fidelity Audio</div>
+      <h2 class="headline-section">Now Playing, sculpted in 3D.</h2>
+      <p class="lead-section">Live metadata extracted straight from Apple Music and Spotify. Procedural color gradients illuminate the panel while a real 3-band meter visualizes frequency energy.</p>
+
+      <div class="music-stage-card">
+        <div class="music-player-full">
+          <div class="music-song-preview">
+            <canvas class="big-art-canvas" id="stage-art-canvas" width="84" height="84"></canvas>
+            <div class="song-info-block">
+              <h3 id="stage-song-title">Midnight Silicon</h3>
+              <p id="stage-song-artist">Aura Core</p>
+              <div class="song-palette-dots">
+                <span class="palette-chip" style="background:#30D158;" title="Neon Green"></span>
+                <span class="palette-chip" style="background:#0A84FF;" title="Electric Blue"></span>
+                <span class="palette-chip" style="background:#BF5AF2;" title="Neon Purple"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="full-meter-row">
+            <span style="font-size:11px; color:var(--ink-2);">Measured Energy</span>
+            <div class="three-band-meters">
+              <div class="band-column">
+                <div class="band-bar-wrap"><div class="band-bar-fill" id="meter-low"></div></div>
+                <span class="band-label">Low</span>
+              </div>
+              <div class="band-column">
+                <div class="band-bar-wrap"><div class="band-bar-fill" id="meter-mid"></div></div>
+                <span class="band-label">Mid</span>
+              </div>
+              <div class="band-column">
+                <div class="band-bar-wrap"><div class="band-bar-fill" id="meter-high"></div></div>
+                <span class="band-label">High</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="lyrics-3d-scroll" id="lyrics-container">
+          <div class="lyrics-track" id="lyrics-track">
+            <div class="lyric-line">Underneath the display glass</div>
+            <div class="lyric-line active">Pulses through the silicon dark</div>
+            <div class="lyric-line near">Frequency aligned in real time</div>
+            <div class="lyric-line">Glancing past the hardware mark</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 3: Dashboard -->
+  <section class="story-section" id="sec-dashboard">
+    <div class="section-content">
+      <div class="section-tag"><span class="dot blue"></span> 03 • Ambient Intelligence</div>
+      <h2 class="headline-section">Dashboard cards in floating glass.</h2>
+      <p class="lead-section">Check conditions, upcoming meetings, and local dates without opening heavy full-screen utilities. Everything tucks neatly around the notch perimeter.</p>
+
+      <div class="dashboard-grid">
+        <div class="widget-card">
+          <div class="widget-header">
+            <span class="widget-title">Weather</span>
+            <span style="color:var(--amber);">☀️</span>
+          </div>
+          <div class="weather-temp" id="weather-temp-val">72°</div>
+          <p style="font-size:12px; color:var(--ink-2);" id="weather-cond-val">Sunny • Cupertino</p>
+          <button class="weather-city-btn" id="cycle-weather-btn">Switch City</button>
+        </div>
+
+        <div class="widget-card">
+          <div class="widget-header">
+            <span class="widget-title">Calendar</span>
+            <span style="color:var(--blue);">📅</span>
+          </div>
+          <div class="calendar-event-item">
+            <div class="cal-stripe"></div>
+            <div class="cal-details">
+              <h4>Design Systems Sync</h4>
+              <p>In 24 mins • Zoom</p>
+            </div>
+          </div>
+          <div class="calendar-event-item">
+            <div class="cal-stripe" style="background:var(--purple);"></div>
+            <div class="cal-details">
+              <h4>macOS Build 14.4 Deploy</h4>
+              <p>4:00 PM • Xcode Server</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="widget-card">
+          <div class="widget-header">
+            <span class="widget-title">Date & Week</span>
+            <span style="color:var(--green);">🗓</span>
+          </div>
+          <div style="font-size:24px; font-weight:700; color:#fff;" id="dash-date-day">October 4</div>
+          <p style="font-size:12px; color:var(--ink-3); margin-top:4px;">Week 40 • 272 Days Elapsed</p>
+          <div style="margin-top:14px; height:4px; background:rgba(255,255,255,0.08); border-radius:999px; overflow:hidden;">
+            <div style="width:75%; height:100%; background:var(--green);"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 4: The Shelf -->
+  <section class="story-section" id="sec-shelf">
+    <div class="section-content">
+      <div class="section-tag"><span class="dot"></span> 04 • Quick Drag & AirDrop</div>
+      <h2 class="headline-section">The Shelf: drag to the notch.</h2>
+      <p class="lead-section">Drag files, screenshots, or text snippets straight toward the top center. The notch opens a magnetic pocket ready for immediate AirDrop or Finder filing.</p>
+
+      <div class="shelf-interactive-box">
+        <div class="drop-target-notch" id="shelf-dropzone">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10"></path><path d="m17 7-5 5-5-5"></path><rect x="3" y="14" width="18" height="8" rx="2"></rect></svg>
+          <span id="shelf-drop-msg">Drop items here into Notch</span>
+        </div>
+
+        <div class="shelf-drag-items-pool">
+          <div class="draggable-file-chip" draggable="true" id="file-chip-1">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            Quarterly_Report.pdf
+          </div>
+          <div class="draggable-file-chip" draggable="true" id="file-chip-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            Retina_Screenshot.png
+          </div>
+        </div>
+
+        <div class="shelf-actions-reveal" id="shelf-actions">
+          <span class="shelf-action-chip" id="action-airdrop">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="m8 12 4-4 4 4"></path><path d="M12 8v8"></path></svg>
+            AirDrop to iPhone
+          </span>
+          <span class="shelf-action-chip" id="action-finder">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+            Reveal in Finder
+          </span>
+          <span class="shelf-action-chip" id="action-copy">Copy to Clipboard</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 5: System Gauges -->
+  <section class="story-section" id="sec-system">
+    <div class="section-content">
+      <div class="section-tag"><span class="dot green"></span> 05 • Telemetry</div>
+      <h2 class="headline-section">System at a single glance.</h2>
+      <p class="lead-section">Hardware metrics measured lightweight in memory. Monitor chip thermals, RAM allocation, battery charge rates, and live bandwidth without cluttering your menu bar.</p>
+
+      <div class="gauges-container">
+        <div class="gauge-card">
+          <div class="gauge-svg-wrap">
+            <svg viewBox="0 0 100 100">
+              <circle class="gauge-bg-circle" cx="50" cy="50" r="35"></circle>
+              <circle class="gauge-val-circle" id="circle-cpu" cx="50" cy="50" r="35" style="stroke-dashoffset: 140;"></circle>
+            </svg>
+            <div class="gauge-center-text" id="txt-cpu">38%</div>
+          </div>
+          <span class="gauge-name">M3 Max CPU</span>
+          <span class="gauge-subtext">12 Performance • 4 Efficiency</span>
+        </div>
+
+        <div class="gauge-card">
+          <div class="gauge-svg-wrap">
+            <svg viewBox="0 0 100 100">
+              <circle class="gauge-bg-circle" cx="50" cy="50" r="35"></circle>
+              <circle class="gauge-val-circle mem" id="circle-mem" cx="50" cy="50" r="35" style="stroke-dashoffset: 110;"></circle>
+            </svg>
+            <div class="gauge-center-text" id="txt-mem">11.4G</div>
+          </div>
+          <span class="gauge-name">Memory</span>
+          <span class="gauge-subtext">36 GB Unified RAM</span>
+        </div>
+
+        <div class="gauge-card">
+          <div class="gauge-svg-wrap">
+            <svg viewBox="0 0 100 100">
+              <circle class="gauge-bg-circle" cx="50" cy="50" r="35"></circle>
+              <circle class="gauge-val-circle bat" id="circle-bat" cx="50" cy="50" r="35" style="stroke-dashoffset: 45;"></circle>
+            </svg>
+            <div class="gauge-center-text" id="txt-bat">84%</div>
+          </div>
+          <span class="gauge-name">Battery</span>
+          <span class="gauge-subtext">⚡ 96W MagSafe Fast Charge</span>
+        </div>
+
+        <div class="gauge-card">
+          <div class="gauge-svg-wrap">
+            <svg viewBox="0 0 100 100">
+              <circle class="gauge-bg-circle" cx="50" cy="50" r="35"></circle>
+              <circle class="gauge-val-circle net" id="circle-net" cx="50" cy="50" r="35" style="stroke-dashoffset: 160;"></circle>
+            </svg>
+            <div class="gauge-center-text" id="txt-net">1.2M</div>
+          </div>
+          <span class="gauge-name">Network</span>
+          <span class="gauge-subtext">Wi-Fi 6E (6 GHz)</span>
+        </div>
+      </div>
+
+      <button class="btn-secondary gauge-trigger-btn" id="simulate-load-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+        Simulate Heavy Compile Spike
+      </button>
+    </div>
+  </section>
+
+  <!-- Section 6: Live Activities -->
+  <section class="story-section" id="sec-activities">
+    <div class="section-content">
+      <div class="section-tag"><span class="dot purple"></span> 06 • Compact Pill Morphing</div>
+      <h2 class="headline-section">Live activities that fold away.</h2>
+      <p class="lead-section">When background tasks complete or timers countdown, the notch morphs to communicate without stealing focus. Clock & Siri timers mirrored locally with zero network calls.</p>
+
+      <div class="live-activities-demo">
+        <div class="pill-morph-stage" id="morph-pill-box">
+          <div class="pill-mode-view active" id="act-music-view">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div style="width:14px; height:14px; border-radius:3px; background:var(--green);"></div>
+              <span style="font-size:12px; font-weight:600;">Midnight Silicon</span>
+            </div>
+            <div style="font-size:11px; color:var(--green);">Playing</div>
+          </div>
+
+          <div class="pill-mode-view" id="act-vol-view">
+            <div style="font-size:12px; color:var(--ink);">Volume 64%</div>
+            <div style="display:flex; gap:3px;">
+              <div style="width:5px; height:10px; background:var(--ink); border-radius:1px;"></div>
+              <div style="width:5px; height:10px; background:var(--ink); border-radius:1px;"></div>
+              <div style="width:5px; height:10px; background:var(--ink); border-radius:1px;"></div>
+              <div style="width:5px; height:10px; background:rgba(255,255,255,0.2); border-radius:1px;"></div>
+            </div>
+          </div>
+
+          <div class="pill-mode-view" id="act-charge-view">
+            <div style="font-size:12px; color:var(--green); font-weight:600;">⚡ 84% Charged</div>
+            <div style="font-size:11px; color:var(--ink-3);">MagSafe Active</div>
+          </div>
+
+          <div class="pill-mode-view" id="act-meet-view">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="width:8px; height:8px; border-radius:50%; background:var(--red);"></span>
+              <span style="font-size:12px; font-weight:600;">Design Sync</span>
+            </div>
+            <div style="font-size:11px; color:var(--ink-3);">08:14</div>
+          </div>
+
+          <div class="pill-mode-view" id="act-timer-view">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:12px;">⏱ Siri Timer</span>
+            </div>
+            <div style="font-size:12px; font-weight:700; color:var(--amber);">03:45</div>
+          </div>
+        </div>
+
+        <div class="activity-tab-chips">
+          <button class="act-chip active" data-mode="music">Music</button>
+          <button class="act-chip" data-mode="vol">Volume HUD</button>
+          <button class="act-chip" data-mode="charge">Charging Fill</button>
+          <button class="act-chip" data-mode="meet">Meeting</button>
+          <button class="act-chip" data-mode="timer">Siri Timer</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 7: Orbiting Tools Ring -->
+  <section class="story-section" id="sec-tools">
+    <div class="section-content">
+      <div class="section-tag"><span class="dot blue"></span> 07 • Utilities Hub</div>
+      <h2 class="headline-section">Six native tools in orbit.</h2>
+      <p class="lead-section">Fast access to audio routing, pomodoro timers, clipboard history, quick scratchpad notes, shortcuts, and 20-20-20 eye strain breaks.</p>
+
+      <div class="tools-orbit-container" id="tools-orbit-wrap">
+        <div class="orbit-center-hub">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <span>Tools</span>
+        </div>
+
+        <div class="orbiting-node" style="top:15px; left:50%; transform:translateX(-50%);" data-tool="Audio Devices" title="Audio Output Switcher">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>
+        </div>
+        <div class="orbiting-node" style="top:85px; right:110px;" data-tool="Timers" title="Pomodoro & Siri Mirror">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        </div>
+        <div class="orbiting-node" style="bottom:75px; right:110px;" data-tool="Quick Notes" title="Floating Scratchpad">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+        </div>
+        <div class="orbiting-node" style="bottom:15px; left:50%; transform:translateX(-50%);" data-tool="Clipboard History" title="Clipboard Stacks">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+        </div>
+        <div class="orbiting-node" style="bottom:75px; left:110px;" data-tool="Shortcuts" title="macOS Shortcuts Action">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        </div>
+        <div class="orbiting-node" style="top:85px; left:110px;" data-tool="20-20-20 Eye Break" title="Rest Reminders">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        </div>
+
+        <div class="tool-preview-modal" id="tool-hint-box">Click any utility to preview its workspace</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 8: Per-App Audio Mixer -->
+  <section class="story-section" id="sec-mixer">
+    <div class="section-content">
+      <div class="section-tag"><span class="dot amber"></span> 08 • Hardware Process Tap</div>
+      <h2 class="headline-section">Per-app audio mixer & +12 dB boost.</h2>
+      <p class="lead-section">Built on CoreAudio process taps (macOS 14.2+). Give any individual app its own level up to 400%, soft-clipping protection, 10-band parametric EQ, and AutoEQ headphone correction.</p>
+
+      <div class="mixer-rack">
+        <div class="mixer-header-row">
+          <div>
+            <h3 style="font-size:16px; font-weight:600; color:#fff;">Live Process Audio Rack</h3>
+            <p style="font-size:12px; color:var(--ink-3);">Try dragging faders past 100% into the amber boost zone.</p>
+          </div>
+          <button class="audio-play-toggle-btn" id="audio-demo-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <span id="audio-btn-txt">Play Synthesized Test Loop</span>
+          </button>
+        </div>
+
+        <div class="mixer-channels-deck">
+          <div class="mixer-channel-strip" data-app="spotify">
+            <div class="channel-app-badge">
+              <span class="app-glyph spot">S</span>
+              Spotify
+            </div>
+            <div class="fader-track-container" id="fader-track-spotify">
+              <div class="fader-slot">
+                <div class="boost-zone-highlight"></div>
+                <div class="fader-fill" id="fill-spotify" style="height: 60%;"></div>
+                <div class="fader-thumb" id="thumb-spotify" style="bottom: 60%;"></div>
+              </div>
+              <div class="fader-scale-ruler">
+                <span>+12dB</span>
+                <span>100%</span>
+                <span>0dB</span>
+                <span>-∞</span>
+              </div>
+            </div>
+            <div class="gain-readout" id="gain-spotify">120% (+1.6 dB)</div>
+            <button class="mute-btn" id="mute-spotify">Mute</button>
+          </div>
+
+          <div class="mixer-channel-strip" data-app="safari">
+            <div class="channel-app-badge">
+              <span class="app-glyph safari">🧭</span>
+              Safari
+            </div>
+            <div class="fader-track-container" id="fader-track-safari">
+              <div class="fader-slot">
+                <div class="boost-zone-highlight"></div>
+                <div class="fader-fill" id="fill-safari" style="height: 48%;"></div>
+                <div class="fader-thumb" id="thumb-safari" style="bottom: 48%;"></div>
+              </div>
+              <div class="fader-scale-ruler">
+                <span>+12dB</span>
+                <span>100%</span>
+                <span>0dB</span>
+                <span>-∞</span>
+              </div>
+            </div>
+            <div class="gain-readout" id="gain-safari">95% (-0.4 dB)</div>
+            <button class="mute-btn" id="mute-safari">Mute</button>
+          </div>
+
+          <div class="mixer-channel-strip" data-app="zoom">
+            <div class="channel-app-badge">
+              <span class="app-glyph zoom">📹</span>
+              Zoom
+            </div>
+            <div class="fader-track-container" id="fader-track-zoom">
+              <div class="fader-slot">
+                <div class="boost-zone-highlight"></div>
+                <div class="fader-fill" id="fill-zoom" style="height: 82%;"></div>
+                <div class="fader-thumb" id="thumb-zoom" style="bottom: 82%;"></div>
+              </div>
+              <div class="fader-scale-ruler">
+                <span>+12dB</span>
+                <span>100%</span>
+                <span>0dB</span>
+                <span>-∞</span>
+              </div>
+            </div>
+            <div class="gain-readout boost" id="gain-zoom">240% (+7.6 dB)</div>
+            <button class="mute-btn" id="mute-zoom">Mute</button>
+          </div>
+        </div>
+
+        <div class="eq-interactive-strip">
+          <div class="eq-meta-header">
+            <span style="font-size:12px; font-weight:600; color:var(--ink);">10-Band Output Equalizer (Drag Points)</span>
+            <div class="autoeq-chip-bar">
+              <span>AutoEQ Correction:</span>
+              <select class="autoeq-selector" id="autoeq-profile">
+                <option value="flat">Direct Pass-Through</option>
+                <option value="hd600">Sennheiser HD 600</option>
+                <option value="airpods">AirPods Max (Spatial Target)</option>
+                <option value="wh1000">Sony WH-1000XM5</option>
+              </select>
+            </div>
+          </div>
+          <canvas class="eq-curve-canvas" id="eq-canvas" width="820" height="90"></canvas>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 9: Face ID on the Lock Screen -->
+  <section class="story-section" id="sec-faceid">
+    <div class="section-content">
+      <div class="section-tag"><span class="dot green"></span> 09 • Glance Biometrics</div>
+      <h2 class="headline-section">Face ID on the lock screen.</h2>
+      <p class="lead-section">Recognizes your enrolled face on screen wake and enters your password automatically. Framed with complete honesty.</p>
+
+      <div class="faceid-lock-demo">
+        <div class="faceid-notch-sensor">
+          <div class="camera-tally-led" id="faceid-tally"></div>
+          <span style="font-size:11px; color:var(--ink-3);">FaceID Sensor Array</span>
+        </div>
+
+        <div class="faceid-mesh-scan-view">
+          <div class="scan-laser-line" id="scan-laser"></div>
+          <svg width="68" height="68" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.2">
+            <path d="M12 2a5 5 0 0 0-5 5v3a5 5 0 0 0 10 0V7a5 5 0 0 0-5-5z"></path>
+            <path d="M19 11v1a7 7 0 0 1-14 0v-1"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+        </div>
+
+        <div class="lock-screen-header">
+          <div class="lock-clock" id="lock-clock-time">09:41</div>
+          <div class="lock-date">Wednesday, October 4</div>
+        </div>
+
+        <div class="lock-password-sim">
+          <div class="pw-bullet" id="pw-b1"></div>
+          <div class="pw-bullet" id="pw-b2"></div>
+          <div class="pw-bullet" id="pw-b3"></div>
+          <div class="pw-bullet" id="pw-b4"></div>
+          <div class="pw-bullet" id="pw-b5"></div>
+          <div class="pw-bullet" id="pw-b6"></div>
+          <div class="pw-bullet" id="pw-b7"></div>
+          <div class="pw-bullet" id="pw-b8"></div>
+        </div>
+
+        <div style="margin-top:16px;">
+          <button class="btn-secondary" id="trigger-scan-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20"></path><path d="M20 12l-4-4"></path><path d="M20 12l-4 4"></path></svg>
+            Simulate Display Wake Scan
+          </button>
+        </div>
+
+        <div class="honest-framing-callout">
+          <strong>Honest Framing:</strong> MacBook cameras have no hardware depth sensors. Face ID uses 512-dimensional ArcFace vector embeddings and multi-cue liveness checks. It rejects printed photos and phone screens, but cannot guarantee iPhone TrueDepth security against high-resolution video. It is a convenience, off by default.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 10: Privacy Tile Matrix -->
+  <section class="story-section" id="sec-privacy">
+    <div class="section-content">
+      <div class="section-tag"><span class="dot blue"></span> 10 • Zero-Knowledge Architecture</div>
+      <h2 class="headline-section">Privacy: requested only on demand.</h2>
+      <p class="lead-section">Nothing leaves your Mac. Audio is processed solely in volatile memory and never recorded. Click any tile to inspect what the grant unlocks versus what happens if denied.</p>
+
+      <div class="privacy-grid">
+        <div class="privacy-tile" tabindex="0" role="button" aria-label="Toggle Calendar permission details">
+          <div class="tile-face tile-front">
+            <div class="tile-top"><span class="tile-title">Calendar</span><span>📅</span></div>
+            <p class="tile-buys">Upcoming agenda cards & direct meeting join links.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+          <div class="tile-face tile-back">
+            <div class="tile-top"><span class="tile-title">Without It</span><span>⚠️</span></div>
+            <p class="tile-without">Calendar widget remains empty. All other Notch modules function normally.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+        </div>
+
+        <div class="privacy-tile" tabindex="0" role="button" aria-label="Toggle Location permission details">
+          <div class="tile-face tile-front">
+            <div class="tile-top"><span class="tile-title">Location</span><span>📍</span></div>
+            <p class="tile-buys">Real-time local temperature, condition, and sunset times.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+          <div class="tile-face tile-back">
+            <div class="tile-top"><span class="tile-title">Without It</span><span>⚠️</span></div>
+            <p class="tile-without">Weather card defaults to manual city search or stays hidden.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+        </div>
+
+        <div class="privacy-tile" tabindex="0" role="button" aria-label="Toggle Automation permission details">
+          <div class="tile-face tile-front">
+            <div class="tile-top"><span class="tile-title">Music / AppleScript</span><span>🎵</span></div>
+            <p class="tile-buys">Track titles, play/pause controls, scrubber synchronization.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+          <div class="tile-face tile-back">
+            <div class="tile-top"><span class="tile-title">Without It</span><span>⚠️</span></div>
+            <p class="tile-without">Now Playing works in read-only passive mode without skip controls.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+        </div>
+
+        <div class="privacy-tile" tabindex="0" role="button" aria-label="Toggle Notifications permission details">
+          <div class="tile-face tile-front">
+            <div class="tile-top"><span class="tile-title">Notifications</span><span>🔔</span></div>
+            <p class="tile-buys">Banners for completed pomodoros and eye-rest reminders.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+          <div class="tile-face tile-back">
+            <div class="tile-top"><span class="tile-title">Without It</span><span>⚠️</span></div>
+            <p class="tile-without">Timers alert visually in the menu bar without system sound.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+        </div>
+
+        <div class="privacy-tile" tabindex="0" role="button" aria-label="Toggle Camera permission details">
+          <div class="tile-face tile-front">
+            <div class="tile-top"><span class="tile-title">Camera</span><span>📷</span></div>
+            <p class="tile-buys">Used exclusively by Face ID at the lock screen for liveness.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+          <div class="tile-face tile-back">
+            <div class="tile-top"><span class="tile-title">Without It</span><span>⚠️</span></div>
+            <p class="tile-without">Face ID cannot scan; standard macOS password or Touch ID used.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+        </div>
+
+        <div class="privacy-tile" tabindex="0" role="button" aria-label="Toggle Bluetooth permission details">
+          <div class="tile-face tile-front">
+            <div class="tile-top"><span class="tile-title">Bluetooth</span><span>🎧</span></div>
+            <p class="tile-buys">Detects connected headphones for instant AutoEQ correction matching.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+          <div class="tile-face tile-back">
+            <div class="tile-top"><span class="tile-title">Without It</span><span>⚠️</span></div>
+            <p class="tile-without">Select headphone correction profiles manually from the mixer menu.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+        </div>
+
+        <div class="privacy-tile" tabindex="0" role="button" aria-label="Toggle Files permission details">
+          <div class="tile-face tile-front">
+            <div class="tile-top"><span class="tile-title">Files & Folders</span><span>📁</span></div>
+            <p class="tile-buys">The Shelf drag-and-drop pocket to temporarily hold dropped files.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+          <div class="tile-face tile-back">
+            <div class="tile-top"><span class="tile-title">Without It</span><span>⚠️</span></div>
+            <p class="tile-without">The Shelf works only for plain text clips, not Finder file URLs.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+        </div>
+
+        <div class="privacy-tile" tabindex="0" role="button" aria-label="Toggle Audio Capture permission details">
+          <div class="tile-face tile-front">
+            <div class="tile-top"><span class="tile-title">Screen & Audio Capture</span><span>🎚</span></div>
+            <p class="tile-buys">Feeds the live 3-band meter and per-app process tap levels.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+          <div class="tile-face tile-back">
+            <div class="tile-top"><span class="tile-title">Without It</span><span>⚠️</span></div>
+            <p class="tile-without">The 3-band waveform idles, and volume mixer falls back to system master.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+        </div>
+
+        <div class="privacy-tile" tabindex="0" role="button" aria-label="Toggle Accessibility permission details">
+          <div class="tile-face tile-front">
+            <div class="tile-top"><span class="tile-title">Accessibility</span><span>♿️</span></div>
+            <p class="tile-buys">Replaces system volume HUD and types password at lock screen.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+          <div class="tile-face tile-back">
+            <div class="tile-top"><span class="tile-title">Without It</span><span>⚠️</span></div>
+            <p class="tile-without">Default system volume overlays appear, and Face ID cannot submit keys.</p>
+            <span class="tile-flip-cue">Click to flip</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 11: Final Call to Action -->
+  <section class="story-section" id="sec-cta">
+    <div class="section-content">
+      <div class="cta-card-final">
+        <div class="section-tag"><span class="dot"></span> Ready For macOS 14 & 15</div>
+        <h2 class="headline-section" style="font-size:clamp(2.2rem, 4.5vw, 3.4rem);">Make your notch useful today.</h2>
+        <p class="lead-section" style="max-width:540px; margin-bottom:28px;">Lightweight, open-source inspired, and completely local. Download the DMG to get started in under sixty seconds.</p>
+
+        <a href="https://github.com/Wub796/Notch/releases" target="_blank" rel="noopener noreferrer" class="btn-primary" id="cta-download-btn" style="padding:15px 34px; font-size:16px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          Download for Mac (.dmg)
+        </a>
+
+        <div class="install-steps-deck">
+          <div class="step-card">
+            <div class="step-number">Step 01</div>
+            <h4>Open the DMG</h4>
+            <p>Download Notch from GitHub Releases and open the disk image.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-number">Step 02</div>
+            <h4>Drag to Applications</h4>
+            <p>Drag the Notch icon into your Mac's Applications folder.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-number">Step 03</div>
+            <h4>Open & Grant</h4>
+            <p>Launch Notch from Applications. Choose which modules you want active.</p>
+          </div>
+        </div>
+
+        <div class="site-footer">
+          <div>Built with care. Inspired by <a href="https://github.com/jonnyoo/glance" target="_blank" rel="noreferrer">Glance</a>, <a href="https://github.com/jaakkopasanen/AutoEq" target="_blank" rel="noreferrer">AutoEQ</a>, and <a href="https://sparkle-project.org" target="_blank" rel="noreferrer">Sparkle</a>.</div>
+          <div><a href="https://github.com/Wub796/Notch" target="_blank" rel="noreferrer">GitHub Repository</a> • v1.0.2</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Floating Section Navigator Dock -->
+<nav class="floating-dock-nav" aria-label="Quick Section Navigation">
+  <button class="dock-pill-btn active" data-target="#sec-hero">Hero</button>
+  <button class="dock-pill-btn" data-target="#sec-deadspace">Dead Space</button>
+  <button class="dock-pill-btn" data-target="#sec-music">Music</button>
+  <button class="dock-pill-btn" data-target="#sec-dashboard">Dashboard</button>
+  <button class="dock-pill-btn" data-target="#sec-shelf">The Shelf</button>
+  <button class="dock-pill-btn" data-target="#sec-system">System</button>
+  <button class="dock-pill-btn" data-target="#sec-activities">Activities</button>
+  <button class="dock-pill-btn" data-target="#sec-tools">Tools</button>
+  <button class="dock-pill-btn" data-target="#sec-mixer">Mixer</button>
+  <button class="dock-pill-btn" data-target="#sec-faceid">Face ID</button>
+  <button class="dock-pill-btn" data-target="#sec-privacy">Privacy</button>
+  <button class="dock-pill-btn" data-target="#sec-cta">Download</button>
+</nav>
+
+<!-- Vendored Scripts (Pinned Local Dependencies) -->
+<script src="./js/vendor/gsap.min.js"></script>
+<script src="./js/vendor/ScrollTrigger.min.js"></script>
+<script type="module" src="./js/main.js"></script>
+
+<!-- Static Crawlable Fallback for Disabled JS -->
+<noscript>
+  <style>
+    #loader { display: none !important; }
+    #webgl-container { display: none !important; }
+    .notch-open-view { opacity: 1 !important; position: static !important; }
+    .notch-closed-view { display: none !important; }
+  </style>
+  <div style="background:#0e0e11; color:#fff; padding:20px; text-align:center;">
+    <strong>JavaScript is disabled.</strong> Notch is a native macOS application providing an interactive workspace around the notch. Requires macOS 14+. Download the latest DMG release on <a href="https://github.com/Wub796/Notch/releases" style="color:#0A84FF;">GitHub Releases</a>.
+  </div>
+</noscript>
+
+</body>
+</html>

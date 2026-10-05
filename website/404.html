@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>404 — Coordinate Outside Display | Notch</title>
+<meta name="description" content="The requested page could not be found. Return to the Notch workspace.">
+<meta name="theme-color" content="#0e0e11">
+<meta name="color-scheme" content="dark">
+
+<!-- Favicons (Vendored) -->
+<link rel="icon" type="image/x-icon" href="./assets/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon.png">
+
+<!-- Main Stylesheet -->
+<link rel="stylesheet" href="./css/styles.css">
+
+<style>
+  /* Standalone resilient fallback styling for deep 404 routes */
+  :root {
+    --bg-dark: #0e0e11;
+    --ink: #ffffff;
+    --ink-2: rgba(255, 255, 255, 0.62);
+    --ink-3: rgba(255, 255, 255, 0.45);
+    --amber: #FF9F0A;
+    --blue: #0A84FF;
+    --border-hairline: rgba(255, 255, 255, 0.12);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-dark);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-align: center;
+    padding: 24px;
+    box-sizing: border-box;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .ambient-glow-404 {
+    position: absolute;
+    width: 500px;
+    height: 500px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 159, 10, 0.08) 0%, rgba(14, 14, 17, 0) 70%);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .error-card {
+    position: relative;
+    z-index: 1;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .notch-pill-404 {
+    width: 170px;
+    height: 34px;
+    background: #000;
+    border-radius: 0 0 18px 18px;
+    border: 1px solid var(--border-hairline);
+    border-top: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 36px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+    animation: breathing 4s ease-in-out infinite alternate;
+  }
+
+  @keyframes breathing {
+    0% { box-shadow: 0 10px 24px rgba(0,0,0,0.6); }
+    100% { box-shadow: 0 10px 36px rgba(255, 159, 10, 0.18); }
+  }
+
+  .notch-camera-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #111;
+    box-shadow: inset 0 0 2px #000, 0 0 1px rgba(255,255,255,0.2);
+  }
+
+  .status-amber-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber);
+  }
+
+  .notch-label-404 {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--amber);
+    text-transform: uppercase;
+  }
+
+  .code-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-hairline);
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+    margin-bottom: 16px;
+    letter-spacing: 0.04em;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 5vw, 2.75rem);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin: 0 0 12px 0;
+    line-height: 1.1;
+  }
+
+  p {
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    margin: 0 0 32px 0;
+  }
+
+  .actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 11px 22px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 999px;
+    text-decoration: none;
+    transition: transform 0.2s cubic-bezier(0.23, 1, 0.32, 1), background-color 0.2s ease, opacity 0.2s ease;
+  }
+
+  .btn:active {
+    transform: scale(0.975);
+  }
+
+  .btn-primary {
+    background: #ffffff;
+    color: #000000;
+  }
+
+  .btn-primary:hover {
+    background: #eaeaea;
+  }
+
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--ink);
+    border: 1px solid var(--border-hairline);
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .notch-pill-404 {
+      animation: none;
+    }
+    .btn {
+      transition: none;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="ambient-glow-404" aria-hidden="true"></div>
+
+<main class="error-card" role="main">
+  <div class="notch-pill-404" aria-label="Notch sensor simulated error state">
+    <div class="notch-camera-dot"></div>
+    <div class="status-amber-dot"></div>
+    <span class="notch-label-404">404</span>
+  </div>
+
+  <div class="code-badge">Error 404 • Coordinate Lost</div>
+  <h1>Outside the Bezel</h1>
+  <p>The screen coordinates or URL you requested do not map to an existing view. Return to the main workspace to continue exploring Notch.</p>
+
+  <div class="actions">
+    <a href="./index.html" class="btn btn-primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+      Return to Home
+    </a>
+    <a href="https://github.com/Wub796/Notch" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">
+      GitHub Repository
+    </a>
+  </div>
+</main>
+
+</body>
+</html>

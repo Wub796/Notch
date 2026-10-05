@@ -1,0 +1,5 @@
+# Robots.txt for Notch Marketing Site
+User-agent: *
+Allow: /
+
+Sitemap: https://notch.app/sitemap.xml
