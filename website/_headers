@@ -1,18 +1,22 @@
 # Cloudflare Pages & Netlify HTTP Headers Configuration
 
-# Assets and vendored dependencies: 1-year immutable cache
+# Images, fonts and other static assets: 1-year immutable cache
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
-/js/vendor/*
-  Cache-Control: public, max-age=31536000, immutable
-
-# Global security headers for all routes
-# 'unsafe-inline' is permitted only for style-src because GSAP, spring physics, and interactive SVG/DOM
-# controllers dynamically update element style attributes (transform, stroke-dashoffset, fader heights),
-# and the <noscript> fallback block uses inline CSS styles.
+# Global security headers for all routes.
+#
+# The demo talks to a handful of keyless public endpoints at runtime, so unlike
+# a pure brochure page this policy names them explicitly:
+#   script-src   Google Analytics + the (commented-out) Cloudflare beacon
+#   connect-src  GA beacons, GitHub tags API, Open-Meteo, CoinGecko, iTunes Search
+#   img-src      iTunes artwork (mzstatic) and GA pixels
+#   media-src    iTunes 30s preview audio
+# 'unsafe-inline' is permitted only for style-src: scene states are written as
+# inline custom properties (drag offsets, progress fill, notification art) and
+# inline style attributes appear in the markup. Scripts are never inline.
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(), microphone=(), geolocation=()
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self';
+  Permissions-Policy: camera=(), microphone=(), geolocation=(self)
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://www.googletagmanager.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://www.google-analytics.com https://*.mzstatic.com; media-src 'self' blob: https://*.itunes.apple.com; font-src 'self'; connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://cloudflareinsights.com https://static.cloudflareinsights.com https://api.github.com https://api.open-meteo.com https://api.coingecko.com https://itunes.apple.com; object-src 'none'; base-uri 'self'; frame-ancestors 'self';

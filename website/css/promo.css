@@ -1,0 +1,275 @@
+.tb-promo-install-link {
+    display: block;
+    margin-top: 15px;
+    padding-top: 13px;
+    border-top: 1px solid #ffffff25;
+    color: #fff;
+    text-align: center;
+    font-size: 12px;
+    text-decoration: none;
+}
+
+.tb-promo-install-link:hover {
+    text-decoration: underline;
+}
+
+.tb-promo-install-link:focus-visible {
+    outline: 2px solid white;
+    outline-offset: 4px;
+}
+
+/* css/promo.css — left-edge promo column. Owned by Dev 4 (Promo Column).
+   Rendered into #promo-root (positioned by css/main.css: fixed, left edge,
+   click-through). .tb-promo re-enables pointer events. All classes tb-
+   prefixed, everything scoped under #promo-root. */
+
+/* ---------- column container ---------- */
+
+#promo-root .tb-promo {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    pointer-events: auto;
+}
+
+/* ---------- shared card chrome ---------- */
+
+/* shared macOS-widget chrome for every promo card: dark frosted glass,
+   identical to the right-side widgets (radius 20px, whisper border) */
+#promo-root .tb-promo-card {
+    box-sizing: border-box;
+    width: 100%;
+    border-radius: 20px;
+    color: #fff;
+    background: rgba(28, 28, 30, 0.55);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+}
+
+/* banner cards (GitHub + privacy): flex rows, hover lift */
+#promo-root .tb-promo-card--banner {
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    transition: transform 0.18s ease;
+}
+
+#promo-root .tb-promo-card--banner:hover {
+    transform: translateY(-2px);
+}
+
+/* shared banner text block */
+#promo-root .tb-promo-banner-text {
+    flex: 1;
+    min-width: 0;
+}
+
+#promo-root .tb-promo-banner-title {
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+#promo-root .tb-promo-banner-sub {
+    margin-top: 2px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+/* ---------- 1. download card (the star) ---------- */
+
+#promo-root .tb-promo-card--download {
+    padding: 14px;
+}
+
+#promo-root .tb-promo-dl-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+#promo-root .tb-promo-dl-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    display: block;
+}
+
+#promo-root .tb-promo-dl-title {
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+#promo-root .tb-promo-dl-sub {
+    margin-top: 2px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+/* full-width macOS-style action button: flat system green, no glow/bob */
+#promo-root .tb-promo-download-btn {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    height: 34px;
+    margin-top: 12px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #34c759, #2fb350);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: filter 0.15s ease;
+}
+
+#promo-root .tb-promo-download-btn:hover {
+    filter: brightness(1.05);
+}
+
+#promo-root .tb-promo-dl-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+}
+
+#promo-root .tb-promo-dl-version {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+#promo-root .tb-promo-dl-github {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.65);
+    text-decoration: none;
+}
+
+#promo-root .tb-promo-dl-github:hover {
+    color: #fff;
+    text-decoration: underline;
+}
+
+/* ---------- 2 + 3. banner cards: GitHub + privacy ---------- */
+
+/* the 30px rounded glyph chip both banners start with; the tint is the only
+   difference between them */
+#promo-root .tb-promo-chip {
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+}
+
+#promo-root .tb-promo-chip--graphite {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+#promo-root .tb-promo-chip--blue {
+    background: rgba(10, 132, 255, 0.22);
+}
+
+#promo-root .tb-promo-pill {
+    padding: 5px 10px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+#promo-root a.tb-promo-pill:hover {
+    background: rgba(255, 255, 255, 0.24);
+}
+
+/* unavailable variant (config missing): non-interactive span, dims the pill */
+#promo-root .tb-promo-pill--soon {
+    opacity: 0.7;
+    cursor: default;
+}
+
+#promo-root .tb-promo-banner-link {
+    color: #0a84ff;
+    font-size: 11px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+#promo-root .tb-promo-banner-link:hover {
+    text-decoration: underline;
+}
+
+/* ---------- 4. sticky note (yellow paper overrides the shared dark-glass chrome) ---------- */
+
+/* the whole note is one <a>; warm-yellow paper, slight tilt, no blur */
+#promo-root .tb-promo-card--sticky {
+    display: block;
+    padding: 16px 14px 12px;
+    border-radius: 3px;
+    background: #fef3a0;
+    border: 1px solid rgba(120, 100, 0, 0.18);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.15);
+    color: #3a3524;
+    text-decoration: none;
+    transform: rotate(-2deg);
+    transition: transform 0.18s ease;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+#promo-root .tb-promo-card--sticky:hover {
+    transform: rotate(-1deg) translateY(-2px);
+}
+
+/* pin straddles the note's top edge (sticks ~8px above it, into the 14px
+   column gap — never reaches the previous card) */
+#promo-root .tb-promo-sticky-pin {
+    display: block;
+    width: 18px;
+    margin: -24px auto 2px;
+    font-size: 16px;
+    line-height: 1;
+}
+
+#promo-root .tb-promo-sticky-line {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: #3a3524;
+}
+
+#promo-root .tb-promo-sticky-url {
+    margin-top: 2px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #6b5300;
+}
+
+#promo-root .tb-promo-card--sticky:hover .tb-promo-sticky-url {
+    text-decoration: underline;
+}
+
+/* phones: the promo column becomes a centered feed (css/main.css) — keep
+   the note note-sized instead of a full-width banner. The -2deg tilt stays
+   inside the feed's 10px side padding, so no horizontal overflow. */
+@media (max-width: 768px) {
+    #promo-root .tb-promo-card--sticky {
+        max-width: 340px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+}

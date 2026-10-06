@@ -132,3 +132,56 @@ The `FaceIDSkyLight` implementation adapts **Lakr233/SkyLightWindow**
 (<https://github.com/Lakr233/SkyLightWindow>, MIT) to raise the panel above the
 login window. It calls private, undocumented Apple symbols; see the file's own
 header for the risk this carries.
+
+## Website — the marketing site in `website/`
+
+The site ships no third-party code at runtime: the whole desktop — wallpaper,
+menu bar, notch, widgets, dock, window manager, System Settings — is plain
+JavaScript written for this repository, with no framework, bundler or CDN. What
+the page *calls* (and what it renders from someone else's artwork) is listed here.
+
+### JavaScript libraries: none
+
+Earlier revisions of this site bundled **GSAP 3.12.5** and its ScrollTrigger
+plugin in `website/js/vendor/` for a scroll choreography. The page is now a
+single-screen desktop simulation with no scroll timeline, so both files and the
+`js/vendor/` directory are gone. Do not re-add a vendor script without recording
+its licence in this section.
+
+### Typeface: none bundled
+
+Type is the platform font (`-apple-system` / SF Pro), so nothing is downloaded to
+render the page and no font licence is carried. Re-introducing a self-hosted
+webfont means adding its OFL notice here.
+
+### Wallpapers
+
+`website/assets/wallpapers/` holds five photographs licensed under the
+**Unsplash License** (<https://unsplash.com/license>), which permits commercial
+and non-commercial use without attribution — credited anyway, in
+`website/js/config.js` and in the on-screen credit chip:
+
+| File | Photographer |
+| :--- | :--- |
+| `luca-bravo-ii5JY_46xH0-unsplash.jpg` | Luca Bravo |
+| `anders-jilden-cYrMQA7a3Wc-unsplash.jpg` | Anders Jildén |
+| `garrett-parker-DlkF4-dbCOU-unsplash.jpg` | Garrett Parker |
+| `ian-dooley-DuBNA1QMpPA-unsplash.jpg` | Ian Dooley |
+| `buzz-andersen-E4944K_4SvI-unsplash.jpg` | Buzz Andersen |
+
+### macOS app icons
+
+`website/assets/icons/*.png` reproduce Apple's macOS application icons (Finder,
+Safari, Messages, FaceTime, Terminal, System Settings, Spotify, Xcode, Notes,
+Maps, App Store) and are used to depict the operating system inside a parody
+desktop. They remain Apple Inc.'s trademarks and artwork; this project claims no
+rights to them, and they are not part of the Notch application itself.
+
+### Runtime services
+
+Google Analytics (GA4) and—optionally, commented out—Cloudflare Web Analytics are
+the only third-party scripts the page can load; both are placeholders with no
+project id, and `_headers` restricts them by origin. The live demo data comes from
+keyless public endpoints (GitHub tags, Open-Meteo, CoinGecko, the iTunes Search API
+for artwork and a 30-second preview), each of which is named in the
+Content-Security-Policy in `website/_headers`.

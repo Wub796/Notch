@@ -1,0 +1,859 @@
+/* css/main.css — the shell. Owned by the MANAGER (Dev A).
+   This is the only stylesheet that lays out the page itself: the reset and
+   type tokens, the wallpaper layers inside #desktop, the fixed positioning and
+   stacking order of every mount point, and the menu bar with the popups it
+   owns (menus, Power, Control Center, Spotlight, the brightness dimmer).
+
+   Every module renders into an empty mount from index.html; nothing here
+   styles inside #notch-root, #windows-root, #promo-root, #widgets-root,
+   #icons-root or #dock-root beyond that mount's box — those belong to
+   css/notch.css, css/windows.css, css/promo.css, css/widgets.css,
+   css/desktop-icons.css and css/dock.css respectively.
+
+   Stacking order, bottom to top:
+     0  #desktop   wallpaper layers
+     2  #icons-root
+     3  #widgets-root / #promo-root
+    10  #windows-root
+    40  #dock-root
+    44  .tb-dim    (Control Center brightness)
+    50  #menubar-root
+    55  #notch-root
+    60  .tb-spotlight
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+    --tb-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+    --tb-menubar-h: 28px;
+    --tb-glass: rgba(28, 28, 30, 0.62);
+    --tb-glass-solid: rgba(24, 24, 28, 0.86);
+    --tb-hairline: rgba(255, 255, 255, 0.14);
+    --tb-shadow-popup: 0 18px 44px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* Desktop interactions use the same frosted material as the menu bar. */
+.tb-desktop-menu { position: fixed; z-index: 90; width: 230px; padding: 5px; background: rgba(35, 35, 39, .87); backdrop-filter: blur(28px) saturate(1.5); -webkit-backdrop-filter: blur(28px) saturate(1.5); border: 1px solid rgba(255,255,255,.19); border-radius: 8px; box-shadow: var(--tb-shadow-popup); }
+.tb-desktop-menu button { display: block; width: 100%; background: transparent; color: #eee; border: none; padding: 6px 9px; border-radius: 4px; text-align: left; font: 12px var(--tb-font); cursor: default; }
+.tb-desktop-menu button:hover, .tb-desktop-menu button:focus { outline: none; background: #2675db; color: #fff; }
+.tb-desktop-menu hr { border: 0; border-top: 1px solid rgba(255,255,255,.15); margin: 4px 6px; }
+.tb-desktop-selection { position: fixed; z-index: 4; pointer-events: none; background: rgba(80, 140, 230, .16); border: 1px solid rgba(200,220,255,.7); border-radius: 2px; }
+#windows-root { transition: opacity 180ms ease, transform 220ms ease; }
+#windows-root.tb-show-desktop { opacity: 0; transform: translateY(20px) scale(.97); pointer-events: none; }
+.tb-desktop-notification { position: fixed; top: 48px; right: 18px; z-index: 85; max-width: 320px; padding: 16px; border: 1px solid var(--tb-hairline); border-radius: 16px; background: var(--tb-glass-solid); backdrop-filter: blur(24px); box-shadow: var(--tb-shadow-popup); }
+.tb-desktop-notification strong, .tb-desktop-notification span { display: block; }
+.tb-desktop-notification span { color: #bbb; margin-top: 4px; font-size: 12px; }
+.tb-desktop-notification button { float: right; border: 0; border-radius: 5px; color: #fff; background: #444; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { #windows-root { transition: none; } }
+
+/* ---------- reset + page ---------- */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+}
+
+body {
+    overflow: hidden;
+    background: #0b0b0f;
+    color: #fff;
+    font-family: var(--tb-font);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+/* No-JS / crawler fallback (index.html <noscript>): readable on the dark page
+   without any of the desktop layers present. */
+.tb-noscript {
+    position: relative;
+    z-index: 5;
+    max-width: 560px;
+    margin: 12vh auto 0;
+    padding: 32px;
+    border: 1px solid var(--tb-hairline);
+    border-radius: 20px;
+    background: var(--tb-glass-solid);
+    text-align: center;
+}
+
+.tb-noscript img {
+    border-radius: 20px;
+}
+
+.tb-noscript h1 {
+    margin: 14px 0 10px;
+    font-size: 28px;
+    letter-spacing: -0.02em;
+}
+
+.tb-noscript p {
+    margin: 0 0 14px;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.tb-noscript a {
+    color: #0a84ff;
+}
+
+/* ---------- the desktop + wallpaper rotation layers ---------- */
+
+#desktop {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    /* placeholder gradient: paints instantly, stays if every photo fails */
+    background: linear-gradient(135deg, #1b1d2b 0%, #2a2140 48%, #101018 100%);
+}
+
+.tb-wall-layer {
+    position: absolute;
+    inset: 0;
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+    opacity: 0;
+    transition: opacity 1.2s ease;
+    will-change: opacity;
+}
+
+/* legibility scrim under the menu bar + the dock (never intercepts clicks) */
+#desktop::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(180deg, rgba(0, 0, 0, 0.34) 0%, rgba(0, 0, 0, 0) 56px),
+        linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0) 120px);
+}
+
+/* photo credit chip — hidden until the rotator names the current frame */
+#desktop .tb-wall-credit {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    max-width: 320px;
+    padding: 4px 10px;
+    border: 1px solid var(--tb-hairline);
+    border-radius: 999px;
+    background: rgba(20, 20, 24, 0.62);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 11px;
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+}
+
+#desktop .tb-wall-credit--on {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#desktop .tb-wall-credit:hover {
+    color: #fff;
+    text-decoration: underline;
+}
+
+/* ---------- mount points ---------- */
+
+#icons-root {
+    position: fixed;
+    /* starts below the menu bar: the default icon column is laid out from this
+       box's top edge, so the first icon must not hide under the bar */
+    top: calc(var(--tb-menubar-h) + 8px);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 2;
+    /* the canvas for draggable icons is click-through; icons opt back in */
+    pointer-events: none;
+}
+
+#widgets-root {
+    position: fixed;
+    top: calc(var(--tb-menubar-h) + 14px);
+    right: 18px;
+    z-index: 3;
+    width: 330px;
+    pointer-events: none;
+}
+
+#promo-root {
+    position: fixed;
+    top: calc(var(--tb-menubar-h) + 14px);
+    left: 18px;
+    z-index: 3;
+    width: 264px;
+    pointer-events: none;
+}
+
+#windows-root {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+}
+
+#notch-root {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    /* above the bar (50), like the real hardware cutout: the menu bar's middle
+       is empty, so the notch owns that strip and stays clickable there */
+    z-index: 55;
+}
+
+#dock-root {
+    position: fixed;
+    bottom: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+    max-width: 100vw;
+    /* the root shrink-wraps the tray, so it stays clickable (css/dock.css
+       never re-enables pointer events on .tb-dock itself) */
+}
+
+/* First-run hint (built by js/menubar.js): one chip under the notch that
+   teaches the two gestures the desktop needs. Fades itself out. */
+.tb-hint {
+    position: fixed;
+    top: 92px;
+    left: 50%;
+    z-index: 45;
+    padding: 7px 14px;
+    border: 1px solid var(--tb-hairline);
+    border-radius: 999px;
+    background: rgba(20, 20, 24, 0.72);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 12px;
+    white-space: nowrap;
+    opacity: 0;
+    transform: translate(-50%, -6px);
+    pointer-events: none;
+    transition: opacity 0.45s ease, transform 0.45s ease;
+}
+
+.tb-hint--on {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tb-hint {
+        transition: opacity 0.45s ease;
+        transform: translate(-50%, 0);
+    }
+}
+
+/* Control Center brightness: a black veil over everything below the bar */
+.tb-dim {
+    position: fixed;
+    inset: 0;
+    z-index: 44;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+/* ---------- menu bar ---------- */
+
+#menubar-root {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    height: var(--tb-menubar-h);
+    color: #fff;
+    font-size: 13px;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.tb-menubar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 100%;
+    padding: 0 10px;
+    background: rgba(0, 0, 0, 0.24);
+    -webkit-backdrop-filter: blur(26px) saturate(180%);
+    backdrop-filter: blur(26px) saturate(180%);
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.tb-menubar-left,
+.tb-menubar-right {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    min-width: 0;
+}
+
+/* --- left cluster: logo, bold site name, File/Edit/View/… --- */
+
+.tb-menu {
+    position: relative;
+}
+
+.tb-menu-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 21px;
+    padding: 0 9px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: #fff;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: default;
+}
+
+.tb-bold {
+    font-weight: 700;
+    padding: 0 7px;
+}
+
+.tb-menu-label:hover,
+.tb-menu.tb-open .tb-menu-label {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.tb-apple-logo {
+    display: flex;
+    align-items: center;
+}
+
+.tb-dropdown {
+    position: absolute;
+    top: calc(100% + 3px);
+    left: 0;
+    z-index: 2;
+    display: none;
+    min-width: 220px;
+    padding: 5px;
+    border: 1px solid var(--tb-hairline);
+    border-radius: 10px;
+    background: var(--tb-glass);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    backdrop-filter: blur(30px) saturate(180%);
+    box-shadow: var(--tb-shadow-popup);
+}
+
+.tb-menu.tb-open .tb-dropdown {
+    display: block;
+}
+
+.tb-dropdown-item {
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: default;
+}
+
+.tb-dropdown-item:hover:not(.tb-disabled) {
+    background: #0a84ff;
+}
+
+.tb-disabled {
+    opacity: 0.4;
+}
+
+.tb-dropdown-sep {
+    height: 1px;
+    margin: 5px 8px;
+    background: rgba(255, 255, 255, 0.14);
+}
+
+/* --- right cluster: music, DND, battery, Wi-Fi, Spotlight, CC, clock --- */
+
+.tb-music-glyph,
+.tb-dnd-glyph {
+    display: none;
+    padding: 0 5px;
+    font-size: 12px;
+    line-height: 1;
+}
+
+.tb-battery {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 21px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: #fff;
+    font-family: inherit;
+    cursor: default;
+}
+
+.tb-battery:hover,
+.tb-battery.tb-open {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.tb-battery-pct {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.tb-battery-icon {
+    display: flex;
+    align-items: center;
+}
+
+.tb-battery-svg {
+    display: flex;
+    align-items: center;
+}
+
+.tb-battery-bolt {
+    display: flex;
+    align-items: center;
+    margin-left: -2px;
+    font-size: 9px;
+}
+
+.tb-wifi {
+    display: flex;
+    align-items: center;
+    padding: 0 6px;
+    color: #fff;
+}
+
+.tb-spot-btn,
+.tb-cc-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 21px;
+    min-width: 26px;
+    padding: 0 5px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: #fff;
+    cursor: default;
+}
+
+.tb-spot-btn:hover,
+.tb-cc-btn:hover,
+.tb-spot-btn.tb-open,
+.tb-cc-btn.tb-open {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.tb-clock {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 4px 0 8px;
+    font-size: 13px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* --- Power popup (battery) --- */
+
+.tb-power-panel {
+    position: absolute;
+    top: calc(var(--tb-menubar-h) + 4px);
+    right: 84px;
+    z-index: 3;
+    width: 250px;
+    padding: 12px;
+    border: 1px solid var(--tb-hairline);
+    border-radius: 12px;
+    background: var(--tb-glass);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    backdrop-filter: blur(30px) saturate(180%);
+    box-shadow: var(--tb-shadow-popup);
+}
+
+.tb-power-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+}
+
+.tb-power-title {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.tb-power-pct {
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.tb-power-sub {
+    margin-top: 5px;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11px;
+}
+
+.tb-power-sep {
+    height: 1px;
+    margin: 11px 0;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.tb-power-prefs {
+    width: 100%;
+    height: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.tb-power-prefs:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* --- Control Center panel --- */
+
+.tb-cc-panel {
+    position: absolute;
+    top: calc(var(--tb-menubar-h) + 4px);
+    right: 8px;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 296px;
+    padding: 12px;
+    border: 1px solid var(--tb-hairline);
+    border-radius: 16px;
+    background: var(--tb-glass);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    backdrop-filter: blur(30px) saturate(180%);
+    box-shadow: var(--tb-shadow-popup);
+}
+
+.tb-cc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.tb-cc-toggle {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 7px;
+    padding: 9px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.tb-cc-tbtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    cursor: pointer;
+}
+
+.tb-cc-tbtn.tb-on {
+    background: #0a84ff;
+}
+
+.tb-cc-tlabel {
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 11px;
+}
+
+.tb-cc-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 9px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.tb-cc-ricon {
+    display: flex;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.tb-cc-slider {
+    flex: 1;
+    min-width: 0;
+    height: 4px;
+    margin: 0;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.3);
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+}
+
+.tb-cc-slider::-webkit-slider-thumb {
+    width: 14px;
+    height: 14px;
+    border: 0;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+    -webkit-appearance: none;
+}
+
+.tb-cc-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: 0;
+    border-radius: 50%;
+    background: #fff;
+}
+
+.tb-cc-slider:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.tb-cc-battrow {
+    justify-content: space-between;
+}
+
+.tb-cc-battpct {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.tb-cc-music {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.tb-cc-disabled {
+    opacity: 0.55;
+}
+
+.tb-cc-art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    border-radius: 7px;
+    background: linear-gradient(135deg, #3a3a3c, #1c1c1e);
+    font-size: 16px;
+}
+
+.tb-cc-mtexts {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+
+.tb-cc-mtitle {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11px;
+}
+
+.tb-cc-mname {
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tb-cc-mbtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    cursor: pointer;
+}
+
+/* --- Spotlight --- */
+
+.tb-spotlight {
+    position: fixed;
+    top: 14vh;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 60;
+    width: min(560px, calc(100vw - 32px));
+    border: 1px solid var(--tb-hairline);
+    border-radius: 14px;
+    background: var(--tb-glass);
+    -webkit-backdrop-filter: blur(32px) saturate(180%);
+    backdrop-filter: blur(32px) saturate(180%);
+    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+}
+
+.tb-spot-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tb-spot-glyph {
+    font-size: 15px;
+}
+
+.tb-spot-input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: #fff;
+    font-family: inherit;
+    font-size: 17px;
+    outline: none;
+}
+
+.tb-spot-input::placeholder {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.tb-spot-results {
+    max-height: 330px;
+    padding: 6px;
+    overflow-y: auto;
+}
+
+.tb-spot-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #fff;
+    font-family: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.tb-spot-item.tb-spot-active {
+    background: #0a84ff;
+}
+
+.tb-spot-emoji {
+    width: 20px;
+    flex: 0 0 auto;
+    text-align: center;
+}
+
+.tb-spot-none {
+    padding: 16px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 13px;
+    text-align: center;
+}
+
+/* hidden panels above set display:flex/block, so restate the attribute rule */
+.tb-power-panel[hidden],
+.tb-cc-panel[hidden],
+.tb-spotlight[hidden] {
+    display: none;
+}
+
+/* ---------- phones ---------- */
+
+@media (max-width: 768px) {
+    /* the right-hand widget column is dropped by css/widgets.css; the promo
+       column becomes a bottom sheet above the dock and scrolls instead */
+    #promo-root {
+        top: auto;
+        right: 12px;
+        bottom: 92px;
+        left: 12px;
+        width: auto;
+        max-height: 40vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    #desktop .tb-wall-credit {
+        right: 10px;
+        bottom: 84px;
+        max-width: 240px;
+    }
+
+    #menubar-root {
+        font-size: 12px;
+    }
+
+    /* a 13" menu bar's worth of menus does not fit a phone: keep the logo
+       menu and the right cluster, drop the File/Edit/View strip */
+    .tb-menubar-left .tb-menu:not(:first-child) .tb-menu-label,
+    .tb-menubar-left .tb-bold {
+        display: none;
+    }
+
+    .tb-cc-panel {
+        right: 6px;
+        left: 6px;
+        width: auto;
+    }
+
+    .tb-power-panel {
+        right: 6px;
+        width: 240px;
+    }
+}

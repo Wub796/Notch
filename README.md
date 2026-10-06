@@ -299,7 +299,7 @@ Manage permissions anytime in **Settings → Privacy** or **System Settings → 
 
 ## 🌐 Marketing Website & Static Deployment
 
-The Notch marketing website is a fully self-contained, zero-build static site with interactive 3D WebGL scenes, continuous squircle geometry, and procedural Web Audio demonstrations. It deploys to Cloudflare Pages/Workers, Netlify, Vercel, or GitHub Pages.
+The Notch marketing website is a zero-build static site that renders a macOS desktop in the browser: a wallpaper, a menu bar, the notch player, desktop widgets, a dock and draggable windows that hold the copy. It ships no framework and no vendored script, and it pulls its live demo data (weather, markets, now playing) from keyless public APIs. It deploys to Cloudflare Pages/Workers, Netlify, Vercel, or GitHub Pages.
 
 A pre-configured [`wrangler.jsonc`](wrangler.jsonc) is included in the project root pointing assets directly to `./website`.
 
