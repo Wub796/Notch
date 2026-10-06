@@ -168,8 +168,10 @@
            centers are cached per hover session so tray padding growth and item
            shifts can't feed back into the distance math. ---- */
         var restCenters = null;
+        var restTrayWidth = 0;
 
         function cacheRestCenters() {
+            restTrayWidth = tray.getBoundingClientRect().width;
             restCenters = items.map(function (it) {
                 var r = it.item.getBoundingClientRect();
                 return r.left + r.width / 2;
@@ -182,6 +184,7 @@
             var i;
             var maxScale = (window.TB_SETTINGS && typeof window.TB_SETTINGS.dockMaxScale === 'number')
                 ? window.TB_SETTINGS.dockMaxScale : MAX_SCALE;
+            maxScale = Number.isFinite(maxScale) ? Math.max(1, Math.min(2, maxScale)) : MAX_SCALE;
             for (i = 0; i < items.length; i++) {
                 var dist = Math.abs(clientX - restCenters[i]);
                 var scale = 1;
@@ -192,11 +195,18 @@
                 }
                 scales.push(scale);
             }
+            /* Keep the extra width centered, and fit it inside the tray's
+               viewport cap without shrinking the fixed-size icon slots. */
+            var requestedExtra = scales.reduce(function (sum, scale) { return sum + BASE * (scale - 1); }, 0);
+            var availableExtra = Math.max(0, window.innerWidth - 24 - restTrayWidth);
+            var fit = requestedExtra ? Math.min(1, availableExtra / requestedExtra) : 1;
+            scales = scales.map(function (scale) { return 1 + (scale - 1) * fit; });
+            var extra = requestedExtra * fit;
             var baseTotal = 0;
             var scaledTotal = 0;
             for (i = 0; i < items.length; i++) {
                 var w = BASE * scales[i];
-                var shift = (scaledTotal + w / 2) - (baseTotal + BASE / 2);
+                var shift = (scaledTotal + w / 2) - (baseTotal + BASE / 2) - extra / 2;
                 var lift = (scales[i] - 1) * LIFT;
                 /* the wrapper shifts (tooltip + dot track the icon); the button
                    scales + lifts inside it */
@@ -208,7 +218,6 @@
             }
             /* the frosted tray grows with the spread (visual only — the distance
                math above uses the cached rest centers, never live rects) */
-            var extra = Math.max(0, scaledTotal - baseTotal);
             tray.style.paddingLeft = (10 + extra / 2) + 'px';
             tray.style.paddingRight = (10 + extra / 2) + 'px';
         }
@@ -231,10 +240,11 @@
             magnify(e.clientX);
         });
         tray.addEventListener('mouseleave', reset);
+        window.addEventListener('resize', reset);
         /* System Settings toggle: snap back to rest when magnification turns off */
         window.addEventListener('tb:settings', function (e) {
             var d = e && e.detail;
-            if (d && d.key === 'dockMagnification' && d.value === false) { reset(); }
+            if (d && (d.key === 'dockMagnification' || d.key === 'dockMaxScale')) { reset(); }
         });
 
         /* ---- Running-indicator dots ---- */
