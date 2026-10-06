@@ -4,9 +4,8 @@ window.TB_CONFIG = {
     siteName: 'Notch',
     appName: 'Notch',
 
-    /* Wallpaper rotation (local Unsplash photos). `wallpaper` is the first
-       frame / legacy fallback; menubar.js crossfades through the list every
-       wallpaperInterval ms with a wallpaperFade ms ease. */
+    /* Fixed desktop wallpaper. The gallery is available in Settings → Wallpaper;
+       only an explicit user choice changes the background. */
     wallpaper: 'assets/wallpapers/luca-bravo-ii5JY_46xH0-unsplash.jpg',
     /* Licensed under the Unsplash License (free to use, attribution
        appreciated). The menubar shows a credit chip for the current photo and
@@ -18,8 +17,6 @@ window.TB_CONFIG = {
         { src: 'assets/wallpapers/ian-dooley-DuBNA1QMpPA-unsplash.jpg', title: 'Ian Dooley', artist: 'Unsplash', year: '', link: 'https://unsplash.com/photos/DuBNA1QMpPA' },
         { src: 'assets/wallpapers/buzz-andersen-E4944K_4SvI-unsplash.jpg', title: 'Buzz Andersen', artist: 'Unsplash', year: '', link: 'https://unsplash.com/photos/E4944K_4SvI' },
     ],
-    wallpaperInterval: 15000,
-    wallpaperFade: 1400,
 
     links: {
         github: 'https://github.com/Wub796/Notch',
@@ -75,7 +72,6 @@ window.TB_CONFIG = {
    commit() path (mutate + persist + dispatch 'tb:settings'); consumers read
    here and listen for the event. Defaults merge under any saved state. */
 window.TB_SETTINGS = Object.assign({
-    wallpaperInterval: 15000,
     wallpaperSrc: 'assets/wallpapers/luca-bravo-ii5JY_46xH0-unsplash.jpg',
     dockMagnification: true,
     dockMaxScale: 1.6,

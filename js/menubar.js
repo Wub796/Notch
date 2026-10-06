@@ -79,145 +79,43 @@
         return n;
     }
 
-    /* (a) wallpaper: crossfading slideshow through TB_CONFIG.wallpapers (falls
-       back to the single TB_CONFIG.wallpaper, then to the CSS gradient). Two
-       stacked layers swap opacity with an ease transition. */
+    /* (a) Fixed wallpaper. Load only the chosen image; never rotate or preload
+       the gallery. A request token prevents a slower old choice replacing a new one. */
     function initWallpaper() {
-        var cfg = (typeof window.TB_CONFIG === 'object' && window.TB_CONFIG) || {};
+        var cfg = window.TB_CONFIG || {}, settings = window.TB_SETTINGS || {};
         var desktop = document.getElementById('desktop');
         if (!desktop) return;
-        var list = [];
-        if (Array.isArray(cfg.wallpapers) && cfg.wallpapers.length) {
-            list = cfg.wallpapers.slice();
-        } else if (typeof cfg.wallpaper === 'string' && cfg.wallpaper) {
-            list = [cfg.wallpaper];
-        }
-        if (!list.length) return;
-        var settings = (typeof window.TB_SETTINGS === 'object' && window.TB_SETTINGS) || {};
-        var interval = (typeof settings.wallpaperInterval === 'number' && settings.wallpaperInterval >= 2000)
-            ? settings.wallpaperInterval
-            : (typeof cfg.wallpaperInterval === 'number' && cfg.wallpaperInterval >= 2000)
-                ? cfg.wallpaperInterval : 5000;
-        var fade = (typeof cfg.wallpaperFade === 'number' && cfg.wallpaperFade > 0)
-            ? cfg.wallpaperFade : 1200;
-
-        /* entries may be plain src strings or {src,title,artist,year,link};
-           a wallpaper chosen in System Settings rotates first */
-        var entries = list.map(function (w) { return (typeof w === 'string') ? { src: w } : w; });
-        if (typeof settings.wallpaperSrc === 'string' && settings.wallpaperSrc) {
-            var picked = -1;
-            for (var pi = 0; pi < entries.length; pi++) {
-                if (entries[pi].src === settings.wallpaperSrc) { picked = pi; break; }
-            }
-            if (picked > 0) { entries.unshift(entries.splice(picked, 1)[0]); }
-            else if (picked < 0) { entries.unshift({ src: settings.wallpaperSrc }); }
-        }
-
-        var layers = [el('div', 'tb-wall-layer'), el('div', 'tb-wall-layer')];
-        layers.forEach(function (l) {
-            l.style.transitionDuration = fade + 'ms';
-            desktop.appendChild(l);
-        });
-
-        /* artwork attribution chip: names the current piece, links to Commons */
+        var list = Array.isArray(cfg.wallpapers) ? cfg.wallpapers : [cfg.wallpaper];
+        var entries = list.filter(Boolean).map(function (w) { return typeof w === 'string' ? { src: w } : w; });
+        if (!entries.length) return;
+        var layer = el('div', 'tb-wall-layer');
+        desktop.appendChild(layer);
         var credit = el('a', 'tb-wall-credit');
-        credit.target = '_blank';
-        credit.rel = 'noopener';
-        desktop.appendChild(credit);
-        function updateCredit(entry) {
-            if (entry && entry.title) {
-                credit.textContent = '🖼 ' + entry.title + ' — ' +
-                    (entry.artist || 'unknown artist') + (entry.year ? ' (' + entry.year + ')' : '');
+        credit.target = '_blank'; credit.rel = 'noopener'; desktop.appendChild(credit);
+        var request = 0;
+        function choose(src) {
+            var entry = entries.filter(function (w) { return w.src === src; })[0];
+            if (!entry) return;
+            var token = ++request, image = new Image();
+            image.onload = function () {
+                if (token !== request) return;
+                layer.style.backgroundImage = 'url("' + entry.src + '")';
+                layer.style.opacity = '1';
+                credit.textContent = entry.title ? '🖼 ' + entry.title + ' — ' + (entry.artist || 'Unsplash') : '';
                 credit.href = entry.link || '#';
-                credit.classList.add('tb-wall-credit--on');
-            } else {
-                credit.classList.remove('tb-wall-credit--on');
-            }
-        }
-
-        /* Frame 0 decides first paint, so it loads alone; the rest warm up in
-           the background once the page is idle (or after 2.5 s, whichever comes
-           first). Five 2560px wallpapers are ~4 MB — paying for all of them
-           before the desktop appears is the difference between a demo and a
-           wait. Frames that fail to load are dropped. */
-        var ok = [];
-
-        function loadEntry(entry, done) {
-            var img = new Image();
-            img.onload = function () { done(entry); };
-            img.onerror = function () { done(null); };
-            img.src = entry.src;
-        }
-
-        loadEntry(entries[0], function (first) {
-            if (first) { ok.push(first); }
-            start();
-            var rest = entries.slice(1);
-            if (!rest.length) { return; }
-            var warm = function () {
-                rest.forEach(function (entry) {
-                    loadEntry(entry, function (loaded) {
-                        if (loaded) { ok.push(loaded); }
-                    });
-                });
+                credit.classList.toggle('tb-wall-credit--on', Boolean(entry.title));
             };
-            if (typeof requestIdleCallback === 'function') {
-                requestIdleCallback(warm, { timeout: 2500 });
-            } else {
-                setTimeout(warm, 2500);
-            }
-        });
-
-        function start() {
-            if (!ok.length) return; /* keep the CSS gradient fallback */
-            var idx = 0;
-            var active = 0;
-            layers[0].style.backgroundImage = 'url("' + ok[0].src + '")';
-            layers[0].style.opacity = '1';
-            updateCredit(ok[0]);
-            var timer = null;
-            function tick() {
-                if (ok.length < 2) { return; } /* nothing else decoded yet */
-                idx = (idx + 1) % ok.length;
-                var front = layers[active];
-                var back = layers[1 - active];
-                back.style.backgroundImage = 'url("' + ok[idx].src + '")';
-                back.style.opacity = '1';
-                front.style.opacity = '0';
-                active = 1 - active;
-                updateCredit(ok[idx]);
-            }
-            function arm(ms) {
-                if (timer) clearInterval(timer);
-                timer = setInterval(tick, ms);
-            }
-            arm(interval);
-
-            /* System Settings changes land here live: new interval re-arms the
-               rotation; a picked wallpaper crossfades in immediately */
-            window.addEventListener('tb:settings', function (e) {
-                var d = e && e.detail;
-                if (!d) return;
-                if (d.key === 'wallpaperInterval' && typeof d.value === 'number' && d.value >= 2000) {
-                    arm(d.value);
-                } else if (d.key === 'wallpaperSrc' && typeof d.value === 'string' && d.value) {
-                    var hit = -1;
-                    for (var i = 0; i < ok.length; i++) {
-                        if (ok[i].src === d.value) { hit = i; break; }
-                    }
-                    if (hit >= 0 && hit !== idx) {
-                        idx = hit;
-                        var f2 = layers[active];
-                        var b2 = layers[1 - active];
-                        b2.style.backgroundImage = 'url("' + ok[idx].src + '")';
-                        b2.style.opacity = '1';
-                        f2.style.opacity = '0';
-                        active = 1 - active;
-                        updateCredit(ok[idx]);
-                    }
-                }
-            });
+            image.onerror = function () {
+                if (token !== request) return;
+                window.dispatchEvent(new CustomEvent('tb:notification', { detail: { title: 'Wallpaper unavailable', message: 'Choose another photo in Settings → Wallpaper.' } }));
+            };
+            image.src = entry.src;
         }
+        var saved = entries.some(function (w) { return w.src === settings.wallpaperSrc; });
+        choose(saved ? settings.wallpaperSrc : (cfg.wallpaper || entries[0].src));
+        window.addEventListener('tb:settings', function (e) {
+            if (e.detail && e.detail.key === 'wallpaperSrc') choose(e.detail.value);
+        });
     }
 
     /* (b) first-run hint: the desktop is a set piece, and a visitor who never

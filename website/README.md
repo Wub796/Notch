@@ -18,6 +18,9 @@ handful of keyless public APIs the demo calls on purpose (see *Network calls*).
 - Timer offers 5/15/25-minute presets and a 1–180-minute custom duration, pause,
   reset, and a completion banner. It uses wall-clock deadlines to survive tab
   throttling, but it does not survive reloads or work after the page is closed.
+- Wallpaper stays fixed. Choose a supplied photo in System Settings → Wallpaper;
+  your choice is saved in this browser and restored on reload. Old rotation settings
+  are ignored, and other photos load only when you open the picker or select them.
 - Right-click the desktop or an icon for a keyboard-navigable context menu.
   Shift/Cmd/Ctrl-click adds to icon selection; drag empty space for marquee selection.
 - F11 or Cmd/Ctrl+Shift+D shows/restores the desktop. Cmd/Ctrl+Space opens Spotlight
@@ -43,7 +46,7 @@ css/apps.css        in-window content: GitHub replica, cards, Finder, Preview,
                     Messages, Terminal, Camera Mirror, Launchpad
 css/settings-app.css   the System Settings window (sidebar + white panes)
 js/config.js        single source of truth: name, links, wallpapers, music, version
-js/menubar.js       menu bar + its popups + the wallpaper rotator
+js/menubar.js       menu bar + its popups + the fixed wallpaper controller
 js/notch.js         hover/pin state, preview transport, Notes, Timer and File Shelf
 js/windows.js       window manager: open/focus/minimize/zoom/drag/resize
 js/apps.js          renderers for everything that lives inside a window + the VFS
@@ -54,7 +57,7 @@ js/desktop-icons.js draggable desktop icons
 js/settings-app.js  System Settings panes + the settings contract
 assets/icon.png     app icon (favicon, dock, cards, manifest)
 assets/icons/       macOS app icons used by the Dock and Launchpad
-assets/wallpapers/  the rotating wallpapers (Unsplash, credited in js/config.js)
+assets/wallpapers/  the selectable wallpapers (Unsplash, credited in js/config.js)
 ```
 
 ## The shell (css/main.css)
@@ -93,7 +96,7 @@ otherwise beat the attribute.
 
 - `siteName` / `appName` — the menu bar's bold name, window titles, cards.
 - `links` — GitHub, releases, issues, README, third-party notices, and the tags API.
-- `wallpapers` — the rotating list plus its credit chip metadata.
+- `wallpapers` — the manual-selection gallery plus its credit chip metadata.
 - `music` — the demo track; an empty `audioUrl` makes the notch look up a 30-second
   iTunes preview at runtime.
 - `getLatestTag()` — cached (1 h) GitHub tag lookup for every version label, with a

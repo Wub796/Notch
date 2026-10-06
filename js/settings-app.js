@@ -319,35 +319,14 @@
         return p;
     }
 
-    /* ---------- pane: Wallpaper (REAL: rotate interval + artwork picker) ---------- */
+    /* ---------- pane: Wallpaper (persistent manual picker) ---------- */
 
     function buildWallpaper() {
         var p = pane('Wallpaper');
         var list = wallpapers();
         /* entries are the local Unsplash photos from js/config.js */
 
-        /* rotate-interval segmented control (values in ms) */
-        var SEGS = [
-            { label: '5s', value: 5000 },
-            { label: '15s', value: 15000 },
-            { label: '30s', value: 30000 },
-            { label: '60s', value: 60000 }
-        ];
-        var curInterval = get('wallpaperInterval', 15000);
-        var segBtns = [];
-        var seg = el('div', 'tb-set-seg');
-        SEGS.forEach(function (o) {
-            var b = el('button', 'tb-set-seg-btn' + (o.value === curInterval ? ' tb-set-seg-on' : ''), o.label);
-            b.type = 'button';
-            b.addEventListener('click', function () {
-                curInterval = o.value;
-                segBtns.forEach(function (x) { x.classList.toggle('tb-set-seg-on', x === b); });
-                commit('wallpaperInterval', o.value);
-            });
-            segBtns.push(b);
-            seg.appendChild(b);
-        });
-        p.appendChild(group([row('Rotate every', seg)]));
+        p.appendChild(el('p', 'tb-set-wp-caption', 'Choose your desktop background. It stays fixed until you change it, and your choice is saved in this browser.'));
 
         /* 4-column artwork thumbnail grid from TB_CONFIG.wallpapers */
         p.appendChild(el('div', 'tb-set-group-label', 'Wallpapers'));
@@ -367,13 +346,15 @@
             var t = el('button', 'tb-set-thumb' + (w.src === selSrc ? ' tb-set-thumb-on' : ''));
             t.type = 'button';
             t.title = credit(w);
+            t.setAttribute('aria-label', credit(w));
+            t.setAttribute('aria-pressed', String(w.src === selSrc));
             var img = el('img', 'tb-set-thumb-img');
             img.src = w.src;
             img.alt = w.title;
             t.appendChild(img);
             t.addEventListener('click', function () {
                 selSrc = w.src;
-                thumbs.forEach(function (x) { x.classList.toggle('tb-set-thumb-on', x === t); });
+                thumbs.forEach(function (x) { x.classList.toggle('tb-set-thumb-on', x === t); x.setAttribute('aria-pressed', String(x === t)); });
                 caption.textContent = credit(w);
                 commit('wallpaperSrc', w.src);
             });
