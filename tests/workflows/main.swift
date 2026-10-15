@@ -85,7 +85,20 @@ expect(clipboard.entries.count == 3 && clipboard.entries[0].isPinned, "Pins do n
 collect("Pinned")
 expect(clipboard.entries[0].id == originalID && clipboard.entries[0].isPinned, "Re-copy preserves row identity and pin ordering")
 let persisted = ClipboardManager(pasteboard: pasteboard, defaults: defaults)
-expect(persisted.entries.count == 1 && persisted.entries[0].copiedAt == clipboard.entries[0].copiedAt,
+// The pin timestamp is persisted as a `timeIntervalSince1970` Double, and that
+// round-trip is lossy by one ULP: for essentially every real date,
+// `Date(timeIntervalSince1970: d.timeIntervalSince1970) != d`. Exact `Date`
+// equality against the in-memory value therefore could never hold, which is
+// what made this check fail. The tolerance is a hundredth of a second against
+// the 1.08s between copies above, so a *stale* pin timestamp — the thing this
+// check exists to catch — still fails it by two orders of magnitude.
+// `first` rather than `[0]`: nothing persisted has to fail the check as a
+// failed assertion, not as an index out of range.
+let persistedPin = persisted.entries.first
+let pinTimestampDrift = persistedPin
+    .map { abs($0.copiedAt.timeIntervalSince(clipboard.entries[0].copiedAt)) }
+    ?? .infinity
+expect(persisted.entries.count == 1 && pinTimestampDrift < 0.01,
        "Re-copy persists the actual updated pin timestamp, never recent text")
 capacity = 1
 clipboard.trimToCapacity()
