@@ -67,8 +67,18 @@ version, refuses an app whose `SUPublicEDKey` differs from
 install an unsigned update over a signed app), packages `Notch.zip`, generates
 and signs the appcast through Sparkle's own `generate_appcast`, runs the checks
 above, then creates the GitHub release and confirms the feed URL returns exactly
-those bytes. Publishing needs a clean tree, because the tag is pinned to the
-commit that was built.
+those bytes — retried a bounded number of times, because `releases/latest` is
+answered by a CDN edge that does not turn over the instant the release is
+created and would otherwise report a publish that had in fact succeeded as a
+failure. Only the last attempt decides the outcome. Publishing needs a clean
+tree, because the tag is pinned to the commit that was built.
+
+The block that does that final check is worth exercising on its own, and it can
+be: extract it from `release.sh` (`sed -n '/^echo "== Feed:/,/^echo "== Done:/p'`)
+and source it with `expected_feed_url`, `appcast` and `work` already set. Pointed
+at the live feed it passes; pointed at a local server that serves the previous
+release's appcast for its first requests it passes on the third attempt; pointed
+at a feed that never serves those bytes it still exits non-zero.
 
 The appcast carries one item — the release being published — because it is
 generated from that release's archive alone. Sparkle offers the newest item the

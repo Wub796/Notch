@@ -280,10 +280,27 @@ gh release create "$tag" \
 # The whole point of the release: the address the app asks for now answers with
 # the appcast that was just built, byte for byte. `releases/latest` only moves
 # for a published release, so a draft or a pre-release would fail here.
+#
+# It is retried, because `releases/latest` is answered by a CDN edge that does
+# not turn over the instant the release is created: the first fetch after a
+# publish that has already succeeded can still return the *previous* release's
+# appcast, and calling that a failed release is worse than not checking. Only
+# the last attempt decides, so a feed that never serves these exact bytes still
+# fails the run.
 echo "== Feed: $expected_feed_url"
-curl -fsSL "$expected_feed_url" -o "$work/published-appcast.xml" \
-    || fail "nothing answers at $expected_feed_url — check that $tag is published (not a draft or pre-release), is the latest release, and carries $feed_name; if the release is right, the edge may still be catching up, so retry: curl -fsSL $expected_feed_url"
-cmp -s "$appcast" "$work/published-appcast.xml" \
-    || fail "the published appcast is not the one that was built"
+published="$work/published-appcast.xml"
+attempts=6
+attempt=1
+while : ; do
+    if curl -fsSL "$expected_feed_url" -o "$published" && cmp -s "$appcast" "$published"; then
+        break
+    fi
+    if [ "$attempt" -ge "$attempts" ]; then
+        fail "$expected_feed_url still does not answer with the appcast that was built, after $attempts attempts ($tag itself is published — check that it is the latest release, is not a draft or a pre-release, and carries $feed_name)"
+    fi
+    echo "   attempt $attempt of $attempts did not return these bytes (edge catching up)"
+    attempt=$((attempt + 1))
+    sleep 5
+done
 
 echo "== Done: $tag is live at $expected_feed_url"
