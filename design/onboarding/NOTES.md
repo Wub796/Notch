@@ -312,7 +312,7 @@ that comparison, which is exactly what it looked like on screen.
 | Radii, insets | `NotchSizing` — 26/30 open, 16/18 closed, 31/5 audio gutters |
 | Header strip | `NotchState.topBarHeight` (44), `NotchLayoutView`'s 6pt gap |
 | Module | `DevicesScreenMetrics`: hero 98 + gap 8 + playback 120 + 6 safe = 232 |
-| Cover (open) | 76pt at radius 20 — what `DevicesScreenView` draws, not the reference `ArtworkSizes.opened` (90) nothing uses any more |
+| Cover (open) | 76pt at radius 20 — what `DevicesScreenView` draws, not the reference's 90pt, which nothing uses any more |
 | Cover (closed) | 22pt at radius 8, at `CollapsedNotchView`'s own `closedArtworkInset` |
 
 The panel's contents are the Now page's, too: the audio tab's own header (a back
