@@ -575,6 +575,11 @@ final class NotchState {
         settings.onAudioMeterBarCountChanged = { [weak self] count in
             self?.audioMeter.setBandCount(count)
         }
+        // The gauges resample on the interval the sampler was armed with, so a
+        // change has to reach it rather than wait for the next open.
+        settings.onTelemetryIntervalChanged = { [weak self] _ in
+            self?.telemetry.restart()
+        }
         audioMeter.setBandCount(settings.audioMeterBarCount)
         // The lyric line is the closed notch's only activity whose size the
         // user can switch off from Settings: without this the toggle only took
@@ -715,12 +720,19 @@ final class NotchState {
     /// press from ambient auto-brightness, so the notch lit up every time you
     /// walked past a window. Only a key press is a user action, and only the
     /// tap can see one.
+    ///
+    /// `ensureRunning` rather than `start`: a tap that exists but has been
+    /// switched off by the system has to be re-armed, and one that will not
+    /// come back has to be rebuilt. This is also the retry path for the two
+    /// cases that used to need a relaunch — Accessibility granted while the
+    /// app was running, and a tap lost to a sleep/wake cycle.
     func applyHUDSources() {
         let interceptor = MediaKeyInterceptor.shared
-        if settings.hudReplacement, interceptor.start() {
-            return
+        if settings.hudReplacement {
+            interceptor.ensureRunning()
+        } else {
+            interceptor.stop()
         }
-        interceptor.stop()
     }
 
     /// Re-reads which apps are putting audio out. Cheap — one CoreAudio
@@ -1342,6 +1354,17 @@ final class NotchState {
         // A timer may have started, finished or been dismissed with the Mac
         // asleep, and the plist file monitor did not see any of it.
         clockTimer.reload()
+        // The event tap is the one monitor that can be switched off *by* the
+        // sleep rather than merely going stale: a tap disabled while the
+        // display slept used to stay disabled, and the volume and brightness
+        // keys raised the system HUD for the rest of the session. Re-checking
+        // here re-arms it before the first key press after a wake.
+        applyHUDSources()
+        // The output tap behind the closed notch's bars is the same kind of
+        // casualty — CoreAudio rebuilds its device graph across a sleep, and a
+        // tap that did not survive it reads as "nothing is playing" until the
+        // meter is told to try again.
+        audioMeter.revalidate()
         syncAudioMeter()
         media.updateLyricActivityTimer()
         syncMediaVisibility()

@@ -234,7 +234,7 @@ struct AudioDevicesView: View {
             HStack(spacing: 12) {
                 // Video thumbnail / Album art / App icon
                 Group {
-                    if activeAudioApp == nil, let artwork = state.media.artwork {
+                    if activeAudioApp == nil, let artwork = state.media.cover.image {
                         Image(nsImage: artwork)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
@@ -267,6 +267,11 @@ struct AudioDevicesView: View {
                         .font(.notchCaption)
                         .foregroundStyle(NotchTheme.inkSecondary)
                         .lineLimit(1)
+                        // The banner names whichever app or item is making
+                        // sound, so it turns over with the media: crossfade it
+                        // like the title above rather than cutting beside it.
+                        .contentTransition(.interpolate)
+                        .animation(NotchAnimations.content, value: audioBannerArtist)
                 }
 
                 Spacer(minLength: 8)

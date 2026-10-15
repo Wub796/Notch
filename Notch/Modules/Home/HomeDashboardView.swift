@@ -261,6 +261,13 @@ struct HomeDashboardView: View {
                             .foregroundStyle(NotchTheme.inkSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
+                            // The artist swaps with the title rather than
+                            // cutting under it: a track or source change moves
+                            // the whole column, and one of the two lines
+                            // fading while the other snapped made the pair
+                            // read as two unrelated updates.
+                            .contentTransition(.interpolate)
+                            .animation(NotchAnimations.content, value: displayArtist)
                             .frame(maxWidth: sizing.artistWidth, alignment: .leading)
 
                     }
@@ -383,20 +390,20 @@ struct HomeDashboardView: View {
     private var artwork: some View {
         let side = HomeDashboardSizing.coverArtSize
         return ZStack {
-            // Keyed on `artworkVersion` so the cover crossfades on track
+            // Keyed on `cover.version` so the cover crossfades on track
             // change; the stable container below keeps the open/close morph
             // and the source-app badge fixed while the image swaps.
             artworkContent
-                .id(state.media.artworkVersion)
+                .id(state.media.cover.version)
                 .transition(.opacity)
         }
         .frame(width: side, height: side)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
-        .shadow(color: state.media.accent.opacity(0.38), radius: 12, y: 4)
-        .animation(NotchAnimations.content, value: state.media.artworkVersion)
+        .shadow(color: state.media.cover.accent.opacity(0.38), radius: 12, y: 4)
+        .animation(NotchAnimations.content, value: state.media.cover.version)
         .overlay(alignment: .bottomTrailing) {
-            if let icon = state.media.sourceAppIcon ?? (state.media.artwork != nil ? activeAudioApp?.icon : nil) {
+            if let icon = state.media.sourceAppIcon ?? (state.media.cover.image != nil ? activeAudioApp?.icon : nil) {
                 Image(nsImage: icon)
                     .resizable()
                     .frame(width: 20, height: 20)
@@ -404,6 +411,11 @@ struct HomeDashboardView: View {
 
                     .overlay { Circle().stroke(.black, lineWidth: 1.5) }
                     .offset(x: 4, y: 4)
+                    // The badge is the app the sound is coming from, so it
+                    // turns over with the item: Spotify's glyph becomes
+                    // Chrome's under the same cover when a video takes over.
+                    .contentTransition(.interpolate)
+                    .animation(NotchAnimations.content, value: state.media.sourceAppName)
                     .help(state.media.sourceAppName ?? "")
                     .accessibilityLabel("Playing in \(state.media.sourceAppName ?? "another app")")
             }
@@ -412,11 +424,11 @@ struct HomeDashboardView: View {
 
     @ViewBuilder
     private var artworkContent: some View {
-        if state.media.isBrowserVideo, let image = state.media.artwork {
+        if state.media.isBrowserVideo, let image = state.media.cover.image {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-        } else if let image = state.media.artwork {
+        } else if let image = state.media.cover.image {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)

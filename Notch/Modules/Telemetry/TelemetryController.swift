@@ -45,6 +45,21 @@ final class TelemetryController {
         previousNetworkSample = nil
     }
 
+    /// Re-arms a running sampler at the current interval.
+    ///
+    /// `start()` reads `telemetryInterval` once, when it builds the timer, so
+    /// changing "Refresh every" in Settings did nothing to a sampler that was
+    /// already running. The previous samples are deliberately kept: they are
+    /// the baseline the next CPU and network reading is a delta against, and
+    /// clearing them here would spend the new cadence's first tick on a
+    /// sample that has nothing to compare with.
+    func restart() {
+        guard timer != nil else { return }
+        timer?.invalidate()
+        timer = nil
+        start()
+    }
+
     private func sample() {
         let cpu = sampleCPURaw()
         let mem = sampleMemoryRaw()

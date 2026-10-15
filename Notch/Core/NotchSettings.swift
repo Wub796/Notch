@@ -453,7 +453,16 @@ final class NotchSettings {
 
     var autoScrollLyrics = true { didSet { save(autoScrollLyrics, "autoScrollLyrics") } }
 
-    var telemetryInterval = 1.0 { didSet { save(telemetryInterval, "telemetryInterval") } }
+    /// How often the gauges resample, in seconds. The sampler reads this when
+    /// it arms its timer, so a change is pushed through `onTelemetryIntervalChanged`
+    /// — without that, "Refresh every" only took effect at the next open.
+    var telemetryInterval = 1.0 {
+        didSet {
+            save(telemetryInterval, "telemetryInterval")
+            notify(onTelemetryIntervalChanged, telemetryInterval)
+        }
+    }
+    var onTelemetryIntervalChanged: ((Double) -> Void)?
 
     /// Show telemetry gauges in System view.
     var showCPUSparkline = true { didSet { save(showCPUSparkline, "showCPUSparkline") } }

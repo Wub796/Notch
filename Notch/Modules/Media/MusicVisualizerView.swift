@@ -30,6 +30,13 @@ struct MusicVisualizerView: View {
     /// The height every bar is drawn inside, and the tallest a bar can be.
     private static let maxHeight: CGFloat = 15
 
+    /// How long a bar takes to settle onto a new reading.
+    ///
+    /// The meter publishes at 30Hz, so this only has to bridge one sample to
+    /// the next: longer and the bars lag the music, shorter and the 33ms steps
+    /// read as a stutter.
+    private static let bandSettle: TimeInterval = 0.07
+
     /// The count the view actually draws, clamped to what the meter measures.
     private var resolvedBarCount: Int {
         AudioBandAnalyzer.clampedBandCount(barCount)
@@ -66,21 +73,26 @@ struct MusicVisualizerView: View {
     }
 
     var body: some View {
-        Group {
-            if isMetered {
-                // The meter publishes at 30Hz; animating between its values is
-                // all the motion needed, so no timeline is driven here.
-                bars { index in meteredHeight(index) }
-                    .animation(.easeOut(duration: 0.07), value: bands ?? [])
-            } else {
-                // A volume setting is not audio magnitude and contains no
-                // frequency information. Stay still until real bands arrive.
-                bars { _ in barWidth }
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Output frequency bands")
-        .accessibilityValue(accessibilityValue)
+        // One row of bars, rather than a second branch for the idle state.
+        //
+        // The split existed so a count change would not draw the previous
+        // split's magnitudes under the new count, and that rule is kept: an
+        // unmetered reading draws the idle stub — never stale bands, and never
+        // a volume setting standing in for a magnitude nothing measured. What
+        // the split also did was replace the whole row, so the two moments a
+        // listener actually watches (the meter starting or stopping with
+        // playback, and muting) cut every bar to its idle height in one frame.
+        // Drawing the stubs keeps the rule and lets the heights settle.
+        bars { index in isMetered ? meteredHeight(index) : barWidth }
+            .animation(.easeOut(duration: Self.bandSettle), value: bands ?? [])
+            // Arriving at and falling out of a live measurement are state
+            // changes rather than samples, so they take the house curve — which
+            // is also what makes Reduce Motion collapse them to a fade.
+            .animation(NotchAnimations.content, value: isMetered)
+            .animation(NotchAnimations.content, value: outputIsAudible)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Output frequency bands")
+            .accessibilityValue(accessibilityValue)
     }
 
     /// Accessible readings of each measured band, or the reason the bars are

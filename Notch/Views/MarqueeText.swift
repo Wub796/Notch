@@ -83,6 +83,20 @@ struct MarqueeText: View {
             .font(font)
             .tracking(tracking)
             .fixedSize()
+            // A new title crossfades into place rather than cutting. The
+            // marquee already restarts its run on a text change; the swap of
+            // the glyphs themselves is the same event, and it is the one the
+            // eye catches — every source change in the notch lands here, and
+            // the cover beside it has always crossfaded while the title
+            // snapped.
+            //
+            // `.interpolate` is the string equivalent of the `.numericText()`
+            // the readouts use, and unlike an `.id`-driven transition it keeps
+            // the layout to the *new* text's own box: the old title fades
+            // inside it rather than holding the row at its own width for the
+            // length of the animation, which on a marquee that sizes its row
+            // would read as the card jumping twice.
+            .contentTransition(.interpolate)
     }
 
     /// One copy carrying the measurement of its own natural width.
@@ -166,6 +180,9 @@ struct MarqueeText: View {
             .onChange(of: text) { _, _ in restart() }
             .onChange(of: textWidth) { _, _ in restart() }
             .onChange(of: shouldScroll) { _, _ in restart() }
+            // The crossfade above, on the house curve — so it lands with the
+            // cover's own crossfade and follows Reduce Motion.
+            .animation(NotchAnimations.content, value: text)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(text)
     }

@@ -76,6 +76,13 @@ final class SystemAudioMeter {
     /// hop), so neither needs a lock.
     private var isStarting = false
 
+    /// When the meter last rebuilt itself after finding its tap stopped. A tap
+    /// that dies as soon as it is built would otherwise be rebuilt on every
+    /// publication — 30 times a second — so a self-heal is allowed no more
+    /// often than this.
+    private var lastSelfHeal = Date.distantPast
+    private static let selfHealInterval: TimeInterval = 2
+
     /// Bumped by every start and stop. A start whose completion arrives after a
     /// stop — or after a newer start — throws its own tap away rather than
     /// leaving one running with nothing driving it.
@@ -149,6 +156,30 @@ final class SystemAudioMeter {
         }
     }
 
+    /// Rebuilds the measurement when the tap behind it has stopped.
+    ///
+    /// A CoreAudio tap does not survive everything. Its device graph is
+    /// rebuilt across a sleep, and the output device behind a global tap can be
+    /// replaced under it — AirPods connecting, a display with speakers going
+    /// away, the default output switching. The tap then stops, `publish()`
+    /// reports silence, and it used to stay that way: `start()` refuses while a
+    /// timer is running, and the timer was still running, so the bars stayed
+    /// flat until the app was relaunched or the visualiser setting was toggled
+    /// off and on. Nothing outside this class can see that, so the meter checks
+    /// itself — on wake, when playback state changes, and once every
+    /// publication while the tap is down.
+    func revalidate() {
+        // Nothing should be measuring: `syncAudioMeter` stops a meter that is
+        // not wanted, and a start already in flight publishes its own result.
+        guard timer != nil, !isStarting else { return }
+        guard !tap.isRunning else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastSelfHeal) >= Self.selfHealInterval else { return }
+        lastSelfHeal = now
+        stop()
+        start()
+    }
+
     func stop() {
         generation &+= 1
         isStarting = false
@@ -197,6 +228,10 @@ final class SystemAudioMeter {
         guard live else {
             let silence = [Float](repeating: 0, count: bandCount)
             if bands != silence { bands = silence }
+            // The tap stopped under a running meter, so this is now a silence
+            // with nothing behind it. Rebuild rather than leave the bars flat
+            // for the rest of the session — see `revalidate()`.
+            revalidate()
             return
         }
         let measured = tap.bands

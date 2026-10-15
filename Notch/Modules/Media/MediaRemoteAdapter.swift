@@ -99,6 +99,28 @@ final class MediaRemoteAdapter {
         URL(fileURLWithPath: "/usr/bin/perl")
     }
 
+    /// Every child this class spawns is subject to this, because every child
+    /// can hang: the framework talks to the media daemon, and a wedged daemon
+    /// leaves a process that never exits. `waitUntilExit` with no deadline is
+    /// then a permanent stop — for the check below, it is the adapter never
+    /// being armed at all, and for a one-shot `get` it is the playhead
+    /// read-back never running again for the whole session, because that queue
+    /// is serial and this one never came back.
+    private static let childTimeout: TimeInterval = 5
+    private static let deadlineQueue = DispatchQueue(
+        label: "com.notchapp.MediaRemoteAdapter.deadline", qos: .utility
+    )
+
+    /// Kills a child that outlives its deadline. Called right after `run()`:
+    /// terminating the process closes its pipe, which is what ends the reads
+    /// that follow.
+    private static func guardDeadline(_ process: Process) {
+        deadlineQueue.asyncAfter(deadline: .now() + childTimeout) { [process] in
+            guard process.isRunning else { return }
+            process.terminate()
+        }
+    }
+
     /// Runs the adapter's `test` command: "Tests if the adapter is entitled to
     /// use the MediaRemote framework. An exit code other than 0 indicates the
     /// adapter is non-functional." Blocking, so only call off the main thread.
@@ -111,11 +133,12 @@ final class MediaRemoteAdapter {
         process.standardError = FileHandle.nullDevice
         do {
             try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
         } catch {
             return false
         }
+        guardDeadline(process)
+        process.waitUntilExit()
+        return process.terminationStatus == 0
     }
 
     /// Spawns the stream. Updates arrive on `onInfo` until stop() or the
@@ -228,6 +251,7 @@ final class MediaRemoteAdapter {
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
+            Self.guardDeadline(process)
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
 

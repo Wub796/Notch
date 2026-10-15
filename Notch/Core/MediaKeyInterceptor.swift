@@ -16,6 +16,16 @@ import Foundation
 /// opt-in, and everything degrades to the system HUD when it is off or the
 /// permission is missing.
 ///
+/// Three things are deliberately not in this file. The tap runs on its own
+/// thread (see `EventTapHost`), because a callback served from the main run
+/// loop is disabled by the system whenever this app is busy — which is the
+/// normal state of the app this lives in — and a disabled tap hands the keys
+/// back to the system HUD. The decision about a tap in each state is
+/// `MediaKeyTapPolicy`, a pure function, because a real tap cannot be disabled
+/// on demand and that decision is the whole of the recovery logic. What is left
+/// here is the gate, the health check that acts on the decision, and the keys
+/// themselves.
+///
 /// Not actor-isolated, matching `HotKeyManager`: both are singletons whose
 /// public surface is driven from the main thread and whose C callback arrives
 /// on a tap thread and hops to main explicitly. Marking it `@MainActor` makes
@@ -39,6 +49,12 @@ final class MediaKeyInterceptor {
 
     private static let systemDefinedEventType = CGEventType(rawValue: 14)!
 
+    /// How often the tap's health is checked while HUD replacement is on. One
+    /// local `tapIsEnabled` call — no polling of anything outside this process
+    /// — and the only thing that notices a tap the system switched off without
+    /// telling us.
+    private static let healthInterval: TimeInterval = 15
+
     /// Called with the new value so the notch can raise its HUD.
     var onVolume: ((Float, Bool) -> Void)?
     var onBrightness: ((Float) -> Void)?
@@ -55,12 +71,23 @@ final class MediaKeyInterceptor {
     /// brighter display value as a "bounce back" to ~43%.
     var setBrightness: ((Float) -> Float)?
 
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
+    private let host: EventTapHost
 
-    private init() {}
+    /// The health check. Main thread only — a `Timer` scheduled there — and
+    /// alive for exactly as long as HUD replacement is wanted.
+    private var watchdog: Timer?
+    /// Whether a re-arm has already been tried for the tap in hand. Main thread
+    /// only, like the watchdog: the tap thread never takes this decision.
+    private var rearmAttempted = false
 
-    var isRunning: Bool { eventTap != nil }
+    private init() {
+        // The handler reaches `shared` rather than capturing `self`: this runs
+        // while that very static is being initialized, and the reference is
+        // only read when an event arrives, long after it is done.
+        host = EventTapHost { event in
+            MediaKeyInterceptor.shared.handle(event)
+        }
+    }
 
     /// Whether macOS has granted this app Accessibility access.
     static var isAccessibilityTrusted: Bool {
@@ -74,48 +101,89 @@ final class MediaKeyInterceptor {
         _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
 
+    /// Brings the tap up, or back up, when it should be running.
+    ///
+    /// The single entry point for every recovery path — wake, the display
+    /// waking, the app coming forward, the health check — so there is one place
+    /// that decides whether the tap is healthy, worth re-arming, or dead enough
+    /// to rebuild. The decision itself is `MediaKeyTapPolicy`, which is a pure
+    /// function and is checked without a live tap.
+    func ensureRunning() {
+        guard NotchSettings.shared.hudReplacement else {
+            stop()
+            return
+        }
+        // Armed before the trust test on purpose: Accessibility can be granted
+        // while the app is running, and this keeps checking so the grant is
+        // picked up without a relaunch.
+        armWatchdog()
+
+        switch MediaKeyTapPolicy.action(
+            wanted: true,
+            trusted: Self.isAccessibilityTrusted,
+            hasTap: host.hasTap,
+            enabled: host.isEnabled,
+            ageSinceArmed: host.ageSinceArmed,
+            settleTime: MediaKeyTapPolicy.defaultSettleTime,
+            rearmAttempted: rearmAttempted
+        ) {
+        case .healthy:
+            // Anything a re-arm may have been waiting for has happened.
+            rearmAttempted = false
+        case .none:
+            break
+        case .install:
+            startTap()
+        case .rearm:
+            // `EventTapHost` re-arms from the disable event itself; this is the
+            // path for a disable event that never arrived.
+            rearmAttempted = true
+            host.rearm()
+        case .rebuild:
+            // A port that will not come back: `tapEnable` on an invalidated one
+            // reports success and changes nothing, so it has to be replaced.
+            stopTap()
+            startTap()
+        case .teardown:
+            // Wanted, but not permitted: hand the keys back to the system and
+            // keep watching for the permission to return.
+            stopTap()
+        }
+    }
+
+    /// Takes the tap down and stops checking on it — for HUD replacement being
+    /// switched off, and for app termination.
+    func stop() {
+        watchdog?.invalidate()
+        watchdog = nil
+        stopTap()
+    }
+
     @discardableResult
-    func start() -> Bool {
-        guard eventTap == nil else { return true }
+    private func startTap() -> Bool {
         guard NotchSettings.shared.hudReplacement, Self.isAccessibilityTrusted else {
             return false
         }
-
         let mask = CGEventMask(1 << Self.systemDefinedEventType.rawValue)
-        let tap = CGEvent.tapCreate(
-            tap: .cghidEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: mask,
-            callback: { _, _, event, context in
-                guard let context else { return Unmanaged.passRetained(event) }
-                let interceptor = Unmanaged<MediaKeyInterceptor>
-                    .fromOpaque(context)
-                    .takeUnretainedValue()
-                return interceptor.handle(event)
-            },
-            userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-        )
-
-        guard let tap else { return false }
-        eventTap = tap
-        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        if let runLoopSource {
-            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-        }
-        CGEvent.tapEnable(tap: tap, enable: true)
+        guard host.start(eventsOfInterest: mask) else { return false }
+        // A fresh tap has a fresh lifetime in front of it.
+        rearmAttempted = false
+        armWatchdog()
         return true
     }
 
-    func stop() {
-        if let eventTap {
-            CGEvent.tapEnable(tap: eventTap, enable: false)
+    /// Drops the tap without touching the watchdog, so the trust-lost path can
+    /// hand the keys back while still watching for the permission to return.
+    private func stopTap() {
+        host.stop()
+        rearmAttempted = false
+    }
+
+    private func armWatchdog() {
+        guard watchdog == nil else { return }
+        watchdog = Timer.scheduledRepeating(every: Self.healthInterval) { [weak self] in
+            self?.ensureRunning()
         }
-        if let runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-        }
-        runLoopSource = nil
-        eventTap = nil
     }
 
     // MARK: - Event handling
@@ -123,14 +191,12 @@ final class MediaKeyInterceptor {
     /// Runs on the event-tap thread, so every action is hopped to the main
     /// queue. Returns nil to swallow a key we handled, or the event untouched
     /// for anything else.
+    ///
+    /// Only the *action* needs the main thread. Reading the key out of an event
+    /// is a plain `NSEvent(cgEvent:)` plus its `data1` and nothing else, which
+    /// is thread-agnostic — it is the class-level `NSEvent` queries, not the
+    /// instance ones, that belong to the main thread.
     private func handle(_ event: CGEvent) -> Unmanaged<CGEvent>? {
-        // A disabled tap (timeout, or user input while it was blocked) has to
-        // be re-armed or the keys stop working entirely.
-        if event.type == .tapDisabledByTimeout || event.type == .tapDisabledByUserInput {
-            DispatchQueue.main.async { MediaKeyInterceptor.shared.reenable() }
-            return Unmanaged.passRetained(event)
-        }
-
         guard event.type != .null,
               let nsEvent = NSEvent(cgEvent: event),
               nsEvent.type == .systemDefined,
@@ -154,15 +220,10 @@ final class MediaKeyInterceptor {
         }
         let fineStep = flags.contains(.option) && flags.contains(.shift)
 
-        DispatchQueue.main.async {
-            MediaKeyInterceptor.shared.apply(key: key, fineStep: fineStep)
+        DispatchQueue.main.async { [weak self] in
+            self?.apply(key: key, fineStep: fineStep)
         }
         return nil
-    }
-
-    private func reenable() {
-        guard let eventTap else { return }
-        CGEvent.tapEnable(tap: eventTap, enable: true)
     }
 
     private func apply(key: KeyType, fineStep: Bool) {

@@ -142,14 +142,14 @@ struct FaceIDNowPlayingPlayer: View {
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
                             .strokeBorder(Color.white.opacity(0.22), lineWidth: 0.8)
                     }
-                    .shadow(color: media.accent.opacity(0.18), radius: 12, y: 5)
+                    .shadow(color: media.cover.accent.opacity(0.18), radius: 12, y: 5)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(media.sourceAppName?.uppercased() ?? "NOW PLAYING")
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .tracking(1.25)
-                        .foregroundStyle(media.accent.opacity(0.95))
+                        .foregroundStyle(media.cover.accent.opacity(0.95))
                         .lineLimit(1)
 
                     Text(title)
@@ -211,7 +211,7 @@ struct FaceIDNowPlayingPlayer: View {
                     // Matches the timeline above: the fill glides between two
                     // of its ticks instead of stepping at each one.
                     sampleInterval: 0.1,
-                    accent: media.accent,
+                    accent: media.cover.accent,
                     onSeek: { media.seek(to: $0) },
                     onScrubPreview: { media.previewScrub(to: $0) },
                     onScrubEnd: { media.endScrubPreview() }
@@ -247,7 +247,7 @@ struct FaceIDNowPlayingPlayer: View {
         .padding(.vertical, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
-            FaceIDNowPlayingGlassBackground(tint: media.accent.opacity(0.14))
+            FaceIDNowPlayingGlassBackground(tint: media.cover.accent.opacity(0.14))
         }
         .overlay {
             // A whisper of a rim so the pane reads as an edge against the
@@ -257,7 +257,7 @@ struct FaceIDNowPlayingPlayer: View {
             RoundedRectangle(cornerRadius: FaceIDGeometry.nowPlayingPanelCornerRadius, style: .continuous)
                 .strokeBorder(
                     LinearGradient(
-                        colors: [.white.opacity(0.22), media.accent.opacity(0.14), .white.opacity(0.06)],
+                        colors: [.white.opacity(0.22), media.cover.accent.opacity(0.14), .white.opacity(0.06)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
@@ -321,13 +321,13 @@ struct FaceIDNowPlayingPlayer: View {
 
     @ViewBuilder
     private var artwork: some View {
-        if let artwork = media.artwork {
+        if let artwork = media.cover.image {
             Image(nsImage: artwork)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-                .id(media.artworkVersion)
+                .id(media.cover.version)
                 .transition(.opacity)
-                .animation(NotchAnimations.activity, value: media.artworkVersion)
+                .animation(NotchAnimations.activity, value: media.cover.version)
         } else if let icon = media.sourceAppIcon {
             Image(nsImage: icon)
                 .resizable()

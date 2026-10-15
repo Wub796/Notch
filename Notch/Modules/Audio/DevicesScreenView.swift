@@ -194,7 +194,7 @@ struct DevicesScreenView: View {
     private var centeredLyrics: some View {
         ThreeDLyricsView(
             lyrics: media.lyrics,
-            accent: media.accent,
+            accent: media.cover.accent,
             onSelect: { time in
                 media.seek(to: time + 0.05)
             }
@@ -228,23 +228,23 @@ struct DevicesScreenView: View {
 
     private var artwork: some View {
         ZStack {
-            // Keyed on `artworkVersion` so a track change crossfades the
+            // Keyed on `cover.version` so a track change crossfades the
             // cover instead of hard-cutting it; the stable outer container
             // keeps the open/close `matchedGeometryEffect` morph intact.
             artworkContent
-                .id(media.artworkVersion)
+                .id(media.cover.version)
                 .transition(.opacity)
         }
         .frame(width: 76, height: 76)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .matchedGeometryEffect(id: "albumArt", in: namespace)
-        .shadow(color: media.accent.opacity(0.38), radius: 14, y: 5)
-        .animation(NotchAnimations.content, value: media.artworkVersion)
+        .shadow(color: media.cover.accent.opacity(0.38), radius: 14, y: 5)
+        .animation(NotchAnimations.content, value: media.cover.version)
     }
 
     @ViewBuilder
     private var artworkContent: some View {
-        if let image = media.artwork {
+        if let image = media.cover.image {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
@@ -275,6 +275,9 @@ struct DevicesScreenView: View {
             Text(String(displayArtist.prefix(1)).uppercased())
                 .font(.system(size: 9, weight: .heavy, design: .rounded))
                 .foregroundStyle(NotchTheme.inkPrimary)
+                // The initial turns over with the name beside it.
+                .contentTransition(.interpolate)
+                .animation(NotchAnimations.content, value: displayArtist)
                 .frame(width: 18, height: 18)
                 .background(Circle().fill(NotchTheme.surfaceHover))
 
@@ -282,6 +285,11 @@ struct DevicesScreenView: View {
                 .font(.notchCallout.weight(.bold))
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .lineLimit(1)
+                // Same substitution as the dashboard's artist line: the hero
+                // is three strings — title, artist, album — and they swap as
+                // one, since the cover beside them does.
+                .contentTransition(.interpolate)
+                .animation(NotchAnimations.content, value: displayArtist)
 
             Spacer(minLength: 0)
         }
@@ -333,6 +341,10 @@ struct DevicesScreenView: View {
                 .font(.notchCaption)
                 .foregroundStyle(NotchTheme.inkSecondary)
                 .lineLimit(1)
+                // "YouTube" and an album name trade places here on a source
+                // change, so this line crossfades with the two above it.
+                .contentTransition(.interpolate)
+                .animation(NotchAnimations.content, value: album)
         } else if let active = activeAudioApp {
             Button {
                 active.activate()
@@ -365,7 +377,7 @@ struct DevicesScreenView: View {
                 // Matches the timeline above: the fill glides between two of
                 // its ticks instead of stepping at each one.
                 sampleInterval: 0.1,
-                accent: media.accent,
+                accent: media.cover.accent,
                 onSeek: { media.seek(to: $0) },
                 onScrubPreview: { media.previewScrub(to: $0) },
                 onScrubEnd: { media.endScrubPreview() }

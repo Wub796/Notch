@@ -375,9 +375,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             center.addObserver(
                 forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main
             ) { [weak self] _ in
+                // The display waking is the other half of a sleep cycle, and
+                // the half that turns the event tap back off: a tap the system
+                // disabled while the display slept stayed disabled, so the
+                // volume and brightness keys raised the system HUD for the
+                // rest of the session.
+                self?.state.applyHUDSources()
                 self?.scheduleScreenReattach()
             },
         ]
+        // Accessibility is granted in System Settings, so the first thing the
+        // user does after granting it is come back to this app — which is the
+        // moment to install the media-key tap that was refused at launch. The
+        // same path picks up a tap the system switched off while the app was
+        // in the background. Registered with `self` as the observer so the
+        // existing `removeObserver(self)` in `applicationWillTerminate` takes
+        // it off again.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationDidBecomeActive),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+    }
+
+    /// Re-checks the media-key tap whenever this app comes forward. See
+    /// `installWakeObservers`.
+    @objc private func applicationDidBecomeActive() {
+        state.applyHUDSources()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

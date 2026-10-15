@@ -41,8 +41,12 @@ final class AudioAppMonitor {
             lhs.id == rhs.id && lhs.isPlaying == rhs.isPlaying
         }
 
+        /// Brings the app forward — out of the Dock, or back from having been
+        /// closed. `activate()` on its own left a minimized window in the Dock,
+        /// which is what made a click on a source chip look like it did
+        /// nothing (see `AppActivation`).
         func activate() {
-            NSRunningApplication(processIdentifier: pid)?.activate()
+            AppActivation.bringForward(pid: pid)
         }
 
         func volume() -> Float? {

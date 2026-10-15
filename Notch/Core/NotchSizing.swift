@@ -58,15 +58,6 @@ enum NotchSizing {
         }
     }
 
-    /// Album art in the two states, as in `MusicPlayerImageSizes`.
-    enum ArtworkSizes {
-        static let cornerRadius: (opened: CGFloat, closed: CGFloat) = (opened: 18, closed: 6)
-        static let size: (opened: CGSize, closed: CGSize) = (
-            opened: CGSize(width: 90, height: 90),
-            closed: CGSize(width: 20, height: 20)
-        )
-    }
-
     /// Inner padding of the open slab: the horizontal inset matches the open
     /// top radius so content clears the flare, plus the references' extra 5
     /// on the sides and bottom.

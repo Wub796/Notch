@@ -56,7 +56,7 @@ struct CollapsedNotchView: View {
                             .id(line)
                             .transition(.opacity.animation(NotchAnimations.activity))
                         }
-                        .foregroundStyle(state.media.accent)
+                        .foregroundStyle(state.media.cover.accent)
                         .frame(maxWidth: .infinity)
                         .frame(height: 26)
                         // The row arriving or leaving slides out of the notch.
@@ -71,7 +71,7 @@ struct CollapsedNotchView: View {
                 dropped {
                     droppedRow(
                         symbol: "music.note",
-                        tint: state.media.accent,
+                        tint: state.media.cover.accent,
                         label: artist.isEmpty ? title : "\(title) - \(artist)",
                         value: nil
                     )
@@ -412,7 +412,7 @@ struct CollapsedNotchView: View {
             leading: miniArtwork,
             leadingInset: NotchSizing.closedArtworkInset,
             trailing: MusicVisualizerView(
-                accent: state.media.accent,
+                accent: state.media.cover.accent,
                 outputIsAudible: !state.audio.isMuted && state.audio.volume > 0.001,
                 bands: state.visualizerBands,
                 barCount: state.settings.audioMeterBarCount
@@ -426,14 +426,14 @@ struct CollapsedNotchView: View {
     private var miniArtwork: some View {
         Group {
             // A 22pt wing tile: a full crossfade would strobe at this size,
-            // so the swap is a short opacity blend keyed on `artworkVersion`.
+            // so the swap is a short opacity blend keyed on `cover.version`.
             miniArtworkContent
-                .id(state.media.artworkVersion)
+                .id(state.media.cover.version)
                 .transition(.opacity)
         }
         .frame(width: Self.artworkSide, height: Self.artworkSide)
         .clipShape(RoundedRectangle(cornerRadius: artworkCornerRadius, style: .continuous))
-        .animation(NotchAnimations.activity, value: state.media.artworkVersion)
+        .animation(NotchAnimations.activity, value: state.media.cover.version)
         .accessibilityHidden(true)
     }
 
@@ -470,7 +470,7 @@ struct CollapsedNotchView: View {
 
     @ViewBuilder
     private var miniArtworkContent: some View {
-        if let artwork = state.media.artwork {
+        if let artwork = state.media.cover.image {
             Image(nsImage: artwork)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
