@@ -1,0 +1,40 @@
+Notch Non-Commercial License
+
+Copyright (c) 2026 Benjamin Wu and Notch contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software, source code, documentation, and associated files (the "Software"),
+to use, copy, modify, merge, publish, and distribute the Software solely for
+personal, educational, academic, or other non-commercial purposes, subject to
+the following conditions:
+
+1. Non-Commercial Use Only
+   You may not use the Software, or any derivative work based on the Software,
+   for any commercial purpose without the prior written permission of the
+   copyright holder. Prohibited commercial uses include, without limitation:
+   - Selling, licensing, renting, leasing, or charging a fee for the Software
+     or any derivative work, whether standalone or bundled with other products;
+   - Using the Software to provide paid hosting, consulting, managed services,
+     or commercial SaaS/software offerings; or
+   - Distributing the Software as part of a commercial product, paid app store
+     listing, or monetized distribution channel.
+
+2. Attribution and Notices
+   The above copyright notice, this license notice, and the attributions in
+   THIRD-PARTY-NOTICES.md shall be included in all copies or substantial
+   portions of the Software.
+
+3. Third-Party Components
+   Portions of the Software and bundled resources are derived from or interact
+   with third-party works (including Glance, MediaRemoteAdapter, Lakr233/
+   SkyLightWindow, and the InsightFace ArcFace model weights), which remain
+   subject to their respective licenses and notices documented in
+   THIRD-PARTY-NOTICES.md.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

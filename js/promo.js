@@ -60,7 +60,7 @@
 
         var titles = el('div', 'tb-promo-dl-titles');
         titles.appendChild(el('div', 'tb-promo-dl-title', 'Notch'));
-        titles.appendChild(el('div', 'tb-promo-dl-sub', 'for macOS 14+ · Free & Open Source'));
+        titles.appendChild(el('div', 'tb-promo-dl-sub', 'for macOS 14+ · Non-Commercial'));
         head.appendChild(titles);
         head.addEventListener('click', function () {
             openApp({ app: 'download' });
@@ -110,7 +110,7 @@
 
         var text = el('div', 'tb-promo-banner-text');
         text.appendChild(el('div', 'tb-promo-banner-title', 'Source on GitHub'));
-        text.appendChild(el('div', 'tb-promo-banner-sub', 'Swift 6 · MIT-ish · issues & releases'));
+        text.appendChild(el('div', 'tb-promo-banner-sub', 'Swift 6 · Non-Commercial · issues & releases'));
         card.appendChild(text);
 
         var url = link(links, 'github');

@@ -59,6 +59,7 @@
         { glyph: '📁', name: 'css', meta: 'Liquid Glass stylesheets (9 files)', detail: { app: 'folder', name: 'css', path: 'css', title: 'css' } },
         { glyph: '📁', name: 'js', meta: 'Desktop & window modules (11 files)', detail: { app: 'folder', name: 'js', path: 'js', title: 'js' } },
         { glyph: '📄', name: 'README.md', meta: 'Architecture, modules & verification', detail: { app: 'viewer', title: 'README.md', path: 'README.md' } },
+        { glyph: '⚖️', name: 'LICENSE', meta: 'Notch Non-Commercial License', detail: { app: 'viewer', title: 'LICENSE', path: 'LICENSE' } },
         { glyph: '📜', name: 'THIRD-PARTY-NOTICES.md', meta: 'Glance, InsightFace & FineTune notices', detail: { app: 'viewer', title: 'THIRD-PARTY-NOTICES.md', path: 'THIRD-PARTY-NOTICES.md' } },
         { glyph: '📄', name: 'index.html', meta: 'macOS 27 desktop shell', detail: { app: 'viewer', title: 'index.html', path: 'index.html' } }
     ];
@@ -108,7 +109,7 @@
                 '<div class="tb-gh-branch-row">' +
                     '<div class="tb-gh-branch-left">' +
                         '<button type="button" class="tb-gh-branch-pill" title="Browse repository in Finder">⑂ main</button>' +
-                        '<span class="tb-gh-filecount">Swift 6 · macOS 14+ · MIT-ish</span>' +
+                        '<span class="tb-gh-filecount">Swift 6 · macOS 14+ · Non-Commercial</span>' +
                     '</div>' +
                     '<div class="tb-gh-clone-wrap">' +
                         '<button type="button" class="tb-btn-secondary tb-gh-finder-btn">📁 Open in Finder</button>' +
@@ -232,7 +233,7 @@
         var card = el('div', 'tb-card tb-card-pad32',
             '<img class="tb-dl-icon-img" src="assets/icon.png" alt="Notch app icon">' +
             '<div class="tb-card-title">' + esc(siteName()) + ' for macOS</div>' +
-            '<div class="tb-card-sub tb-live-version" data-version-tpl="{v} · Universal (Apple Silicon + Intel) · Free &amp; open source">…</div>' +
+            '<div class="tb-card-sub tb-live-version" data-version-tpl="{v} · Universal (Apple Silicon + Intel) · Free for non-commercial use">…</div>' +
             '<div class="tb-dl-actions">' +
                 '<a class="tb-btn-primary tb-btn-big" href="' + esc(link('githubReleases')) + '" target="_blank" rel="noopener">Download from GitHub Releases</a>' +
                 '<button type="button" class="tb-btn-secondary tb-btn-big tb-dl-steps-btn">Install Steps…</button>' +
@@ -295,7 +296,7 @@
     }
 
     var VFS_ROOT = vfDir('notch-website', '', vfPairs('', 'text', [
-        ['index.html', '6.7 KB'], ['README.md', '8.9 KB'], ['THIRD-PARTY-NOTICES.md', '9.7 KB'],
+        ['index.html', '6.7 KB'], ['README.md', '8.9 KB'], ['LICENSE', '1.6 KB'], ['THIRD-PARTY-NOTICES.md', '9.7 KB'],
         ['robots.txt', '101 B'], ['sitemap.xml', '261 B']
     ]).concat([
         vfDir('css', 'css', vfPairs('css', 'text', [
@@ -748,7 +749,7 @@
             }
             if (OPEN_CMDS[cmd]) { openDetail(OPEN_CMDS[cmd][0]); print(OPEN_CMDS[cmd][1]); }
             else if (cmd === 'help') print(HELP);
-            else if (cmd === 'about') print('Notch — a native macOS utility for the space around your camera.\nhover to peek · click to pin · esc to dismiss.\nfree and open source. running on macOS 27.0 (Liquid Glass).');
+            else if (cmd === 'about') print('Notch — a native macOS utility for the space around your camera.\nhover to peek · click to pin · esc to dismiss.\nfree for non-commercial use. running on macOS 27.0 (Liquid Glass).');
             else if (cmd === 'issues') { try { window.open(link('issues'), '_blank'); } catch (e) {} print('opening GitHub issues…'); }
             else if (cmd === 'cowsay') cowsay(rest || 'moo');
             else if (cmd === 'clear') clearKids(root);

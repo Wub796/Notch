@@ -326,6 +326,7 @@
                 label: 'Help',
                 items: [
                     { label: siteName + ' README', detail: { app: 'viewer', title: 'README.md', path: 'README.md' } },
+                    { label: 'License (Non-Commercial)', detail: { app: 'viewer', title: 'LICENSE', path: 'LICENSE' } },
                     { label: 'Third-Party Notices', detail: { app: 'viewer', title: 'THIRD-PARTY-NOTICES.md', path: 'THIRD-PARTY-NOTICES.md' } },
                     { label: 'About This Mac', detail: { app: 'about' } },
                     { sep: true },

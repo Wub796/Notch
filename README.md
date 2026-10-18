@@ -16,7 +16,7 @@
   <a href="https://github.com/Wub796/Notch/releases"><img src="https://img.shields.io/badge/macOS-14.0%2B%20Sonoma%20%7C%20Sequoia-black?style=flat-square&logo=apple&logoColor=white" alt="macOS 14.0+"></a>
   <img src="https://img.shields.io/badge/Swift-6.0-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6">
   <img src="https://img.shields.io/badge/Xcode-16%2B-1575F9?style=flat-square&logo=xcode&logoColor=white" alt="Xcode 16">
-  <a href="THIRD-PARTY-NOTICES.md"><img src="https://img.shields.io/badge/License-MIT%20%2F%20Notices-blue?style=flat-square" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Non--Commercial-blue?style=flat-square" alt="License: Non-Commercial"></a>
   <img src="https://img.shields.io/badge/Arch-Apple%20Silicon%20%7C%20Intel-purple?style=flat-square" alt="Universal Architecture">
 </p>
 
@@ -345,4 +345,10 @@ We would like to express our gratitude to the authors and maintainers of the ope
 - **[Lakr233/SkyLightWindow](https://github.com/Lakr233/SkyLightWindow)** (*MIT © Lakr Aream*) — Window-server integration for raising panels above the macOS login screen.
 - **[Sparkle](https://sparkle-project.org/)** — Secure, automated software updates for macOS.
 
-For a full list of licenses and attributions, please see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+For a full list of third-party licenses and attributions, please see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+---
+
+## 📄 License
+
+Notch is licensed under the **[Notch Non-Commercial License](LICENSE)**. You are free to use, study, modify, and redistribute the software for personal, educational, academic, and non-commercial purposes with attribution. Commercial sale, paid bundling, or commercial hosted offerings are prohibited without prior written permission. See [LICENSE](LICENSE) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for details.

@@ -23,6 +23,7 @@ window.TB_CONFIG = {
         githubReleases: 'https://github.com/Wub796/Notch/releases',
         issues: 'https://github.com/Wub796/Notch/issues',
         readme: 'https://github.com/Wub796/Notch#readme',
+        license: 'https://github.com/Wub796/Notch/blob/main/LICENSE',
         thirdParty: 'https://github.com/Wub796/Notch/blob/main/THIRD-PARTY-NOTICES.md',
         tagsApi: 'https://api.github.com/repos/Wub796/Notch/tags',
     },
