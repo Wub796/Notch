@@ -1,17 +1,11 @@
-/* js/settings-app.js — System Settings app (macOS Sequoia style).
+/* js/settings-app.js — System Settings app (macOS 27 Liquid Glass style).
    TBApps.render('settings') calls TBSettingsUI(opts) -> HTMLElement.
-   Settings contract — every control change performs all three steps:
-   (1) mutate window.TB_SETTINGS[key], (2) persist the whole object to
-   localStorage 'tb-settings' as JSON, (3) dispatch the window CustomEvent
-   'tb:settings', detail { key, value }. Consumers (dock magnification,
-   Control Center dim overlay, wallpaper rotator) listen for 'tb:settings';
-   this module only emits. */
+   Supports live sidebar search filtering, opts.pane navigation, and
+   in-pane shortcuts to Notch, Camera Mirror, and Wallpaper folders. */
 (function () {
     'use strict';
 
     var STORE_KEY = 'tb-settings';
-
-    /* ---------- store helpers ---------- */
 
     function store() {
         if (typeof window.TB_SETTINGS === 'undefined' || !window.TB_SETTINGS) {
@@ -28,19 +22,16 @@
     function persist() {
         try {
             localStorage.setItem(STORE_KEY, JSON.stringify(store()));
-        } catch (e) { /* storage blocked → settings live for the session */ }
+        } catch (e) {}
     }
 
-    /* The single mutation path: steps 1–3 of the contract, always in order. */
     function commit(key, value) {
         store()[key] = value;
         persist();
         try {
             window.dispatchEvent(new CustomEvent('tb:settings', { detail: { key: key, value: value } }));
-        } catch (e) { /* no CustomEvent in odd shims → value is still saved */ }
+        } catch (e) {}
     }
-
-    /* ---------- tiny DOM utilities (house style, mirrors js/apps.js) ---------- */
 
     function el(tag, className, text) {
         var node = document.createElement(tag);
@@ -49,10 +40,10 @@
         return node;
     }
 
-    function openApp(app) {
+    function openDetail(detail) {
         try {
-            window.dispatchEvent(new CustomEvent('tb:open-app', { detail: { app: app } }));
-        } catch (e) { /* fire-and-forget */ }
+            window.dispatchEvent(new CustomEvent('tb:open-app', { detail: detail }));
+        } catch (e) {}
     }
 
     function wallpapers() {
@@ -60,9 +51,6 @@
         return (c && c.wallpapers) || [];
     }
 
-    /* ---------- reusable controls ---------- */
-
-    /* Green iOS-style switch; purely visual when onFlip is omitted. */
     function makeToggle(on, onFlip) {
         var t = el('button', 'tb-set-toggle' + (on ? ' tb-set-on' : ''));
         t.type = 'button';
@@ -91,13 +79,18 @@
         return s;
     }
 
-    /* ---------- layout pieces ---------- */
-
     function row(label, control) {
         var r = el('div', 'tb-set-row');
         r.appendChild(el('span', 'tb-set-label', label));
         if (control) r.appendChild(control);
         return r;
+    }
+
+    function actionRow(label, btnText, onClick) {
+        var btn = el('button', 'tb-set-btn', btnText);
+        btn.type = 'button';
+        btn.addEventListener('click', onClick);
+        return row(label, btn);
     }
 
     function sliderRow(label, slider, val) {
@@ -119,40 +112,36 @@
         return p;
     }
 
-    /* ---------- panes: Wi-Fi / Bluetooth (decorative) ---------- */
-
     function buildWifi() {
         var p = pane('Wi-Fi');
         p.appendChild(group([row('Wi-Fi', makeToggle(true))]));
         p.appendChild(el('div', 'tb-set-group-label', 'Known Network'));
-        p.appendChild(group([row('Home 5G', el('span', 'tb-set-hint', 'Connected'))]));
+        p.appendChild(group([row('Home 5G', el('span', 'tb-set-hint', 'Connected · Wi-Fi 7'))]));
         return p;
     }
 
     function buildBluetooth() {
         var p = pane('Bluetooth');
         p.appendChild(group([row('Bluetooth', makeToggle(true))]));
-        p.appendChild(el('div', 'tb-set-group-label', 'Devices'));
+        p.appendChild(el('div', 'tb-set-group-label', 'My Devices'));
         p.appendChild(group([
-            row('Magic Mouse', el('span', 'tb-set-hint', 'Not Connected')),
-            row('AirPods Pro', el('span', 'tb-set-hint', 'Not Connected'))
+            row('Magic Trackpad', el('span', 'tb-set-hint', 'Connected')),
+            row('AirPods Pro', el('span', 'tb-set-hint', 'Connected'))
         ]));
         return p;
     }
 
-    /* ---------- pane: Battery (LIVE via navigator.getBattery, 100% fallback) ---------- */
-
     function buildBattery() {
         var p = pane('Battery');
         var pct = el('span', 'tb-set-battery-pct', '100%');
-        var state = el('span', 'tb-set-hint', 'Not Charging');
+        var state = el('span', 'tb-set-hint', 'Fully Charged');
         p.appendChild(group([row('Battery Level', pct), row('Status', state)]));
         p.appendChild(group([row('Low Power Mode', makeToggle(false))]));
 
         function update(b) {
             var level = Math.round((b.level || 0) * 100);
             pct.textContent = level + '%';
-            state.textContent = b.charging ? 'Charging' : (level >= 100 ? 'Fully Charged' : 'Not Charging');
+            state.textContent = b.charging ? 'Charging' : (level >= 100 ? 'Fully Charged' : 'On Battery');
         }
         if (typeof navigator !== 'undefined' && navigator && typeof navigator.getBattery === 'function') {
             try {
@@ -163,26 +152,29 @@
                         b.addEventListener('levelchange', function () { update(b); });
                         b.addEventListener('chargingchange', function () { update(b); });
                     }
-                }, function () { /* keep the 100% fallback */ });
-            } catch (e) { /* keep the 100% fallback */ }
+                }, function () {});
+            } catch (e) {}
         }
         return p;
     }
-
-    /* ---------- pane: General ---------- */
 
     function buildGeneral() {
         var p = pane('General');
         var about = el('button', 'tb-set-subrow');
         about.type = 'button';
-        about.appendChild(el('span', 'tb-set-label', 'About'));
+        about.appendChild(el('span', 'tb-set-label', 'About This Mac'));
         about.appendChild(el('span', 'tb-set-chevron', '›'));
-        about.addEventListener('click', function () { openApp('about'); });
-        p.appendChild(group([about]));
+        about.addEventListener('click', function () { openDetail({ app: 'about' }); });
+
+        var updates = el('button', 'tb-set-subrow');
+        updates.type = 'button';
+        updates.appendChild(el('span', 'tb-set-label', 'Software Update & Releases'));
+        updates.appendChild(el('span', 'tb-set-chevron', '›'));
+        updates.addEventListener('click', function () { openDetail({ app: 'releases' }); });
+
+        p.appendChild(group([about, updates]));
         return p;
     }
-
-    /* ---------- pane: Appearance (REAL: 'brightness' → Control Center dim overlay) ---------- */
 
     function buildAppearance() {
         var p = pane('Appearance');
@@ -192,11 +184,12 @@
             val.textContent = v + '%';
             commit('brightness', v);
         });
-        p.appendChild(group([sliderRow('Desktop dim', slider, val)]));
+        p.appendChild(group([
+            row('Material Style', el('span', 'tb-set-static', 'macOS 27 Liquid Glass')),
+            sliderRow('Desktop Brightness', slider, val)
+        ]));
         return p;
     }
-
-    /* ---------- pane: Desktop & Dock (REAL: magnification master + size) ---------- */
 
     function buildDock() {
         var p = pane('Desktop & Dock');
@@ -212,22 +205,21 @@
         });
         p.appendChild(group([
             row('Magnification', master),
-            sliderRow('Magnification size', size, sizeVal)
+            sliderRow('Magnification size', size, sizeVal),
+            actionRow('Applications Launcher', 'Open Applications…', function () { openDetail({ app: 'apps' }); })
         ]));
         return p;
     }
-
-    /* ---------- pane: Notch (the app's own preferences) ---------- */
 
     function buildNotch() {
         var p = pane('Notch');
         p.appendChild(group([
             row('Hover to peek', makeToggle(get('hoverPeek', true), function (on) { commit('hoverPeek', on); })),
             row('Pin open on click', makeToggle(get('pinOnClick', true), function (on) { commit('pinOnClick', on); })),
-            row('Closed-notch meter', makeToggle(get('closedNotchMeter', true), function (on) { commit('closedNotchMeter', on); }))
+            row('Closed-notch meter', makeToggle(get('closedNotchMeter', true), function (on) { commit('closedNotchMeter', on); })),
+            actionRow('Notch Workspace', 'Open Notch Panel', function () { openDetail({ app: 'music', view: 'home' }); })
         ]));
 
-        /* notch mode: segmented (physical vs simulated) */
         var SEGS = [
             { label: 'Physical', value: 'physical' },
             { label: 'Simulated', value: 'simulated' }
@@ -249,18 +241,17 @@
         p.appendChild(el('div', 'tb-set-group-label', 'Notch placement'));
         p.appendChild(group([row('Mode', seg)]));
         p.appendChild(el('div', 'tb-set-note',
-            'Simulated mode floats the panel as a status pill at the top of any display, so notchless Macs ' +
-            'and external monitors get the same workspace without a hardware cutout.'));
+            'Simulated mode detaches the panel into a floating Liquid Glass capsule just below the menu bar, ' +
+            'so notchless Macs and external monitors get the same workspace without a hardware cutout.'));
         return p;
     }
-
-    /* ---------- pane: Face ID (decorative; the real unlock is macOS-only) ---------- */
 
     function buildFaceId() {
         var p = pane('Face ID');
         p.appendChild(group([
-            row('Unlock on wake or lock', makeToggle(false, function (on) { commit('faceIdUnlock', on); })),
-            row('Require Touch ID key', makeToggle(true, function (on) { commit('faceIdTouchId', on); }))
+            row('Unlock on wake or lock', makeToggle(get('faceIdUnlock', false), function (on) { commit('faceIdUnlock', on); })),
+            row('Require Touch ID key', makeToggle(get('faceIdTouchId', true), function (on) { commit('faceIdTouchId', on); })),
+            actionRow('Framing Preview', 'Open Camera Mirror…', function () { openDetail({ app: 'facetime' }); })
         ]));
         p.appendChild(el('div', 'tb-set-group-label', 'On-device model'));
         p.appendChild(group([
@@ -270,12 +261,9 @@
         ]));
         p.appendChild(el('div', 'tb-set-note',
             'Mac webcams have no depth sensor, so liveness checks reject printed photos with reasonable ' +
-            'confidence — a recorded video is not reliably blocked. Treat it as convenience, not security. ' +
-            'Off by default.'));
+            'confidence — a recorded video is not reliably blocked. Treat it as convenience, not security.'));
         return p;
     }
-
-    /* ---------- pane: Sound (REAL: 'volume' 0..1 + TBMusic.setVolume) ---------- */
 
     function buildSound() {
         var p = pane('Sound');
@@ -287,14 +275,14 @@
             var frac = v / 100;
             commit('volume', frac);
             if (window.TBMusic && typeof window.TBMusic.setVolume === 'function') {
-                try { window.TBMusic.setVolume(frac); } catch (e) { /* player absent */ }
+                try { window.TBMusic.setVolume(frac); } catch (e) {}
             }
         });
-        p.appendChild(group([sliderRow('Output volume', slider, val)]));
+        p.appendChild(group([
+            sliderRow('Output volume', slider, val),
+            actionRow('Now Playing Preview', 'Open in Notch', function () { openDetail({ app: 'music', view: 'media' }); })
+        ]));
 
-        /* per-app mixer: the real app taps each process separately and boosts
-           up to 400% (+12 dB) behind a soft-knee ceiling. Here the values just
-           persist so the panel behaves like the app's. */
         p.appendChild(el('div', 'tb-set-group-label', 'Per-app mixer'));
         var MIX = [
             ['Spotify', 'mixerSpotify', 75],
@@ -314,21 +302,21 @@
         p.appendChild(group(mixRows));
         p.appendChild(el('div', 'tb-set-note',
             'An app stays untouched until you move its slider — that is when the process tap attaches. ' +
-            'Boost above 100% saturates on a soft knee instead of clipping. Display speakers ride DDC/CI ' +
-            'over the video cable.'));
+            'Boost above 100% saturates on a soft knee instead of clipping.'));
         return p;
     }
-
-    /* ---------- pane: Wallpaper (persistent manual picker) ---------- */
 
     function buildWallpaper() {
         var p = pane('Wallpaper');
         var list = wallpapers();
-        /* entries are the local Unsplash photos from js/config.js */
 
-        p.appendChild(el('p', 'tb-set-wp-caption', 'Choose your desktop background. It stays fixed until you change it, and your choice is saved in this browser.'));
+        p.appendChild(el('p', 'tb-set-wp-caption', 'Choose your desktop background. Your choice is saved in this browser.'));
+        p.appendChild(group([
+            actionRow('Wallpaper Files', 'Browse in Finder…', function () {
+                openDetail({ app: 'folder', folder: 'wallpapers', title: 'wallpapers' });
+            })
+        ]));
 
-        /* 4-column artwork thumbnail grid from TB_CONFIG.wallpapers */
         p.appendChild(el('div', 'tb-set-group-label', 'Wallpapers'));
         var caption = el('div', 'tb-set-wp-caption');
         var grid = el('div', 'tb-set-wp-grid');
@@ -367,25 +355,21 @@
         return p;
     }
 
-    /* ---------- pane: About ---------- */
-
     function buildAboutPane() {
         var p = pane('About');
         p.appendChild(group([
             row('Name', el('span', 'tb-set-static', 'MacBook Pro')),
-            row('Chip', el('span', 'tb-set-static', 'Apple Silicon')),
-            row('macOS', el('span', 'tb-set-static', '14.2 Sonoma'))
+            row('Chip', el('span', 'tb-set-static', 'Apple M4 Pro')),
+            row('macOS', el('span', 'tb-set-static', 'macOS 27.0 (Liquid Glass)'))
         ]));
         var more = el('div', 'tb-set-moreinfo');
-        var btn = el('button', 'tb-set-btn', 'More Info…');
+        var btn = el('button', 'tb-set-btn', 'System Report…');
         btn.type = 'button';
-        btn.addEventListener('click', function () { openApp('about'); });
+        btn.addEventListener('click', function () { openDetail({ app: 'about' }); });
         more.appendChild(btn);
         p.appendChild(more);
         return p;
     }
-
-    /* ---------- sidebar sections ---------- */
 
     var SECTIONS = [
         { id: 'wifi', glyph: '🌐', label: 'Wi-Fi', color: '#0a84ff' },
@@ -415,31 +399,33 @@
         about: buildAboutPane
     };
 
-    /* ---------- the app ---------- */
-
     function TBSettingsUI(opts) {
         opts = opts || {};
         var root = el('div', 'tb-set-root');
 
-        /* sidebar: search pill + account card + section rows */
         var sidebar = el('div', 'tb-set-sidebar');
-        var search = el('div', 'tb-set-search');
+        var search = el('label', 'tb-set-search');
         search.appendChild(el('span', 'tb-set-search-glyph', '🔍'));
-        search.appendChild(el('span', 'tb-set-search-text', 'Search'));
+        var searchInput = el('input', 'tb-set-search-input');
+        searchInput.type = 'search';
+        searchInput.placeholder = 'Search';
+        searchInput.setAttribute('aria-label', 'Search settings');
+        search.appendChild(searchInput);
         sidebar.appendChild(search);
 
         var account = el('div', 'tb-set-account');
+        account.title = 'Open About This Mac';
         account.appendChild(el('div', 'tb-set-avatar', '🧑🏻‍💻'));
         var accMeta = el('div', 'tb-set-account-meta');
         accMeta.appendChild(el('div', 'tb-set-account-name', 'This Mac'));
-        accMeta.appendChild(el('div', 'tb-set-account-sub', 'Notch desktop demo'));
+        accMeta.appendChild(el('div', 'tb-set-account-sub', 'macOS 27 · Notch Demo'));
         account.appendChild(accMeta);
+        account.addEventListener('click', function () { openDetail({ app: 'about' }); });
         sidebar.appendChild(account);
 
         var nav = el('nav', 'tb-set-nav');
         sidebar.appendChild(nav);
 
-        /* right pane host */
         var content = el('div', 'tb-set-content');
         var paneHost = el('div', 'tb-set-panehost');
         content.appendChild(paneHost);
@@ -448,6 +434,7 @@
         var navBtns = {};
 
         function show(id) {
+            if (!BUILDERS[id]) id = 'appearance';
             if (!panes[id]) {
                 panes[id] = BUILDERS[id]();
                 paneHost.appendChild(panes[id]);
@@ -472,11 +459,27 @@
             nav.appendChild(b);
         });
 
+        searchInput.addEventListener('input', function () {
+            var q = searchInput.value.trim().toLowerCase();
+            var firstMatch = null;
+            SECTIONS.forEach(function (s) {
+                var hit = !q || s.label.toLowerCase().indexOf(q) !== -1 || s.id.indexOf(q) !== -1;
+                navBtns[s.id].hidden = !hit;
+                if (hit && !firstMatch) firstMatch = s.id;
+            });
+            if (firstMatch) show(firstMatch);
+        });
+
+        root.addEventListener('tb:app-navigate', function (e) {
+            if (e.detail && e.detail.pane && BUILDERS[e.detail.pane]) {
+                show(e.detail.pane);
+            }
+        });
+
         root.appendChild(sidebar);
         root.appendChild(content);
 
-        /* first open shows the Appearance pane (per spec) */
-        show('appearance');
+        show(opts.pane && BUILDERS[opts.pane] ? opts.pane : 'appearance');
 
         return root;
     }

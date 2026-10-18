@@ -4,16 +4,17 @@
 .tb-dock {
     display: flex;
     align-items: flex-end;
-    padding: 8px 10px;
-    border-radius: 22px;
-    background: rgba(255, 255, 255, 0.18);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.25);
+    padding: 8px 11px;
+    border-radius: 26px;
+    background: linear-gradient(135deg var(--in-oklch, ), rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.12) 50%, rgba(255, 255, 255, 0.22) 100%);
+    -webkit-backdrop-filter: blur(38px) saturate(210%) brightness(1.08);
+    backdrop-filter: blur(38px) saturate(210%) brightness(1.08);
+    border: 1px solid rgba(255, 255, 255, 0.36);
     box-shadow:
-        0 12px 32px rgba(0, 0, 0, 0.28),
-        0 2px 6px rgba(0, 0, 0, 0.12),
-        inset 0 1px 0 rgba(255, 255, 255, 0.25);
+        0 18px 44px rgba(0, 0, 0, 0.36),
+        0 3px 10px rgba(0, 0, 0, 0.18),
+        inset 0 1.5px 1px rgba(255, 255, 255, 0.65),
+        inset 0 -1px 1px rgba(255, 255, 255, 0.22);
 }
 
 /* One item = tooltip + icon button + running dot, in a fixed 52px layout box.
@@ -54,38 +55,37 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-    border-radius: 12px !important;
+    border-radius: 13px !important;
     font-size: 30px;
     line-height: 1;
     user-select: none;
     -webkit-user-select: none;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.24));
 }
 
 .tb-dock-icon:active .tb-dock-icon-img {
-    filter: brightness(0.82);
+    filter: brightness(0.84) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
 }
 
-/* PNG app icons: full-bleed squircles that fill the tile edge-to-edge.
-   Most artwork carries its own rounded corners; the 12px radius clips the
-   odd full-bleed square image to the same squircle silhouette, so every icon
-   reads the same size and the inline SVG tiles (Launchpad, Downloads, Trash)
-   sit in the same silhouette as the PNG artwork. */
 .tb-dock-icon-img-file {
     display: block;
     width: 100%;
     height: 100%;
-    border-radius: 12px;
+    border-radius: 13px;
 }
 
-/* Dark pill label above the icon; shown on hover / keyboard focus. */
+/* Liquid Glass pill label above the icon; shown on hover / keyboard focus. */
 .tb-dock-tooltip {
     position: absolute;
     bottom: calc(100% + 14px);
     left: 50%;
     transform: translateX(-50%);
-    padding: 5px 10px;
-    border-radius: 8px;
-    background: rgba(24, 24, 28, 0.88);
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: var(--tb-glass-solid, rgba(28, 30, 38, 0.84));
+    -webkit-backdrop-filter: blur(28px) saturate(190%);
+    backdrop-filter: blur(28px) saturate(190%);
+    border: 1px solid rgba(255, 255, 255, 0.26);
     color: #fff;
     font: 500 12px/1.2 -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
     letter-spacing: 0.01em;
@@ -93,7 +93,7 @@
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.15s ease;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
     z-index: 1;
 }
 
@@ -102,16 +102,17 @@
     opacity: 1;
 }
 
-/* Running indicator: 4px dark dot, 4px below the icon, hidden by default. */
+/* Running indicator: 4px glowing glass dot below the icon. */
 .tb-dock-dot {
     position: absolute;
-    bottom: -8px;
+    bottom: -6px;
     left: 50%;
     transform: translateX(-50%);
-    width: 4px;
-    height: 4px;
+    width: 4.5px;
+    height: 4.5px;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.78);
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.65), 0 1px 2px rgba(0, 0, 0, 0.4);
     opacity: 0;
     transition: opacity 0.18s ease;
     pointer-events: none;
@@ -125,8 +126,8 @@
 .tb-dock-separator {
     align-self: stretch;
     width: 1px;
-    margin: 8px 4px;
-    background: rgba(0, 0, 0, 0.18);
+    margin: 8px 5px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0.1));
     border-radius: 1px;
 }
 

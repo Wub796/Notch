@@ -18,40 +18,56 @@
     font-size: 13px;
     color: #1d1d1f;
     text-align: left;
-    background: #fff;
+    background: transparent;
     user-select: none;
 }
 
-/* ---------- sidebar ---------- */
+/* ---------- sidebar (macOS 27 Liquid Glass sidebar) ---------- */
 
 .tb-set-sidebar {
-    width: 210px;
-    flex: 0 0 210px;
+    width: 214px;
+    flex: 0 0 214px;
     padding: 10px 8px;
     overflow-y: auto;
-    background: rgba(245, 245, 247, 0.82);
-    -webkit-backdrop-filter: blur(24px) saturate(1.6);
-    backdrop-filter: blur(24px) saturate(1.6);
+    background: rgba(245, 246, 252, 0.52);
+    -webkit-backdrop-filter: blur(28px) saturate(1.8);
+    backdrop-filter: blur(28px) saturate(1.8);
     border-right: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.45);
 }
 
 .tb-set-search {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
     margin: 2px 2px 10px;
-    padding: 4px 8px;
+    padding: 5px 10px;
     font-size: 12px;
     color: #6e6e73;
-    background: rgba(0, 0, 0, 0.06);
-    border: 1px solid rgba(0, 0, 0, 0.05);
-    border-radius: 7px;
-    cursor: default;
+    background: rgba(255, 255, 255, 0.65);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+    border-radius: 999px;
 }
 
 .tb-set-search-glyph {
     font-size: 11px;
     opacity: 0.7;
+}
+
+.tb-set-search-input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: #1d1d1f;
+    font: inherit;
+    font-size: 12px;
+    outline: none;
+}
+
+.tb-set-search-input::placeholder {
+    color: #86868b;
 }
 
 .tb-set-account {
@@ -61,8 +77,10 @@
     margin: 0 2px 12px;
     padding: 8px 9px;
     color: #fff;
-    background: #0a84ff;
-    border-radius: 8px;
+    background: linear-gradient(135deg, #2b95ff, #0a84ff);
+    box-shadow: 0 4px 12px rgba(10, 132, 255, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    border-radius: 10px;
+    cursor: pointer;
 }
 
 .tb-set-avatar {
@@ -93,7 +111,7 @@
 .tb-set-nav {
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: 2px;
 }
 
 .tb-set-siderow {
@@ -101,14 +119,15 @@
     align-items: center;
     gap: 8px;
     width: 100%;
-    padding: 4px 6px;
+    padding: 5px 8px;
     font: inherit;
     color: inherit;
     text-align: left;
     background: transparent;
     border: 0;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
+    transition: background 100ms ease;
 }
 
 .tb-set-siderow:hover {
@@ -117,21 +136,23 @@
 
 .tb-set-siderow-on,
 .tb-set-siderow-on:hover {
-    color: #0a5cff;
+    color: #0066cc;
+    font-weight: 500;
     background: rgba(10, 132, 255, 0.16);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
 .tb-set-sideglyph {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 20px;
-    flex: 0 0 20px;
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
     font-size: 11px;
     line-height: 1;
-    border-radius: 5px;
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
 .tb-set-sidelabel {
@@ -144,7 +165,7 @@
     flex: 1;
     min-width: 0;
     overflow-y: auto;
-    background: #fff;
+    background: rgba(255, 255, 255, 0.82);
 }
 
 .tb-set-panehost {
@@ -164,14 +185,16 @@
     margin: 2px 0 14px;
     font-size: 20px;
     font-weight: 700;
+    letter-spacing: -0.01em;
 }
 
 .tb-set-group {
     margin-bottom: 14px;
     overflow: hidden;
-    background: #fff;
-    border: 1px solid rgba(0, 0, 0, 0.09);
-    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 2px 6px rgba(0, 0, 0, 0.03);
+    border-radius: 12px;
 }
 
 .tb-set-group-label {

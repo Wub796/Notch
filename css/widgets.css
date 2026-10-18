@@ -28,20 +28,31 @@
     }
 }
 
-/* ---------- shared card chrome (every widget, small or wide) ---------- */
+/* ---------- shared card chrome (macOS 27 Liquid Glass widget) ---------- */
 
 #widgets-root .tb-widget {
     box-sizing: border-box;
-    background: rgba(28, 28, 30, 0.55);
-    -webkit-backdrop-filter: blur(24px) saturate(160%);
-    backdrop-filter: blur(24px) saturate(160%);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 20px;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+    background: var(--tb-glass, linear-gradient(135deg, rgba(48, 52, 66, 0.56), rgba(24, 26, 36, 0.44)));
+    -webkit-backdrop-filter: var(--tb-blur, blur(40px) saturate(210%));
+    backdrop-filter: var(--tb-blur, blur(40px) saturate(210%));
+    border: 1px solid var(--tb-hairline, rgba(255, 255, 255, 0.24));
+    border-radius: 22px;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.34), var(--tb-specular, inset 0 1px 0 rgba(255, 255, 255, 0.45));
     color: #fff;
     padding: 14px;
     text-align: left;
     overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+#widgets-root .tb-widget:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.38);
+}
+
+#widgets-root .tb-widget:active {
+    transform: scale(0.98);
 }
 
 #widgets-root .tb-widget--wide {

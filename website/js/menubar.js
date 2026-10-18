@@ -1,7 +1,5 @@
-/* js/menubar.js — menu bar: logo/app menus, battery + Power popup, Wi-Fi,
-   Spotlight, Control Center, two-part clock.
-   Owner: Dev A (shell/left cluster), Dev M (right cluster rework).
-   Renders into #menubar-root; degrades silently if peers are absent. */
+/* js/menubar.js — macOS 27 Liquid Glass menu bar: Apple/App/File/Edit/View/Window/Help
+   menus, Lock Screen, battery + Power popup, Wi-Fi, Spotlight, Control Center, live clock. */
 (function () {
     'use strict';
 
@@ -11,15 +9,13 @@
         '<path d="M12 7.4c-1.2-1-2.9-1.3-4.4-.6-2 .9-3.1 3.1-3 5.5.1 3.9 3.1 9.4 5.9 9.4 1.1 0 1.6-.6 2.9-.6s1.8.6 2.9.6c2.8 0 5.8-5.5 5.9-9.4.1-2.4-1-4.6-3-5.5-1.5-.7-3.2-.4-4.4.6-.4.3-.9.3-1.2 0z"/>' +
         '</svg>';
 
-    /* reference-clone Wi-Fi glyph (shared by the bar icon + CC grid toggle) */
     var WIFI_PATHS =
         '<path d="M12 6c3.537 0 6.837 1.353 9.293 3.809l1.414-1.414C19.874 5.561 16.071 4 12 4 7.929 4.001 4.126 5.561 1.293 8.395l1.414 1.414C5.163 7.353 8.463 6 12 6zM17.671 14.307c-3.074-3.074-8.268-3.074-11.342 0l1.414 1.414c2.307-2.307 6.207-2.307 8.514 0L17.671 14.307z"/>' +
         '<path d="M20.437,11.293c-4.572-4.574-12.301-4.574-16.873,0l1.414,1.414c3.807-3.807,10.238-3.807,14.045,0L20.437,11.293z"/>' +
         '<circle cx="12" cy="18" r="2"></circle>';
 
     function wifiSVG(size) {
-        return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
-            WIFI_PATHS + '</svg>';
+        return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' + WIFI_PATHS + '</svg>';
     }
 
     var SPOT_SVG =
@@ -37,7 +33,6 @@
         '<circle cx="8.3" cy="16" r="2.3" fill="currentColor"/>' +
         '</svg>';
 
-    /* small glyphs for the Control Center rows/toggles (stroke inherits button color) */
     var GLYPHS = {
         airdrop: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">' +
             '<circle cx="12" cy="16" r="2.1" fill="currentColor" stroke="none"/>' +
@@ -56,10 +51,10 @@
         play: '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
     };
 
-    /* Spotlight's fixed app registry: label + glyph + the exact tb:open-app detail. */
     var SPOTLIGHT_APPS = [
-        { glyph: '🎧', label: 'Notch — Now Playing', detail: { app: 'music' } },
+        { glyph: '🎧', label: 'Notch — Now Playing', detail: { app: 'music', view: 'media' } },
         { glyph: '🧭', label: 'Safari', detail: { app: 'safari' } },
+        { glyph: '📝', label: 'Notes', detail: { app: 'notes' } },
         { glyph: '⬇️', label: 'Downloads', detail: { app: 'download' } },
         { glyph: '🧩', label: 'Releases & Install', detail: { app: 'releases' } },
         { glyph: '🖥️', label: 'About This Mac', detail: { app: 'about' } },
@@ -69,6 +64,7 @@
         { glyph: '🚀', label: 'Applications', detail: { app: 'apps' } },
         { glyph: '⚙️', label: 'System Settings', detail: { app: 'settings' } },
         { glyph: '📄', label: 'README.md', detail: { app: 'viewer', title: 'README.md', path: 'README.md' } },
+        { glyph: '📜', label: 'THIRD-PARTY-NOTICES.md', detail: { app: 'viewer', title: 'THIRD-PARTY-NOTICES.md', path: 'THIRD-PARTY-NOTICES.md' } },
         { glyph: '📁', label: 'notch-website Folder', detail: { app: 'folder', folder: 'project', title: 'notch-website' } },
         { glyph: '🖼️', label: 'wallpapers Folder', detail: { app: 'folder', folder: 'wallpapers', title: 'wallpapers' } },
     ];
@@ -79,8 +75,6 @@
         return n;
     }
 
-    /* (a) Fixed wallpaper. Load only the chosen image; never rotate or preload
-       the gallery. A request token prevents a slower old choice replacing a new one. */
     function initWallpaper() {
         var cfg = window.TB_CONFIG || {}, settings = window.TB_SETTINGS || {};
         var desktop = document.getElementById('desktop');
@@ -118,13 +112,9 @@
         });
     }
 
-    /* (b) first-run hint: the desktop is a set piece, and a visitor who never
-       clicks the notch misses the whole demo. One quiet chip below the notch,
-       gone after a few seconds or on the first interaction, never shown twice
-       in a session. */
     function initHint() {
         var KEY = 'tb-hint-seen';
-        try { if (sessionStorage.getItem(KEY)) return; } catch (e) { /* no storage: still show once per load */ }
+        try { if (sessionStorage.getItem(KEY)) return; } catch (e) { /* noop */ }
         var chip = el('div', 'tb-hint');
         chip.setAttribute('role', 'status');
         chip.textContent = 'Hover the notch to peek · linger to open · pin to keep it close · Esc to dismiss';
@@ -134,14 +124,11 @@
         function dismiss() {
             if (gone) return;
             gone = true;
-            try { sessionStorage.setItem(KEY, '1'); } catch (e) { /* no storage */ }
+            try { sessionStorage.setItem(KEY, '1'); } catch (e) { /* noop */ }
             chip.classList.remove('tb-hint--on');
             document.removeEventListener('pointerdown', dismiss);
-            setTimeout(function () {
-                if (chip.parentNode) chip.parentNode.removeChild(chip);
-            }, 600);
+            setTimeout(function () { if (chip.parentNode) chip.parentNode.removeChild(chip); }, 600);
         }
-
         setTimeout(function () {
             chip.classList.add('tb-hint--on');
             setTimeout(dismiss, 7000);
@@ -162,7 +149,6 @@
     var DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    /* (e) two-part clock: "Fri Aug 28 2026" + "07:49 PM" (hour12 zero-padded) */
     function fmtDate(d) {
         return DAYS[d.getDay()] + ' ' + MONTHS[d.getMonth()] + ' ' + d.getDate() + ' ' + d.getFullYear();
     }
@@ -176,13 +162,80 @@
         return (h < 10 ? '0' + h : '' + h) + ':' + (m < 10 ? '0' + m : '' + m) + ' ' + ampm;
     }
 
-    function openApp(app) {
-        window.dispatchEvent(new CustomEvent('tb:open-app', { detail: { app: app } }));
-    }
-
-    /* Spotlight rows carry richer details (folders), so dispatch them whole. */
     function openDetail(detail) {
         window.dispatchEvent(new CustomEvent('tb:open-app', { detail: detail }));
+    }
+
+    function showLockScreen() {
+        var existing = document.querySelector('.tb-lock-overlay');
+        if (existing) existing.remove();
+        var now = new Date();
+        var overlay = el('div', 'tb-lock-overlay');
+        var timeEl = el('div', 'tb-lock-time');
+        var h = now.getHours() % 12 || 12;
+        var m = now.getMinutes();
+        timeEl.textContent = h + ':' + (m < 10 ? '0' + m : m);
+        var dateEl = el('div', 'tb-lock-date');
+        dateEl.textContent = fmtDate(now);
+        var userBox = el('div', 'tb-lock-user');
+        var av = el('div', 'tb-lock-avatar');
+        av.textContent = '🎧';
+        var uName = el('div', 'tb-lock-name');
+        uName.textContent = 'Notch Demo';
+        var btn = el('button', 'tb-lock-btn');
+        btn.type = 'button';
+        btn.textContent = 'Unlock with Face ID / Touch ID';
+        function unlock() {
+            overlay.remove();
+            document.removeEventListener('keydown', onKey);
+        }
+        function onKey(e) {
+            if (e.key === 'Enter' || e.key === 'Escape' || e.key === ' ') unlock();
+        }
+        btn.addEventListener('click', unlock);
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) unlock(); });
+        document.addEventListener('keydown', onKey);
+        userBox.appendChild(av);
+        userBox.appendChild(uName);
+        userBox.appendChild(btn);
+        overlay.appendChild(dateEl);
+        overlay.appendChild(timeEl);
+        overlay.appendChild(userBox);
+        document.body.appendChild(overlay);
+        btn.focus();
+    }
+
+    function runMenuItem(item) {
+        if (item.detail) openDetail(item.detail);
+        else if (item.app) openDetail({ app: item.app });
+        else if (item.winCmd) window.dispatchEvent(new CustomEvent('tb:window-cmd', { detail: { cmd: item.winCmd } }));
+        else if (item.copy) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(item.copy).catch(function () {});
+            }
+            window.dispatchEvent(new CustomEvent('tb:notification', { detail: { title: 'Copied', message: item.notify || 'Copied to clipboard.' } }));
+        } else if (item.action === 'lock') showLockScreen();
+        else if (item.action === 'restart') {
+            window.dispatchEvent(new CustomEvent('tb:window-cmd', { detail: { cmd: 'close-all' } }));
+            setTimeout(function () { openDetail({ app: 'releases' }); }, 160);
+        } else if (item.action === 'show-desktop') {
+            window.dispatchEvent(new CustomEvent('tb:show-desktop'));
+        } else if (item.action === 'toggle-notch-mode') {
+            var cur = (window.TB_SETTINGS && window.TB_SETTINGS.notchMode) || 'physical';
+            var next = cur === 'simulated' ? 'physical' : 'simulated';
+            if (window.TB_SETTINGS) window.TB_SETTINGS.notchMode = next;
+            window.dispatchEvent(new CustomEvent('tb:settings', { detail: { key: 'notchMode', value: next } }));
+        } else if (item.action === 'fullscreen') {
+            try {
+                if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen();
+                } else if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            } catch (e) { /* noop */ }
+        } else if (item.url) {
+            try { window.open(item.url, '_blank', 'noopener'); } catch (err) { /* noop */ }
+        }
     }
 
     function buildMenus(siteName) {
@@ -190,56 +243,92 @@
             {
                 logo: true,
                 items: [
-                    { label: 'About This Mac', app: 'about' },
+                    { label: 'About This Mac', detail: { app: 'about' } },
                     { sep: true },
-                    { label: 'Restart…', disabled: true },
-                    { label: 'Shut Down', disabled: true },
+                    { label: 'System Settings…', detail: { app: 'settings' } },
+                    { label: 'Releases & Install…', detail: { app: 'releases' } },
+                    { sep: true },
+                    { label: 'Sleep', action: 'lock' },
+                    { label: 'Restart Desktop…', action: 'restart' },
+                    { sep: true },
+                    { label: 'Lock Screen', action: 'lock' },
                 ],
             },
-            { bold: true, label: siteName },
+            {
+                bold: true,
+                label: siteName,
+                items: [
+                    { label: 'About ' + siteName, detail: { app: 'about' } },
+                    { label: 'Settings…', detail: { app: 'settings', pane: 'notch' } },
+                    { sep: true },
+                    { label: 'Open Notch Dashboard', detail: { app: 'music', view: 'home' } },
+                    { label: 'Now Playing', detail: { app: 'music', view: 'media' } },
+                    { label: 'File Shelf', detail: { app: 'music', view: 'shelf' } },
+                    { label: 'Quick Notes', detail: { app: 'music', view: 'notes' } },
+                    { label: 'Focus Timer', detail: { app: 'music', view: 'timer' } },
+                ],
+            },
             {
                 label: 'File',
                 items: [
-                    { label: 'New Tab', disabled: true },
-                    { label: 'New Window', disabled: true },
-                    { label: 'Open…', disabled: true },
+                    { label: 'New Finder Window', detail: { app: 'folder', folder: 'project', title: 'notch-website' } },
+                    { label: 'New Notes Window', detail: { app: 'notes' } },
+                    { label: 'New Terminal Window', detail: { app: 'terminal' } },
+                    { label: 'Open Applications…', detail: { app: 'apps' } },
+                    { label: 'Open README.md', detail: { app: 'viewer', title: 'README.md', path: 'README.md' } },
                     { sep: true },
-                    { label: 'Close Window', disabled: true },
+                    { label: 'Close Window', winCmd: 'close-top' },
                 ],
             },
             {
                 label: 'Edit',
                 items: [
-                    { label: 'Undo', disabled: true },
-                    { label: 'Redo', disabled: true },
+                    { label: 'Copy Quarantine Fix Command', copy: 'xattr -dr com.apple.quarantine "/Applications/Notch.app"', notify: 'Copied quarantine fix command.' },
+                    { label: 'Copy GitHub Repository URL', copy: 'https://github.com/Wub796/Notch', notify: 'Copied GitHub repository URL.' },
                     { sep: true },
-                    { label: 'Cut', disabled: true },
-                    { label: 'Copy', disabled: true },
-                    { label: 'Paste', disabled: true },
-                    { label: 'Select All', disabled: true },
+                    { label: 'Open Notes Editor…', detail: { app: 'notes' } },
                 ],
             },
             {
                 label: 'View',
                 items: [
-                    { label: 'Enter Full Screen', disabled: true },
+                    { label: 'Show / Hide Desktop', action: 'show-desktop' },
+                    { label: 'Toggle Simulated Notch Mode', action: 'toggle-notch-mode' },
                     { sep: true },
-                    { label: 'Show Toolbar', disabled: true },
-                    { label: 'Customize Toolbar…', disabled: true },
+                    { label: 'Change Wallpaper…', detail: { app: 'settings', pane: 'wallpaper' } },
+                    { label: 'Appearance & Brightness…', detail: { app: 'settings', pane: 'appearance' } },
+                    { sep: true },
+                    { label: 'Enter Full Screen', action: 'fullscreen' },
                 ],
             },
             {
                 label: 'Window',
                 items: [
-                    { label: 'Notch — Now Playing', app: 'music' },
-                    { label: 'Safari — GitHub', app: 'safari' },
-                    { label: 'System Settings', app: 'settings' },
+                    { label: 'Minimize', winCmd: 'minimize-top' },
+                    { label: 'Zoom', winCmd: 'zoom-top' },
+                    { label: 'Tile Window to Left of Screen', winCmd: 'tile-left' },
+                    { label: 'Tile Window to Right of Screen', winCmd: 'tile-right' },
+                    { sep: true },
+                    { label: 'Bring All to Front', winCmd: 'bring-all' },
+                    { sep: true },
+                    { label: 'Notch — Now Playing', detail: { app: 'music', view: 'media' } },
+                    { label: 'Finder — notch-website', detail: { app: 'folder', folder: 'project', title: 'notch-website' } },
+                    { label: 'Safari — GitHub', detail: { app: 'safari' } },
+                    { label: 'Notes', detail: { app: 'notes' } },
+                    { label: 'Messages', detail: { app: 'messages' } },
+                    { label: 'Camera Mirror', detail: { app: 'facetime' } },
+                    { label: 'Terminal', detail: { app: 'terminal' } },
+                    { label: 'Releases & Install', detail: { app: 'releases' } },
+                    { label: 'System Settings', detail: { app: 'settings' } },
                 ],
             },
             {
                 label: 'Help',
                 items: [
-                    { label: siteName + ' Help', app: 'about' },
+                    { label: siteName + ' README', detail: { app: 'viewer', title: 'README.md', path: 'README.md' } },
+                    { label: 'Third-Party Notices', detail: { app: 'viewer', title: 'THIRD-PARTY-NOTICES.md', path: 'THIRD-PARTY-NOTICES.md' } },
+                    { label: 'About This Mac', detail: { app: 'about' } },
+                    { sep: true },
                     { label: 'Report an Issue ↗', url: 'https://github.com/Wub796/Notch/issues' },
                 ],
             },
@@ -264,68 +353,44 @@
         bar.appendChild(right);
         root.appendChild(bar);
 
-        var openMenu = null;
-        var ccBtn = null;
-        var ccPanel = null;
-        var batt = null;        /* battery <button> */
-        var powerPanel = null;  /* battery's Power popup */
-        var spotBtn = null;     /* Spotlight <button> */
-        var spot = null;        /* Spotlight overlay (appended to body) */
-        var ccBattIcon = null;  /* CC battery row bits (filled in below) */
-        var ccBattText = null;
+        var openMenu = null, ccBtn = null, ccPanel = null, batt = null, powerPanel = null;
+        var spotBtn = null, spot = null, ccBattIcon = null, ccBattText = null;
 
         function closeMenus() {
             if (openMenu) openMenu.classList.remove('tb-open');
             openMenu = null;
         }
-
         function closeCC() {
             if (!ccPanel) return;
             ccPanel.hidden = true;
             if (ccBtn) ccBtn.classList.remove('tb-open');
         }
-
         function closePower() {
             if (!powerPanel) return;
             powerPanel.hidden = true;
             if (batt) batt.classList.remove('tb-open');
         }
-
         function closeSpotlight() {
             if (!spot) return;
             spot.hidden = true;
             if (spotBtn) spotBtn.classList.remove('tb-open');
         }
-
-        /* one popup family: menus, Power, CC, Spotlight — only one open at a time */
         function closeAll() {
-            closeMenus();
-            closeCC();
-            closePower();
-            closeSpotlight();
+            closeMenus(); closeCC(); closePower(); closeSpotlight();
         }
 
-        /* (c) left cluster: logo menu, bold site name, File/Edit/View/Window/Help */
         buildMenus(siteName).forEach(function (m) {
-            if (m.bold) {
-                var name = el('span', 'tb-menu-label tb-bold');
-                name.textContent = m.label;
-                left.appendChild(name);
-                return;
-            }
             var menu = el('div', 'tb-menu');
-            var label = el('button', 'tb-menu-label');
+            var label = el('button', 'tb-menu-label' + (m.bold ? ' tb-bold' : ''));
             label.type = 'button';
             if (m.logo) {
-                /* Inline glyph, never a remote icon: the bar must render with no
-                   third-party image request and no CSP allowance. */
                 label.innerHTML = APPLE_SVG;
                 label.setAttribute('aria-label', siteName + ' menu');
             } else {
                 label.textContent = m.label;
             }
             var dd = el('div', 'tb-dropdown');
-            m.items.forEach(function (item) {
+            (m.items || []).forEach(function (item) {
                 if (item.sep) {
                     dd.appendChild(el('div', 'tb-dropdown-sep'));
                     return;
@@ -336,10 +401,7 @@
                     it.setAttribute('aria-disabled', 'true');
                 } else {
                     it.addEventListener('click', function () {
-                        if (item.app) openApp(item.app);
-                        if (item.url) {
-                            try { window.open(item.url, '_blank', 'noopener'); } catch (err) { /* best effort */ }
-                        }
+                        runMenuItem(item);
                         closeMenus();
                     });
                 }
@@ -347,7 +409,6 @@
             });
             menu.appendChild(label);
             menu.appendChild(dd);
-            /* (d) click toggles; hover switches while one is open */
             label.addEventListener('click', function (e) {
                 e.stopPropagation();
                 if (openMenu === menu) {
@@ -368,26 +429,24 @@
             left.appendChild(menu);
         });
 
-        /* (e) right cluster: 🎵 | 🌙 | battery | wifi | spotlight | cc | clock */
-
-        /* music glyph, hidden until tb:music-state says playing */
-        var glyph = el('span', 'tb-music-glyph');
+        /* right cluster: 🎵 | 🌙 | battery | wifi | spotlight | cc | clock */
+        var glyph = el('button', 'tb-music-glyph');
+        glyph.type = 'button';
         glyph.textContent = '🎵';
-        glyph.title = 'Now playing';
+        glyph.title = 'Open Now Playing in Notch';
+        glyph.addEventListener('click', function () { openDetail({ app: 'music', view: 'media' }); });
         window.addEventListener('tb:music-state', function (e) {
             var playing = !!(e && e.detail && e.detail.playing);
-            glyph.style.display = playing ? 'inline' : 'none';
+            glyph.style.display = playing ? 'inline-flex' : 'none';
         });
         right.appendChild(glyph);
 
-        /* DND indicator, shown only while the CC Do-Not-Disturb toggle is on */
-        var dndGlyph = el('span', 'tb-dnd-glyph');
+        var dndGlyph = el('button', 'tb-dnd-glyph');
+        dndGlyph.type = 'button';
         dndGlyph.textContent = '🌙';
-        dndGlyph.title = 'Do Not Disturb is on';
+        dndGlyph.title = 'Do Not Disturb is on (click to disable)';
         right.appendChild(dndGlyph);
 
-        /* battery button + Power popup (fallback 100% full when the API is
-           missing/rejects); charging adds a ⚡ overlay on the battery SVG. */
         var battState = { level: 1, charging: false };
         var battMgr = null;
 
@@ -414,7 +473,7 @@
             if (ccBattIcon) ccBattIcon.innerHTML = batterySVG(battState.level);
         }
 
-        function readBattery() { /* live re-read from the BatteryManager */
+        function readBattery() {
             if (battMgr) {
                 battState.level = battMgr.level;
                 battState.charging = !!battMgr.charging;
@@ -432,13 +491,12 @@
                         b.addEventListener('levelchange', readBattery);
                         b.addEventListener('chargingchange', readBattery);
                         readBattery();
-                    }).catch(function () { /* keep 100% fallback */ });
+                    }).catch(function () {});
                 }
-            } catch (err) { /* keep 100% fallback */ }
+            } catch (err) {}
         }
         right.appendChild(batt);
 
-        /* Power popup: frosted, right-aligned under the bar */
         powerPanel = el('div', 'tb-power-panel');
         powerPanel.hidden = true;
         var pHead = el('div', 'tb-power-head');
@@ -451,10 +509,10 @@
         var pSep = el('div', 'tb-power-sep');
         var pBtn = el('button', 'tb-power-prefs');
         pBtn.type = 'button';
-        pBtn.textContent = 'Power Preferences…';
-        pBtn.setAttribute('aria-label', 'Power Preferences');
+        pBtn.textContent = 'Battery Settings…';
+        pBtn.setAttribute('aria-label', 'Battery Settings');
         pBtn.addEventListener('click', function () {
-            openApp('about');
+            openDetail({ app: 'settings', pane: 'battery' });
             closePower();
         });
         powerPanel.appendChild(pHead);
@@ -477,17 +535,21 @@
             }
         });
 
-        /* static Wi-Fi icon (decorative) */
-        var wifi = el('span', 'tb-wifi');
+        var wifi = el('button', 'tb-wifi');
+        wifi.type = 'button';
         wifi.innerHTML = wifiSVG(16);
-        wifi.title = 'Wi-Fi';
+        wifi.title = 'Wi-Fi Settings';
+        wifi.setAttribute('aria-label', 'Wi-Fi Settings');
+        wifi.addEventListener('click', function () {
+            closeAll();
+            openDetail({ app: 'settings', pane: 'wifi' });
+        });
         right.appendChild(wifi);
 
-        /* Spotlight: magnifier button + centered search overlay (app-launcher) */
         spotBtn = el('button', 'tb-spot-btn');
         spotBtn.type = 'button';
         spotBtn.innerHTML = SPOT_SVG;
-        spotBtn.title = 'Spotlight';
+        spotBtn.title = 'Spotlight (⌘Space)';
         spotBtn.setAttribute('aria-label', 'Spotlight');
         right.appendChild(spotBtn);
 
@@ -581,7 +643,6 @@
             }
         });
 
-        /* control center pill + reworked frosted panel */
         ccBtn = el('button', 'tb-cc-btn');
         ccBtn.type = 'button';
         ccBtn.innerHTML = CC_SVG;
@@ -592,14 +653,14 @@
         ccPanel = el('div', 'tb-cc-panel');
         ccPanel.hidden = true;
 
-        /* (4a) 2×2 toggle grid; DND is the only one with a side effect (bar glyph) */
         var ccState = { wifi: true, airdrop: false, bt: true, dnd: false };
+        var dndBtnRef = null;
         var grid = el('div', 'tb-cc-grid');
         [
-            { key: 'wifi', label: 'Wi-Fi', svg: wifiSVG(18) },
-            { key: 'airdrop', label: 'AirDrop', svg: GLYPHS.airdrop },
-            { key: 'bt', label: 'Bluetooth', svg: GLYPHS.bluetooth },
-            { key: 'dnd', label: 'Do Not Disturb', svg: GLYPHS.dnd },
+            { key: 'wifi', label: 'Wi-Fi', svg: wifiSVG(18), pane: 'wifi' },
+            { key: 'airdrop', label: 'AirDrop', svg: GLYPHS.airdrop, pane: 'wifi' },
+            { key: 'bt', label: 'Bluetooth', svg: GLYPHS.bluetooth, pane: 'bluetooth' },
+            { key: 'dnd', label: 'Focus', svg: GLYPHS.dnd },
         ].forEach(function (t) {
             var cell = el('div', 'tb-cc-toggle');
             var b = el('button', 'tb-cc-tbtn');
@@ -613,17 +674,29 @@
                 ccState[t.key] = !ccState[t.key];
                 paint();
                 if (t.key === 'dnd') {
-                    dndGlyph.style.display = ccState.dnd ? 'inline' : 'none';
+                    dndGlyph.style.display = ccState.dnd ? 'inline-flex' : 'none';
                 }
             });
+            if (t.pane) {
+                lab.title = 'Open ' + t.label + ' Settings';
+                lab.addEventListener('click', function () {
+                    closeCC();
+                    openDetail({ app: 'settings', pane: t.pane });
+                });
+            }
+            if (t.key === 'dnd') dndBtnRef = { paint: paint };
             paint();
             cell.appendChild(b);
             cell.appendChild(lab);
             grid.appendChild(cell);
         });
+        dndGlyph.addEventListener('click', function () {
+            ccState.dnd = false;
+            dndGlyph.style.display = 'none';
+            if (dndBtnRef) dndBtnRef.paint();
+        });
         ccPanel.appendChild(grid);
 
-        /* (4b) brightness slider → full-screen dim overlay (persisted) */
         var dim = el('div', 'tb-dim');
         (document.body || root).appendChild(dim);
 
@@ -631,21 +704,18 @@
             try {
                 var v = Number(localStorage.getItem('tb-brightness'));
                 if (isFinite(v) && v >= 10 && v <= 100) return v;
-            } catch (e) { /* no storage */ }
+            } catch (e) {}
             return 100;
         }
-
         function applyBrightness(v) {
             dim.style.opacity = ((100 - v) / 100 * 0.55).toFixed(3);
-            try { localStorage.setItem('tb-brightness', String(v)); } catch (e) { /* no storage */ }
+            try { localStorage.setItem('tb-brightness', String(v)); } catch (e) {}
         }
-
-        /* System Settings' Appearance slider drives the same overlay */
         window.addEventListener('tb:settings', function (e) {
             var d = e && e.detail;
             if (d && d.key === 'brightness' && typeof d.value === 'number') {
                 applyBrightness(d.value);
-                if (bright) { bright.value = d.value; }
+                if (bright) bright.value = d.value;
             }
         });
 
@@ -664,16 +734,19 @@
         ccPanel.appendChild(brightRow);
         applyBrightness(Number(bright.value));
 
-        /* (4c) battery row: icon + live percent (renderBattery keeps it fresh) */
         var battRow = el('div', 'tb-cc-row tb-cc-battrow');
+        battRow.title = 'Open Battery Settings';
         ccBattIcon = el('span', 'tb-cc-ricon');
         ccBattText = el('span', 'tb-cc-battpct');
         battRow.appendChild(ccBattIcon);
         battRow.appendChild(ccBattText);
+        battRow.addEventListener('click', function () {
+            closeCC();
+            openDetail({ app: 'settings', pane: 'battery' });
+        });
         ccPanel.appendChild(battRow);
         renderBattery();
 
-        /* (4d) volume slider → TBMusic.setVolume(v/100), guarded */
         var volRow = el('div', 'tb-cc-row');
         var volIcon = el('span', 'tb-cc-ricon');
         volIcon.innerHTML = GLYPHS.speaker;
@@ -689,12 +762,10 @@
         function musicApi() {
             return (typeof window.TBMusic !== 'undefined' && window.TBMusic) || null;
         }
-
         function musicVolumeFn() {
             var api = musicApi();
             return (api && typeof api.setVolume === 'function') ? api.setVolume.bind(api) : null;
         }
-
         function refreshVolume() {
             var fn = musicVolumeFn();
             vol.disabled = !fn;
@@ -702,24 +773,18 @@
             var api = musicApi();
             if (api && typeof api.state === 'function') {
                 var st = null;
-                try { st = api.state(); } catch (e) { /* guard */ }
+                try { st = api.state(); } catch (e) {}
                 if (st && typeof st.volume === 'number') {
                     vol.value = String(Math.round(st.volume * 100));
                 }
             }
         }
-
         vol.addEventListener('input', function () {
             var fn = musicVolumeFn();
             if (fn) fn(Number(vol.value) / 100);
         });
         refreshVolume();
 
-        /* (4e) music mini-player row: art tile + labels + one action button.
-           The notch's Spotify embed is cross-origin, so playback can't be driven
-           from here — the button opens the notch player panel instead (play lives
-           inside Spotify's own iframe). The static ▶ glyph is honest: embed
-           playback state is unknowable (tb:music-state always says false). */
         var musicRow = el('div', 'tb-cc-music');
         var art = el('span', 'tb-cc-art');
         var artEmoji = el('span', 'tb-cc-art-emoji');
@@ -742,15 +807,22 @@
         musicRow.appendChild(mBtns);
         ccPanel.appendChild(musicRow);
 
+        var ccSetBtn = el('button', 'tb-cc-settings-btn');
+        ccSetBtn.type = 'button';
+        ccSetBtn.textContent = 'System Settings…';
+        ccSetBtn.addEventListener('click', function () {
+            closeCC();
+            openDetail({ app: 'settings' });
+        });
+        ccPanel.appendChild(ccSetBtn);
+
         function refreshMusic() {
             var api = musicApi();
             var ok = !!(api && typeof api.state === 'function');
             musicRow.classList.toggle('tb-cc-disabled', !ok);
             mPlay.disabled = !ok;
             var st = null;
-            if (ok) {
-                try { st = api.state(); } catch (e) { /* guard */ }
-            }
+            if (ok) { try { st = api.state(); } catch (e) {} }
             var station = st && st.station;
             if (station) {
                 art.style.background = (station.grad && station.grad.length >= 2)
@@ -765,10 +837,8 @@
             }
         }
 
-        /* TBMusic.toggle() is a documented no-op on the embed build, so the real
-           expand path is the tb:open-app event the notch listens for. */
         mPlay.addEventListener('click', function () {
-            openApp('music');
+            openDetail({ app: 'music', view: 'media' });
             closeCC();
         });
         window.addEventListener('tb:music-state', refreshMusic);
@@ -790,12 +860,17 @@
             }
         });
 
-        /* two-part live clock: "Fri Aug 28 2026" + "07:49 PM", refreshed every 15 s */
-        var clock = el('span', 'tb-clock');
+        var clock = el('button', 'tb-clock');
+        clock.type = 'button';
+        clock.title = 'Open Notch Calendar & Dashboard';
         var clockDate = el('span', 'tb-clock-date');
         var clockTime = el('span', 'tb-clock-time');
         clock.appendChild(clockDate);
         clock.appendChild(clockTime);
+        clock.addEventListener('click', function () {
+            closeAll();
+            openDetail({ app: 'music', view: 'home' });
+        });
         function tickClock() {
             var now = new Date();
             clockDate.textContent = fmtDate(now);
@@ -820,7 +895,6 @@
         document.addEventListener('keydown', function (e) {
             if ((e.metaKey || e.ctrlKey) && e.code === 'Space') { e.preventDefault(); spotBtn.click(); }
         });
-        /* (d) global close: click elsewhere or Escape */
         document.addEventListener('click', function (e) {
             var t = e.target;
             if (openMenu && !openMenu.contains(t)) closeMenus();

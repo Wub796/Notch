@@ -1,4 +1,5 @@
-/* Notch web demo: native silhouette and hover timings from NotchSizing/NotchSettings. */
+/* Notch web demo: native silhouette, Simulated floating Liquid Glass pill mode,
+   multi-track preview cycling, and linked desktop windows. */
 (function () {
     'use strict';
     var icons = {
@@ -25,40 +26,62 @@
         var mount = document.getElementById('notch-root');
         if (!mount) return;
         var cfg = window.TB_CONFIG || {}, music = cfg.music || {};
-        var track = { id: music.id || 'demo-track', name: music.title || 'Notch', artist: music.artist || 'Now playing demo', artworkUrl: music.artworkUrl || '', audioUrl: music.audioUrl || '' };
+        var PLAYLIST = [
+            { id: music.id || 'island-in-the-sun', name: music.title || 'Island in the Sun', artist: music.artist || 'Weezer', artworkUrl: music.artworkUrl || '', audioUrl: music.audioUrl || '' },
+            { id: 'veridis-quo', name: 'Veridis Quo', artist: 'Daft Punk', artworkUrl: '', audioUrl: '' },
+            { id: 'awake-tycho', name: 'Awake', artist: 'Tycho', artworkUrl: '', audioUrl: '' }
+        ];
+        var trackIdx = 0;
+        var track = PLAYLIST[0];
         var expanded = false, pinned = false, hovering = false, dismissed = false, keyboardFocus = false;
         var openTimer, closeTimer, audio = null, playing = false;
         var volume = (window.TB_SETTINGS || {}).volume;
         if (typeof volume !== 'number') volume = 0.8;
+
         mount.innerHTML = '<section class="tb-notch" aria-label="Notch demo">' +
             '<button class="tb-notch-trigger" type="button" aria-label="Open Notch; click to pin" aria-expanded="false" aria-controls="tb-notch-panel"><span class="tb-collapsed-art" aria-hidden="true"></span><span class="tb-camera-space" aria-hidden="true"></span><span class="tb-notch-eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></button>' +
             '<div class="tb-notch-panel" id="tb-notch-panel" inert><header class="tb-notch-header"><nav aria-label="Notch views">' +
             ['home', 'media', 'shelf', 'notes', 'timer'].map(function (name) { return '<button type="button" data-notch-view="' + name + '" aria-label="' + name.charAt(0).toUpperCase() + name.slice(1) + '" title="' + name.charAt(0).toUpperCase() + name.slice(1) + '" aria-pressed="' + (name === 'home') + '">' + svg(name) + '</button>'; }).join('') +
             '</nav><span class="tb-header-camera" aria-hidden="true"></span><div class="tb-notch-utilities"><span class="tb-demo-label">WEB DEMO</span><button type="button" class="tb-notch-pin" aria-label="Pin Notch open" aria-pressed="false">' + svg('pin') + '</button><button type="button" class="tb-notch-close" aria-label="Close Notch">' + svg('close') + '</button></div></header>' +
-            '<div class="tb-notch-dashboard"><section class="tb-notch-music" aria-label="Now playing"><div class="tb-track-art"></div><div class="tb-track-copy"><strong class="tb-track-title"></strong><span class="tb-track-artist"></span><div class="tb-track-controls"><button type="button" disabled aria-label="Previous track">' + svg('previous') + '</button><button type="button" class="tb-track-play" aria-label="Play preview" disabled>' + svg('play') + '</button><button type="button" disabled aria-label="Next track">' + svg('next') + '</button></div></div></section>' +
-            '<section class="tb-notch-weather" aria-label="Weather feature preview"><span class="tb-card-eyebrow">WEATHER</span><div class="tb-weather-preview"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="24" cy="24" r="9"/><path d="M24 3v6m0 30v6M3 24h6m30 0h6M9 9l4 4m22 22 4 4M9 39l4-4m22-22 4-4"/></svg><strong>At a glance</strong></div><span class="tb-card-caption">Your local forecast in the app</span></section>' +
-            '<section class="tb-notch-calendar" aria-label="Calendar"><span class="tb-card-eyebrow tb-calendar-month"></span><div class="tb-calendar-week"></div><span class="tb-card-caption">Your agenda, one hover away</span></section></div>' +
+            '<div class="tb-notch-dashboard"><section class="tb-notch-music" aria-label="Now playing"><div class="tb-track-art" title="Open Media scrubber"></div><div class="tb-track-copy"><strong class="tb-track-title" title="Open Media scrubber"></strong><span class="tb-track-artist"></span><div class="tb-track-controls"><button type="button" class="tb-track-prev" aria-label="Previous track">' + svg('previous') + '</button><button type="button" class="tb-track-play" aria-label="Play preview" disabled>' + svg('play') + '</button><button type="button" class="tb-track-next" aria-label="Next track">' + svg('next') + '</button></div></div></section>' +
+            '<section class="tb-notch-weather" aria-label="Weather feature preview" title="Open Notch Settings"><span class="tb-card-eyebrow">WEATHER</span><div class="tb-weather-preview"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="24" cy="24" r="9"/><path d="M24 3v6m0 30v6M3 24h6m30 0h6M9 9l4 4m22 22 4 4M9 39l4-4m22-22 4-4"/></svg><strong>At a glance</strong></div><span class="tb-card-caption">Click for Notch settings →</span></section>' +
+            '<section class="tb-notch-calendar" aria-label="Calendar" title="Open Focus Timer"><span class="tb-card-eyebrow tb-calendar-month"></span><div class="tb-calendar-week"></div><span class="tb-card-caption">Click to open Focus Timer →</span></section></div>' +
             '<div class="tb-notch-media" hidden><div class="tb-track-progress-row"><span class="tb-track-current">0:00</span><input class="tb-track-progress" type="range" min="0" max="100" value="0" aria-label="Preview progress" disabled><span class="tb-track-duration">--:--</span></div><p class="tb-preview-status" role="status">Loading audio preview…</p></div>' +
-            '<section class="tb-notch-shelf tb-notch-tool" hidden aria-label="File Shelf"><div class="tb-tool-heading"><strong>File Shelf</strong><button type="button" class="tb-shelf-clear">Clear all</button></div><label class="tb-shelf-drop">Drop files here or choose files<input type="file" class="tb-shelf-input" multiple aria-label="Add files to Shelf"></label><div class="tb-shelf-items"></div><p class="tb-tool-status tb-shelf-status" role="status">Session only · files stay in this browser · up to 20 files / 50 MB</p></section>' +
-            '<section class="tb-notch-notes tb-notch-tool" hidden aria-label="Quick Notes"><div class="tb-tool-heading"><strong>Quick Notes</strong><button type="button" class="tb-notes-export">Export .txt</button></div><textarea class="tb-notes-input" aria-label="Quick note" maxlength="20000" placeholder="A thought, a reminder, your next great idea…"></textarea><p class="tb-tool-status tb-notes-status" role="status">Saved on this browser, never uploaded.</p></section>' +
+            '<section class="tb-notch-shelf tb-notch-tool" hidden aria-label="File Shelf"><div class="tb-tool-heading"><strong>File Shelf</strong><div class="tb-tool-actions"><button type="button" class="tb-shelf-finder">Open Finder ↗</button><button type="button" class="tb-shelf-clear">Clear all</button></div></div><label class="tb-shelf-drop">Drop files here or choose files<input type="file" class="tb-shelf-input" multiple aria-label="Add files to Shelf"></label><div class="tb-shelf-items"></div><p class="tb-tool-status tb-shelf-status" role="status">Session only · files stay in this browser · up to 20 files / 50 MB</p></section>' +
+            '<section class="tb-notch-notes tb-notch-tool" hidden aria-label="Quick Notes"><div class="tb-tool-heading"><strong>Quick Notes</strong><div class="tb-tool-actions"><button type="button" class="tb-notes-window">Open in Notes ↗</button><button type="button" class="tb-notes-export">Export .txt</button></div></div><textarea class="tb-notes-input" aria-label="Quick note" maxlength="20000" placeholder="A thought, a reminder, your next great idea…"></textarea><p class="tb-tool-status tb-notes-status" role="status">Saved on this browser, synced with Notes app.</p></section>' +
             '<section class="tb-notch-timer tb-notch-tool" hidden aria-label="Focus Timer"><div class="tb-tool-heading"><strong>Focus Timer</strong><span class="tb-timer-status" role="status">Ready when you are</span></div><div class="tb-timer-main"><output class="tb-timer-readout" aria-label="Time remaining">05:00</output><div class="tb-timer-presets"><button type="button" data-timer-seconds="300">5 min</button><button type="button" data-timer-seconds="900">15 min</button><button type="button" data-timer-seconds="1500">25 min</button><label>Minutes <input class="tb-timer-minutes" type="number" min="1" max="180" value="5" aria-label="Timer minutes"></label></div></div><div class="tb-timer-actions"><button type="button" class="tb-timer-start">Start timer</button><button type="button" class="tb-timer-reset">Reset</button></div></section>' +
             '</div></section>';
+
         var notch = mount.querySelector('.tb-notch'), trigger = mount.querySelector('.tb-notch-trigger');
         var panel = mount.querySelector('.tb-notch-panel'), pin = mount.querySelector('.tb-notch-pin');
         var progress = mount.querySelector('.tb-track-progress'), play = mount.querySelector('.tb-track-play');
+        var prevBtn = mount.querySelector('.tb-track-prev'), nextBtn = mount.querySelector('.tb-track-next');
         var status = mount.querySelector('.tb-preview-status');
+
         function setting(key) { return (window.TB_SETTINGS || {})[key] !== false; }
+        function isSimulated() { return (window.TB_SETTINGS || {}).notchMode === 'simulated'; }
         function clearTimers() { clearTimeout(openTimer); clearTimeout(closeTimer); }
+
+        function updateClipPath() {
+            if (isSimulated()) {
+                notch.style.clipPath = '';
+            } else {
+                notch.style.clipPath = 'path("' + shape(notch.offsetWidth, notch.offsetHeight) + '")';
+            }
+        }
+
         function paintState() {
             notch.classList.toggle('expanded', expanded);
             notch.classList.toggle('is-peeking', hovering && !dismissed && setting('hoverPeek'));
             notch.classList.toggle('is-pinned', pinned);
+            notch.classList.toggle('is-simulated', isSimulated());
             trigger.setAttribute('aria-expanded', String(expanded));
             trigger.setAttribute('aria-label', expanded ? 'Notch is open' : 'Open Notch; click to pin');
             pin.setAttribute('aria-pressed', String(pinned));
             pin.setAttribute('aria-label', pinned ? 'Unpin Notch' : 'Pin Notch open');
             panel.inert = !expanded;
             trigger.tabIndex = expanded ? -1 : 0;
+            updateClipPath();
         }
         function open(shouldPin) {
             clearTimers(); expanded = true; pinned = Boolean(shouldPin); dismissed = false; paintState();
@@ -108,21 +131,48 @@
             tab.addEventListener('click', function () { selectView(tab.getAttribute('data-notch-view')); });
         });
         window.addEventListener('tb:notch-view', function (e) { selectView((e.detail || {}).view); open(true); pin.focus(); });
-        /* Browser-local tools: no upload endpoint or native permissions. */
+
+        /* Interactive dashboard cards */
+        mount.querySelector('.tb-track-art').addEventListener('click', function () { selectView('media'); });
+        mount.querySelector('.tb-track-title').addEventListener('click', function () { selectView('media'); });
+        mount.querySelector('.tb-notch-weather').addEventListener('click', function () {
+            window.dispatchEvent(new CustomEvent('tb:open-app', { detail: { app: 'settings', pane: 'notch' } }));
+        });
+        mount.querySelector('.tb-notch-calendar').addEventListener('click', function () { selectView('timer'); });
+
+        /* Quick Notes + Notes Window sync */
         var noteInput = mount.querySelector('.tb-notes-input'), noteStatus = mount.querySelector('.tb-notes-status');
         try { noteInput.value = (localStorage.getItem('notch-quick-note') || '').slice(0, 20000); }
         catch (e) { noteStatus.textContent = 'Storage unavailable — export your note before leaving.'; }
         noteInput.addEventListener('input', function () {
-            try { localStorage.setItem('notch-quick-note', noteInput.value); noteStatus.textContent = 'Saved on this browser · ' + noteInput.value.length + ' / 20,000 characters'; }
-            catch (e) { noteStatus.textContent = 'Could not save — export your note before leaving.'; }
+            try {
+                localStorage.setItem('notch-quick-note', noteInput.value);
+                noteStatus.textContent = 'Saved · ' + noteInput.value.length + ' / 20,000 characters';
+                window.dispatchEvent(new CustomEvent('tb:notes-sync', { detail: { text: noteInput.value, source: 'notch' } }));
+            } catch (e) { noteStatus.textContent = 'Could not save — export your note before leaving.'; }
         });
+        window.addEventListener('tb:notes-sync', function (e) {
+            if (e.detail && e.detail.source !== 'notch' && typeof e.detail.text === 'string') {
+                noteInput.value = e.detail.text;
+                noteStatus.textContent = 'Synced with Notes window · ' + noteInput.value.length + ' chars';
+            }
+        });
+        mount.querySelector('.tb-notes-window').addEventListener('click', function () {
+            window.dispatchEvent(new CustomEvent('tb:open-app', { detail: { app: 'notes' } }));
+        });
+
         function downloadBlob(blob, name) {
             var url = URL.createObjectURL(blob), link = document.createElement('a');
             link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove();
             setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
         }
         mount.querySelector('.tb-notes-export').addEventListener('click', function () { downloadBlob(new Blob([noteInput.value], { type: 'text/plain;charset=utf-8' }), 'Notch-note.txt'); });
+
+        /* File Shelf + Finder Window link */
         var files = [], shelfList = mount.querySelector('.tb-shelf-items'), shelfStatus = mount.querySelector('.tb-shelf-status');
+        mount.querySelector('.tb-shelf-finder').addEventListener('click', function () {
+            window.dispatchEvent(new CustomEvent('tb:open-app', { detail: { app: 'folder', folder: 'project', title: 'notch-website' } }));
+        });
         function renderShelf() {
             shelfList.textContent = '';
             files.forEach(function (file, index) {
@@ -160,6 +210,8 @@
         });
         mount.querySelector('.tb-shelf-clear').addEventListener('click', function () { files = []; renderShelf(); shelfStatus.textContent = 'Shelf cleared · files were never uploaded.'; });
         renderShelf();
+
+        /* Focus Timer */
         var timerMinutes = mount.querySelector('.tb-timer-minutes'), timerReadout = mount.querySelector('.tb-timer-readout');
         var timerStart = mount.querySelector('.tb-timer-start'), timerStatus = mount.querySelector('.tb-timer-status');
         var remaining = 300000, deadline = 0, timerTick = null;
@@ -198,12 +250,14 @@
         mount.querySelectorAll('[data-timer-seconds]').forEach(function (button) { button.addEventListener('click', function () { resetTimer(Number(button.getAttribute('data-timer-seconds'))); }); });
         document.addEventListener('visibilitychange', tickTimer);
         renderTimer();
+
         window.addEventListener('tb:settings', function () {
             if (audio) { var v = (window.TB_SETTINGS || {}).volume; if (typeof v === 'number') setVolume(v); }
             notch.classList.toggle('hide-meter', !setting('closedNotchMeter'));
             if (!setting('hoverPeek')) { clearTimeout(openTimer); if (!pinned && !notch.contains(document.activeElement)) close(false); }
             paintState();
         });
+
         function paintTrack() {
             mount.querySelector('.tb-track-title').textContent = track.name;
             mount.querySelector('.tb-track-artist').textContent = track.artist;
@@ -229,19 +283,26 @@
             window.dispatchEvent(new CustomEvent('tb:music-state', { detail: { playing: playing, stationId: track.id } }));
         }
         function startPlayback() { if (audio) audio.play().catch(function () { status.textContent = 'Preview unavailable. Please try again.'; }); }
-        function bindAudio(url) {
+        function bindAudio(url, autoPlay) {
+            if (audio) { try { audio.pause(); } catch (e) {} }
             audio = new Audio(url); audio.preload = 'metadata'; audio.volume = volume;
             ['play', 'pause', 'ended'].forEach(function (event) { audio.addEventListener(event, dispatchState); });
             ['timeupdate', 'loadedmetadata'].forEach(function (event) { audio.addEventListener(event, renderProgress); });
             audio.addEventListener('error', function () { status.textContent = 'Audio preview is unavailable.'; play.disabled = true; progress.disabled = true; });
             play.disabled = false; progress.disabled = false; status.textContent = '30-second audio preview · not your Mac’s playback';
+            if (autoPlay) startPlayback();
+            else dispatchState();
         }
         function setVolume(v) { volume = Math.min(1, Math.max(0, Number(v) || 0)); if (audio) audio.volume = volume; }
-        play.addEventListener('click', function () { if (audio) { if (audio.paused) startPlayback(); else audio.pause(); } });
-        progress.addEventListener('input', function () { if (audio && isFinite(audio.duration)) audio.currentTime = audio.duration * Number(progress.value) / 100; });
-        paintTrack();
-        if (track.audioUrl) bindAudio(track.audioUrl);
-        else {
+
+        function loadTrack(idx, autoPlay) {
+            trackIdx = (idx + PLAYLIST.length) % PLAYLIST.length;
+            track = PLAYLIST[trackIdx];
+            paintTrack();
+            if (track.audioUrl) {
+                bindAudio(track.audioUrl, autoPlay);
+                return;
+            }
             var controller = new AbortController(), timeout = setTimeout(function () { controller.abort(); }, 6000);
             fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(track.artist + ' ' + track.name) + '&media=music&entity=song&limit=1', { signal: controller.signal })
                 .then(function (r) { if (!r.ok) throw new Error('Preview unavailable'); return r.json(); })
@@ -250,10 +311,19 @@
                     if (!hit || !hit.previewUrl) throw new Error('No preview');
                     track.name = hit.trackName || track.name; track.artist = hit.artistName || track.artist;
                     if (!track.artworkUrl) track.artworkUrl = hit.artworkUrl100 || '';
-                    paintTrack(); bindAudio(hit.previewUrl);
+                    track.audioUrl = hit.previewUrl;
+                    paintTrack(); bindAudio(hit.previewUrl, autoPlay);
                 }).catch(function () { status.textContent = 'Audio preview is unavailable. Explore the dashboard instead.'; })
                 .finally(function () { clearTimeout(timeout); });
         }
+
+        play.addEventListener('click', function () { if (audio) { if (audio.paused) startPlayback(); else audio.pause(); } });
+        prevBtn.addEventListener('click', function () { loadTrack(trackIdx - 1, playing); });
+        nextBtn.addEventListener('click', function () { loadTrack(trackIdx + 1, playing); });
+        progress.addEventListener('input', function () { if (audio && isFinite(audio.duration)) audio.currentTime = audio.duration * Number(progress.value) / 100; });
+
+        loadTrack(0, false);
+
         var now = new Date(), week = mount.querySelector('.tb-calendar-week');
         mount.querySelector('.tb-calendar-month').textContent = now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
         for (var i = 0; i < 7; i++) {
@@ -262,7 +332,7 @@
             var label = document.createElement('small'); label.textContent = date.toLocaleDateString(undefined, { weekday: 'narrow' });
             var number = document.createElement('b'); number.textContent = date.getDate(); day.appendChild(label); day.appendChild(number); week.appendChild(day);
         }
-        /* Port of NotchShape's continuous, outward top corners. Recalculate while the CSS dimensions animate. */
+
         function shape(width, height) {
             var top = expanded ? 26 : 16, bottom = expanded ? 30 : 18;
             var commands = [], corners = [
@@ -282,9 +352,23 @@
             });
             return commands.join(' ') + ' Z';
         }
-        new ResizeObserver(function () { notch.style.clipPath = 'path("' + shape(notch.offsetWidth, notch.offsetHeight) + '")'; }).observe(notch);
-        window.addEventListener('tb:open-app', function (e) { if (e.detail && e.detail.app === 'music') { open(true); pin.focus(); } });
-        window.TBMusic = { play: startPlayback, pause: function () { if (audio) audio.pause(); }, toggle: function () { if (audio) { if (audio.paused) startPlayback(); else audio.pause(); } }, next: function () {}, prev: function () {}, setVolume: setVolume, state: function () { return { playing: playing, station: track, volume: volume }; } };
+        new ResizeObserver(updateClipPath).observe(notch);
+        window.addEventListener('tb:open-app', function (e) {
+            if (e.detail && e.detail.app === 'music') {
+                if (e.detail.view) selectView(e.detail.view);
+                open(true);
+                pin.focus();
+            }
+        });
+        window.TBMusic = {
+            play: startPlayback,
+            pause: function () { if (audio) audio.pause(); },
+            toggle: function () { if (audio) { if (audio.paused) startPlayback(); else audio.pause(); } },
+            next: function () { loadTrack(trackIdx + 1, playing); },
+            prev: function () { loadTrack(trackIdx - 1, playing); },
+            setVolume: setVolume,
+            state: function () { return { playing: playing, station: track, volume: volume }; }
+        };
         notch.classList.toggle('hide-meter', !setting('closedNotchMeter')); paintState(); dispatchState();
     });
 }());

@@ -1,7 +1,6 @@
-/* js/dock.js — macOS-style Dock. Owned by Dev C.
+/* js/dock.js — macOS 27 Liquid Glass Dock.
    Renders into <div id="dock-root">. Dispatches 'tb:open-app' on icon clicks,
-   listens for 'tb:music-state' / 'tb:window-state' to drive running dots.
-   Degrades silently if the mount point or peer modules are missing. */
+   listens for 'tb:music-state' / 'tb:window-state' to drive running dots. */
 (function () {
     'use strict';
 
@@ -10,12 +9,13 @@
     var RANGE = 100;      /* cosine falloff radius (px) */
     var LIFT = 14;        /* max translateY lift at full scale (px) */
 
-    /* window-state app name -> dock icon id (GitHub shares app 'safari' but
-       has no dot of its own — the Safari icon carries that indicator). */
     var WINDOW_APP_TO_ICON = {
         about: 'finder',
+        folder: 'finder',
+        viewer: 'finder',
         music: 'notch',
         safari: 'safari',
+        notes: 'notes',
         download: 'download',
         releases: 'releases',
         messages: 'messages',
@@ -25,8 +25,6 @@
         settings: 'settings'
     };
 
-    /* Icons that macOS has but this site has no PNG for: inline SVG data URIs.
-       Keeps the tray self-contained (no remote image, no CSP allowance). */
     function dataIcon(svg) {
         return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     }
@@ -55,13 +53,11 @@
         '<g stroke="#adadb8" stroke-width="2" stroke-linecap="round"><path d="M26 28.5v21"/><path d="M32 28.5v23"/><path d="M38 28.5v21"/></g>' +
         '</svg>';
 
-    /* null entries render as 1px vertical separators. Defs with an `icon` path
-       render a PNG (or inline SVG data URI) instead of the emoji/gradient; defs
-       with an `href` open a new tab instead of dispatching 'tb:open-app'. */
     var ICONS = [
-        { id: 'finder', label: 'Finder', icon: 'assets/icons/finder.png', app: 'about' },
+        { id: 'finder', label: 'Finder', icon: 'assets/icons/finder.png', detail: { app: 'folder', folder: 'project', title: 'notch-website' } },
         { id: 'notch', label: 'Notch', icon: 'assets/icon.png', app: 'music' },
         { id: 'safari', label: 'Safari', icon: 'assets/icons/safari.png', app: 'safari' },
+        { id: 'notes', label: 'Notes', icon: 'assets/icons/notes.png', app: 'notes' },
         { id: 'github', label: 'GitHub', icon: 'assets/icons/github.png', app: 'safari' },
         { id: 'messages', label: 'Messages', icon: 'assets/icons/messages.png', app: 'messages' },
         { id: 'facetime', label: 'Camera Mirror', icon: 'assets/icons/facetime.png', app: 'facetime' },
@@ -71,19 +67,19 @@
         { id: 'settings', label: 'System Settings', icon: 'assets/icons/settings.png', app: 'settings' },
         null,
         { id: 'download', label: 'Downloads', icon: dataIcon(SVG_DOWNLOADS), app: 'download' },
-        { id: 'trash', label: 'Trash', icon: dataIcon(SVG_TRASH), app: null }
+        { id: 'trash', label: 'Trash', icon: dataIcon(SVG_TRASH), wiggle: true, detail: { app: 'folder', folder: 'trash', title: 'Trash' } }
     ];
 
     function init() {
         var mount = document.getElementById('dock-root');
-        if (!mount) { return; }
+        if (!mount) return;
 
         var tray = document.createElement('nav');
         tray.className = 'tb-dock';
         tray.setAttribute('aria-label', 'Dock');
 
-        var items = []; /* { item, btn } for magnification */
-        var dots = {};  /* icon id -> dot element */
+        var items = [];
+        var dots = {};
 
         ICONS.forEach(function (def) {
             if (def === null) {
@@ -111,7 +107,6 @@
             img.className = 'tb-dock-icon-img';
             img.setAttribute('aria-hidden', 'true');
             if (def.icon) {
-                /* PNG icon: full-bleed squircle, no gradient or emoji. */
                 var file = document.createElement('img');
                 file.className = 'tb-dock-icon-img-file';
                 file.src = def.icon;
@@ -120,8 +115,7 @@
                 file.draggable = false;
                 img.appendChild(file);
             } else {
-                img.style.background =
-                    'linear-gradient(180deg, ' + def.colors[0] + ' 0%, ' + def.colors[1] + ' 100%)';
+                img.style.background = 'linear-gradient(180deg, ' + def.colors[0] + ' 0%, ' + def.colors[1] + ' 100%)';
                 img.textContent = def.emoji;
             }
 
@@ -138,22 +132,21 @@
             items.push({ item: item, btn: btn });
             dots[def.id] = dot;
 
-            if (def.href) {
-                /* External link: open in a new tab, no app dispatch, no dot. */
-                btn.addEventListener('click', function () {
-                    window.open(def.href, '_blank', 'noopener');
-                });
-            } else if (def.app) {
-                btn.addEventListener('click', function () {
-                    window.dispatchEvent(new CustomEvent('tb:open-app', { detail: { app: def.app } }));
-                });
-            } else {
-                /* Trash: decorative — wiggle instead of dispatching. */
-                btn.addEventListener('click', function () {
+            btn.addEventListener('click', function () {
+                if (def.wiggle) {
                     btn.classList.remove('tb-dock-icon--wiggle');
-                    void btn.offsetWidth; /* restart the animation */
+                    void btn.offsetWidth;
                     btn.classList.add('tb-dock-icon--wiggle');
-                });
+                }
+                if (def.href) {
+                    window.open(def.href, '_blank', 'noopener');
+                } else if (def.detail) {
+                    window.dispatchEvent(new CustomEvent('tb:open-app', { detail: def.detail }));
+                } else if (def.app) {
+                    window.dispatchEvent(new CustomEvent('tb:open-app', { detail: { app: def.app } }));
+                }
+            });
+            if (def.wiggle) {
                 btn.addEventListener('animationend', function () {
                     btn.classList.remove('tb-dock-icon--wiggle');
                 });
@@ -162,11 +155,6 @@
 
         mount.appendChild(tray);
 
-        /* ---- Magnification: scale by cursor distance AND push neighbors apart
-           (each icon shifts by the accumulated extra width before it), so scaled
-           icons spread with a real gap instead of stacking on each other. Rest
-           centers are cached per hover session so tray padding growth and item
-           shifts can't feed back into the distance math. ---- */
         var restCenters = null;
         var restTrayWidth = 0;
 
@@ -179,7 +167,7 @@
         }
 
         function magnify(clientX) {
-            if (!restCenters) { cacheRestCenters(); }
+            if (!restCenters) cacheRestCenters();
             var scales = [];
             var i;
             var maxScale = (window.TB_SETTINGS && typeof window.TB_SETTINGS.dockMaxScale === 'number')
@@ -189,14 +177,11 @@
                 var dist = Math.abs(clientX - restCenters[i]);
                 var scale = 1;
                 if (dist < RANGE) {
-                    /* cosine falloff: 1 at the cursor, 0 at the range edge */
                     var t = (Math.cos((dist / RANGE) * Math.PI) + 1) / 2;
                     scale = 1 + (maxScale - 1) * t;
                 }
                 scales.push(scale);
             }
-            /* Keep the extra width centered, and fit it inside the tray's
-               viewport cap without shrinking the fixed-size icon slots. */
             var requestedExtra = scales.reduce(function (sum, scale) { return sum + BASE * (scale - 1); }, 0);
             var availableExtra = Math.max(0, window.innerWidth - 24 - restTrayWidth);
             var fit = requestedExtra ? Math.min(1, availableExtra / requestedExtra) : 1;
@@ -208,16 +193,11 @@
                 var w = BASE * scales[i];
                 var shift = (scaledTotal + w / 2) - (baseTotal + BASE / 2) - extra / 2;
                 var lift = (scales[i] - 1) * LIFT;
-                /* the wrapper shifts (tooltip + dot track the icon); the button
-                   scales + lifts inside it */
                 items[i].item.style.transform = 'translateX(' + shift.toFixed(2) + 'px)';
-                items[i].btn.style.transform =
-                    'translateY(' + (-lift).toFixed(2) + 'px) scale(' + scales[i].toFixed(3) + ')';
+                items[i].btn.style.transform = 'translateY(' + (-lift).toFixed(2) + 'px) scale(' + scales[i].toFixed(3) + ')';
                 baseTotal += BASE;
                 scaledTotal += w;
             }
-            /* the frosted tray grows with the spread (visual only — the distance
-               math above uses the cached rest centers, never live rects) */
             tray.style.paddingLeft = (10 + extra / 2) + 'px';
             tray.style.paddingRight = (10 + extra / 2) + 'px';
         }
@@ -232,40 +212,34 @@
             restCenters = null;
         }
 
-        /* magnification is a hover feature — off on narrow/touch layouts where
-           the tray scrolls instead (scroll offsets would corrupt the math) */
         tray.addEventListener('mousemove', function (e) {
-            if (window.innerWidth <= 768) { return; }
-            if (window.TB_SETTINGS && window.TB_SETTINGS.dockMagnification === false) { return; }
+            if (window.innerWidth <= 768) return;
+            if (window.TB_SETTINGS && window.TB_SETTINGS.dockMagnification === false) return;
             magnify(e.clientX);
         });
         tray.addEventListener('mouseleave', reset);
         window.addEventListener('resize', reset);
-        /* System Settings toggle: snap back to rest when magnification turns off */
         window.addEventListener('tb:settings', function (e) {
             var d = e && e.detail;
-            if (d && (d.key === 'dockMagnification' || d.key === 'dockMaxScale')) { reset(); }
+            if (d && (d.key === 'dockMagnification' || d.key === 'dockMaxScale')) reset();
         });
 
-        /* ---- Running-indicator dots ---- */
         function setDot(iconId, on) {
             var dot = dots[iconId];
-            if (dot) { dot.classList.toggle('tb-dock-dot--on', !!on); }
+            if (dot) dot.classList.toggle('tb-dock-dot--on', !!on);
         }
 
-        /* Music dot follows playback state from the notch module. */
         window.addEventListener('tb:music-state', function (e) {
             var d = e && e.detail;
-            if (!d) { return; }
+            if (!d) return;
             setDot('notch', d.playing === true);
         });
 
-        /* Finder/Safari/Downloads/Coffee dots follow window state. */
         window.addEventListener('tb:window-state', function (e) {
             var d = e && e.detail;
-            if (!d || typeof d.app !== 'string') { return; }
+            if (!d || typeof d.app !== 'string') return;
             var iconId = WINDOW_APP_TO_ICON[d.app];
-            if (!iconId) { return; }
+            if (!iconId) return;
             setDot(iconId, d.state !== 'closed');
         });
     }

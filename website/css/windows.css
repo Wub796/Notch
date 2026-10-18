@@ -10,24 +10,29 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: rgba(246, 246, 248, 0.86);
-    -webkit-backdrop-filter: blur(28px) saturate(180%);
-    backdrop-filter: blur(28px) saturate(180%);
-    border-radius: 12px;
-    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
-    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: var(--tb-glass-light, rgba(246, 248, 254, 0.78));
+    -webkit-backdrop-filter: blur(44px) saturate(200%) brightness(1.04);
+    backdrop-filter: blur(44px) saturate(200%) brightness(1.04);
+    border-radius: 16px;
+    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.45), 0 4px 16px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.55);
     pointer-events: auto;
     user-select: none;
     -webkit-user-select: none;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
-    color: #333;
+    color: #1d1d1f;
     transition: transform 0.35s cubic-bezier(0.32, 0.72, 0.35, 1), opacity 0.35s ease;
 }
 
-.tb-window:not(.tb-window-active) { box-shadow: 0 12px 35px rgba(0,0,0,.24); }
+.tb-window:not(.tb-window-active) {
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    background: rgba(242, 243, 248, 0.72);
+}
 .tb-window:not(.tb-window-active) .tb-window-title { color: #818187; }
-.tb-window:not(.tb-window-active) .tb-tl { background: #c4c4c9; }
-.tb-window.tb-window-active { box-shadow: 0 24px 65px rgba(0,0,0,.38), 0 0 0 1px rgba(0,0,0,.12); }
+.tb-window:not(.tb-window-active) .tb-tl { background: #c8c8ce; box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.2); }
+.tb-window.tb-window-active {
+    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.44), 0 4px 18px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 0 0.5px rgba(0, 0, 0, 0.16);
+}
 
 /* Only while a zoom toggle animates (keeps left/top off the always-on
    transition so dragging stays 1:1 with the pointer). */
@@ -40,16 +45,17 @@
         opacity 0.35s ease;
 }
 
-/* ---- Titlebar ---- */
+/* ---- Titlebar (macOS 27 Liquid Glass header) ---- */
 .tb-window-titlebar {
     position: relative;
-    height: 38px;
-    flex: 0 0 38px;
+    height: 40px;
+    flex: 0 0 40px;
     display: flex;
     align-items: center;
-    padding: 0 12px;
-    /* touch-only: keeps a titlebar finger-drag on the Pointer Events path
-     instead of being stolen as a scroll/pan gesture. No mouse effect. */
+    padding: 0 14px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.58) 0%, rgba(255, 255, 255, 0.22) 100%);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
     touch-action: none;
     -webkit-touch-callout: none;
 }
@@ -64,7 +70,8 @@
     white-space: nowrap;
     font-size: 13px;
     font-weight: 600;
-    color: #333;
+    letter-spacing: -0.01em;
+    color: #1d1d1f;
     pointer-events: none;
 }
 
@@ -77,75 +84,84 @@
 }
 
 .tb-tl {
-    width: 12px;
-    height: 12px;
+    width: 13px;
+    height: 13px;
     border-radius: 50%;
     border: none;
     padding: 0;
     margin: 0;
-    cursor: default;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 10px;
     font-weight: 700;
     line-height: 1;
-    color: rgba(0, 0, 0, 0.55);
-    box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.25);
+    color: rgba(0, 0, 0, 0.58);
+    box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.45), inset 0 0 1px rgba(0, 0, 0, 0.28);
+    transition: transform 90ms ease, filter 120ms ease;
 }
 
-.tb-tl-close {
-    background: #FF5F57;
+.tb-tl:active {
+    transform: scale(0.9);
+    filter: brightness(0.9);
 }
 
-.tb-tl-min {
-    background: #FEBC2E;
-}
-
-.tb-tl-zoom {
-    background: #28C840;
-}
+.tb-tl-close { background: #FF5F57; }
+.tb-tl-min { background: #FEBC2E; }
+.tb-tl-zoom { background: #28C840; }
 
 .tb-tl::after {
     opacity: 0;
     transition: opacity 0.12s ease;
 }
 
-.tb-tl-close::after {
-    content: "×";
-}
+.tb-tl-close::after { content: "×"; }
+.tb-tl-min::after { content: "−"; }
+.tb-tl-zoom::after { content: "+"; }
 
-.tb-tl-min::after {
-    content: "−";
-}
-
-.tb-tl-zoom::after {
-    content: "+";
-}
-
-.tb-window-traffic:hover .tb-tl::after {
+.tb-window-traffic:hover .tb-tl::after,
+.tb-tl:focus-visible::after {
     opacity: 1;
 }
 
-/* macOS group hover */
-
-/* ---- Safari address bar (chrome:'safari' only) ---- */
+/* ---- Safari address bar (chrome:'safari' only, Liquid Glass pills) ---- */
 .tb-window-addressbar {
-    height: 34px;
-    flex: 0 0 34px;
+    height: 36px;
+    flex: 0 0 36px;
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 0 10px;
+    padding: 0 12px;
+    background: rgba(255, 255, 255, 0.38);
     border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
-.tb-ab-nav {
+.tb-ab-nav,
+.tb-ab-reload {
+    border: 0;
+    background: rgba(0, 0, 0, 0.04);
+    border-radius: 999px;
     font-size: 15px;
-    color: rgba(0, 0, 0, 0.28);
-    width: 18px;
-    text-align: center;
-    cursor: default;
+    color: #3a3a3c;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 120ms ease, transform 90ms ease;
+}
+
+.tb-ab-nav:hover,
+.tb-ab-reload:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.tb-ab-nav:active,
+.tb-ab-reload:active {
+    transform: scale(0.92);
 }
 
 .tb-ab-field {
@@ -154,30 +170,24 @@
     align-items: center;
     justify-content: center;
     gap: 5px;
-    height: 24px;
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.7);
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+    height: 26px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    background: rgba(255, 255, 255, 0.68);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9);
     font-size: 12px;
-    color: #333;
+    color: #1d1d1f;
     overflow: hidden;
     white-space: nowrap;
+    cursor: pointer;
 }
 
-.tb-ab-lock {
-    font-size: 10px;
+.tb-ab-field:hover {
+    background: rgba(255, 255, 255, 0.85);
 }
 
-.tb-ab-url {
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.tb-ab-reload {
-    font-size: 14px;
-    color: rgba(0, 0, 0, 0.45);
-    cursor: default;
-}
+.tb-ab-lock { font-size: 10px; }
+.tb-ab-url { overflow: hidden; text-overflow: ellipsis; }
 
 /* ---- Content area ---- */
 .tb-window-content {
