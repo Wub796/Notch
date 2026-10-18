@@ -157,56 +157,124 @@
 
         var restCenters = null;
         var restTrayWidth = 0;
+        var curScales = items.map(function () { return 1; });
+        var targetScales = items.map(function () { return 1; });
+        var curShifts = items.map(function () { return 0; });
+        var curExtra = 0;
+        var rafId = 0;
+        var lastTime = 0;
+        var reducedMotion = typeof window.matchMedia === 'function'
+            ? window.matchMedia('(prefers-reduced-motion: reduce)')
+            : null;
 
         function cacheRestCenters() {
-            restTrayWidth = tray.getBoundingClientRect().width;
-            restCenters = items.map(function (it) {
+            restTrayWidth = tray.getBoundingClientRect().width - curExtra;
+            restCenters = items.map(function (it, i) {
                 var r = it.item.getBoundingClientRect();
-                return r.left + r.width / 2;
+                return r.left + r.width / 2 - curShifts[i];
             });
+        }
+
+        function applyFrame(now) {
+            rafId = 0;
+            var dt = lastTime ? Math.max(0.004, (now - lastTime) / 1000) : 0.016;
+            lastTime = now;
+            var alpha = 1 - Math.exp(-dt * 20);
+            var moving = false;
+            var allRest = true;
+            var i;
+
+            for (i = 0; i < items.length; i++) {
+                var diff = targetScales[i] - curScales[i];
+                if (Math.abs(diff) > 0.002) {
+                    curScales[i] += diff * alpha;
+                    if (Math.abs(targetScales[i] - curScales[i]) <= 0.002) {
+                        curScales[i] = targetScales[i];
+                    } else {
+                        moving = true;
+                    }
+                } else {
+                    curScales[i] = targetScales[i];
+                }
+                if (curScales[i] !== 1) allRest = false;
+            }
+
+            if (allRest && !moving) {
+                for (i = 0; i < items.length; i++) {
+                    items[i].item.style.transform = '';
+                    items[i].btn.style.transform = '';
+                    curShifts[i] = 0;
+                }
+                tray.style.paddingLeft = '';
+                tray.style.paddingRight = '';
+                curExtra = 0;
+                lastTime = 0;
+                return;
+            }
+
+            var requestedExtra = curScales.reduce(function (sum, s) { return sum + BASE * (s - 1); }, 0);
+            var availableExtra = Math.max(0, window.innerWidth - 24 - restTrayWidth);
+            var fit = requestedExtra ? Math.min(1, availableExtra / requestedExtra) : 1;
+            var extra = requestedExtra * fit;
+            var baseTotal = 0;
+            var scaledTotal = 0;
+
+            for (i = 0; i < items.length; i++) {
+                var s = 1 + (curScales[i] - 1) * fit;
+                var w = BASE * s;
+                var shift = (scaledTotal + w / 2) - (baseTotal + BASE / 2) - extra / 2;
+                var lift = (s - 1) * LIFT;
+                curShifts[i] = shift;
+                items[i].item.style.transform = 'translate3d(' + shift.toFixed(2) + 'px, 0, 0)';
+                items[i].btn.style.transform = 'translate3d(0, ' + (-lift).toFixed(2) + 'px, 0) scale(' + s.toFixed(3) + ')';
+                baseTotal += BASE;
+                scaledTotal += w;
+            }
+            curExtra = extra;
+            tray.style.paddingLeft = (11 + extra / 2).toFixed(2) + 'px';
+            tray.style.paddingRight = (11 + extra / 2).toFixed(2) + 'px';
+
+            if (moving) rafId = window.requestAnimationFrame(applyFrame);
+            else lastTime = 0;
+        }
+
+        function scheduleTick() {
+            if (!rafId) rafId = window.requestAnimationFrame(applyFrame);
         }
 
         function magnify(clientX) {
             if (!restCenters) cacheRestCenters();
-            var scales = [];
-            var i;
             var maxScale = (window.TB_SETTINGS && typeof window.TB_SETTINGS.dockMaxScale === 'number')
                 ? window.TB_SETTINGS.dockMaxScale : MAX_SCALE;
             maxScale = Number.isFinite(maxScale) ? Math.max(1, Math.min(2, maxScale)) : MAX_SCALE;
-            for (i = 0; i < items.length; i++) {
+            for (var i = 0; i < items.length; i++) {
                 var dist = Math.abs(clientX - restCenters[i]);
                 var scale = 1;
                 if (dist < RANGE) {
                     var t = (Math.cos((dist / RANGE) * Math.PI) + 1) / 2;
                     scale = 1 + (maxScale - 1) * t;
                 }
-                scales.push(scale);
+                targetScales[i] = scale;
             }
-            var requestedExtra = scales.reduce(function (sum, scale) { return sum + BASE * (scale - 1); }, 0);
-            var availableExtra = Math.max(0, window.innerWidth - 24 - restTrayWidth);
-            var fit = requestedExtra ? Math.min(1, availableExtra / requestedExtra) : 1;
-            scales = scales.map(function (scale) { return 1 + (scale - 1) * fit; });
-            var extra = requestedExtra * fit;
-            var baseTotal = 0;
-            var scaledTotal = 0;
-            for (i = 0; i < items.length; i++) {
-                var w = BASE * scales[i];
-                var shift = (scaledTotal + w / 2) - (baseTotal + BASE / 2) - extra / 2;
-                var lift = (scales[i] - 1) * LIFT;
-                items[i].item.style.transform = 'translateX(' + shift.toFixed(2) + 'px)';
-                items[i].btn.style.transform = 'translateY(' + (-lift).toFixed(2) + 'px) scale(' + scales[i].toFixed(3) + ')';
-                baseTotal += BASE;
-                scaledTotal += w;
-            }
-            tray.style.paddingLeft = (10 + extra / 2) + 'px';
-            tray.style.paddingRight = (10 + extra / 2) + 'px';
+            scheduleTick();
         }
 
-        function reset() {
+        function smoothReset() {
+            for (var i = 0; i < items.length; i++) targetScales[i] = 1;
+            scheduleTick();
+        }
+
+        function hardReset() {
+            if (rafId) { window.cancelAnimationFrame(rafId); rafId = 0; }
+            lastTime = 0;
             for (var i = 0; i < items.length; i++) {
+                curScales[i] = 1;
+                targetScales[i] = 1;
+                curShifts[i] = 0;
                 items[i].item.style.transform = '';
                 items[i].btn.style.transform = '';
             }
+            curExtra = 0;
             tray.style.paddingLeft = '';
             tray.style.paddingRight = '';
             restCenters = null;
@@ -214,14 +282,15 @@
 
         tray.addEventListener('mousemove', function (e) {
             if (window.innerWidth <= 768) return;
+            if (reducedMotion && reducedMotion.matches) return;
             if (window.TB_SETTINGS && window.TB_SETTINGS.dockMagnification === false) return;
             magnify(e.clientX);
         });
-        tray.addEventListener('mouseleave', reset);
-        window.addEventListener('resize', reset);
+        tray.addEventListener('mouseleave', smoothReset);
+        window.addEventListener('resize', hardReset);
         window.addEventListener('tb:settings', function (e) {
             var d = e && e.detail;
-            if (d && (d.key === 'dockMagnification' || d.key === 'dockMaxScale')) reset();
+            if (d && (d.key === 'dockMagnification' || d.key === 'dockMaxScale')) hardReset();
         });
 
         function setDot(iconId, on) {

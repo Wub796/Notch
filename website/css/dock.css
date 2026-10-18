@@ -26,6 +26,7 @@
     align-items: center;
     width: 52px;
     height: 52px;
+    will-change: transform;
 }
 
 .tb-dock-icon {
@@ -38,7 +39,6 @@
     background: transparent;
     cursor: pointer;
     transform-origin: bottom center;
-    transition: transform 0.12s ease-out;
     will-change: transform;
     -webkit-tap-highlight-color: transparent;
 }
@@ -61,6 +61,7 @@
     user-select: none;
     -webkit-user-select: none;
     filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.24));
+    transition: filter 0.15s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .tb-dock-icon:active .tb-dock-icon-img {
@@ -79,7 +80,8 @@
     position: absolute;
     bottom: calc(100% + 14px);
     left: 50%;
-    transform: translateX(-50%);
+    transform: translateX(-50%) translateY(4px) scale(0.96);
+    transform-origin: bottom center;
     padding: 5px 12px;
     border-radius: 999px;
     background: var(--tb-glass-solid, rgba(28, 30, 38, 0.84));
@@ -92,14 +94,30 @@
     white-space: nowrap;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 0.15s ease;
+    transition:
+        opacity 0.16s cubic-bezier(0.23, 1, 0.32, 1),
+        transform 0.16s cubic-bezier(0.23, 1, 0.32, 1);
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
     z-index: 1;
 }
 
-.tb-dock-item:hover .tb-dock-tooltip,
+@media (hover: hover) and (pointer: fine) {
+    .tb-dock-item:hover .tb-dock-tooltip {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0) scale(1);
+    }
+}
+
 .tb-dock-item:focus-within .tb-dock-tooltip {
     opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tb-dock-tooltip {
+        transform: translateX(-50%) !important;
+        transition: opacity 0.15s ease;
+    }
 }
 
 /* Running indicator: 4px glowing glass dot below the icon. */
