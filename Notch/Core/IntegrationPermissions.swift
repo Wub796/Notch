@@ -454,6 +454,15 @@ final class IntegrationPermissions: NSObject, CLLocationManagerDelegate {
         AutomationConsent.shared.isAllowed(bundleID)
     }
 
+    /// Whether one Apple Event may be sent to `bundleID` at all: a real bundle
+    /// id, already allowed. The one spelling of the guard every scripting path
+    /// needs, so a player command and a browser probe cannot disagree about
+    /// consent.
+    static func canScript(_ bundleID: String) -> Bool {
+        guard !bundleID.isEmpty else { return false }
+        return isAutomationAllowed(bundleID)
+    }
+
     /// Asks macOS whether this app may automate `bundleID`.
     ///
     /// `fileprivate` rather than `private`: `AutomationConsent` below is the

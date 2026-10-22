@@ -471,7 +471,7 @@ final class MediaController {
         // etc.). Consent-gated exactly like the players: a launch probe must
         // never be what raises the Automation dialog.
         let browserSnap: Snapshot? = playingPlayer == nil
-            ? browserYouTubeSnapshot(
+            ? browserMediaSnapshot(
                 avoidPrompt: true, musicOwnsSession: inputs.musicOwnsSession
             )
             : nil
@@ -811,7 +811,7 @@ final class MediaController {
             // line or flip the transport of something else. Prefixes count as
             // a match, because the two sides of the same item do not always
             // spell its name the same way (a tab title carries " - YouTube").
-            let reportedTitle = Self.normalizedTitle(info[MediaRemoteBridge.InfoKey.title] as? String ?? "")
+            let reportedTitle = SourceArbitration.normalizedTitle(info[MediaRemoteBridge.InfoKey.title] as? String ?? "")
             let currentTitle = self.track?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard Self.titlesAgree(reportedTitle, currentTitle) else { return }
 
@@ -986,14 +986,6 @@ final class MediaController {
         case system
     }
 
-    /// Whether Apple Events to `bundleID` are allowed. Cached and never
-    /// blocking (see `AutomationConsent`), so it is safe to ask on the way
-    /// through a button press.
-    private func canScript(_ bundleID: String) -> Bool {
-        guard !bundleID.isEmpty else { return false }
-        return IntegrationPermissions.isAutomationAllowed(bundleID)
-    }
-
     /// Whether the item on screen belongs to a dedicated music player — the
     /// two apps the notch can drive directly. This is the question every
     /// transport rung and the provider filter actually mean by "the player
@@ -1027,8 +1019,8 @@ final class MediaController {
     private func resolveTransportTarget(providerCommand: String) -> TransportTarget {
         let spotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.spotify.bundleID).isEmpty
         let musicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: MusicProvider.appleMusic.bundleID).isEmpty
-        let spotifyScriptable = spotifyRunning && canScript(MusicProvider.spotify.bundleID)
-        let musicScriptable = musicRunning && canScript(MusicProvider.appleMusic.bundleID)
+        let spotifyScriptable = spotifyRunning && IntegrationPermissions.canScript(MusicProvider.spotify.bundleID)
+        let musicScriptable = musicRunning && IntegrationPermissions.canScript(MusicProvider.appleMusic.bundleID)
 
         // 1. If the session on screen belongs to a music player and we are
         //    allowed to drive it, prioritize controlling that player.
@@ -1067,8 +1059,8 @@ final class MediaController {
         //    the MediaRemote rung, which drives the browser's own now-playing
         //    session without any consent.
         if isBrowserVideo || isShowingBrowserSnapshot,
-           Self.browserTargets.contains(where: { browser in
-               canScript(browser.bundleID)
+           BrowserMediaProbe.targets.contains(where: { browser in
+               IntegrationPermissions.canScript(browser.bundleID)
                    && !NSRunningApplication
                        .runningApplications(withBundleIdentifier: browser.bundleID).isEmpty
            }) {
@@ -1084,18 +1076,18 @@ final class MediaController {
         //    Ungranted, the command falls through to the MediaRemote rung.
         if musicPlayerOwnsSource,
            let provider = selectedProvider.appleScriptAppName,
-           canScript(selectedProvider.bundleID) {
+           IntegrationPermissions.canScript(selectedProvider.bundleID) {
             return .provider(appName: provider, command: providerCommand)
         }
 
         // 4. Automatic provider detection
         if let bundle = sourceAppBundleID {
-            if bundle == MusicProvider.spotify.bundleID, canScript(bundle) {
+            if bundle == MusicProvider.spotify.bundleID, IntegrationPermissions.canScript(bundle) {
                 return .provider(appName: "Spotify", command: providerCommand)
-            } else if bundle == MusicProvider.appleMusic.bundleID, canScript(bundle) {
+            } else if bundle == MusicProvider.appleMusic.bundleID, IntegrationPermissions.canScript(bundle) {
                 return .provider(appName: "Music", command: providerCommand)
-            } else if Self.browserTargets.contains(where: { $0.bundleID == bundle }),
-                      canScript(bundle) {
+            } else if BrowserMediaProbe.targets.contains(where: { $0.bundleID == bundle }),
+                      IntegrationPermissions.canScript(bundle) {
                 return .browser
             }
         }
@@ -1403,86 +1395,27 @@ final class MediaController {
     /// necessarily the browser, and never the tab we just scripted — so firing
     /// it as a blanket fallback double-delivers the toggle (the page flips, then
     /// the key flips whatever was actually playing). The key is therefore posted
-    /// only when a tab we can see is ours answered the script *cleanly* with "no
-    /// control here", and only when no music player owns the session (if one is
-    /// running, the key would go to it instead — exactly the duplicate to avoid).
+    /// only when no page answered, and only when no music player owns the
+    /// session (if one is running, the key would go to it instead — exactly the
+    /// duplicate to avoid).
     private func toggleBrowserPlayback() {
-        // `#movie_player` is the desktop YouTube player and exposes a reliable
-        // state; the bare `video` element is the fallback and also covers
-        // YouTube Music, whose player is a plain HTML5 video.
-        let js = "(function(){var p=document.querySelector('#movie_player');if(p&&p.getPlayerState){if(p.getPlayerState()===1){p.pauseVideo();return 'paused';}else{p.playVideo();return 'playing';}}var v=document.querySelector('video');if(v){if(v.paused){v.play();return 'playing';}else{v.pause();return 'paused';}}return 'none';})();"
+        // Two passes, because the tabs are not interchangeable: playing media is
+        // paused first, wherever it is; only when nothing is playing is a paused
+        // page started, and then only the page the notch is showing, never a tab
+        // reached by accident.
+        if BrowserMediaProbe.pauseAnything() {
+            setPlaying(false)
+            // The page's own answer can be optimistic — a `play()` its autoplay
+            // policy never honoured still reports 'playing'. One read-back keeps
+            // the transport honest instead of leaving the claim standing.
+            schedulePlaybackReadBack()
+            return
+        }
 
-        for browser in Self.browserTargets {
-            guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else { continue }
-            let scriptSource: String
-            if browser.isChromium {
-                scriptSource = """
-                tell application "\(browser.name)"
-                    if (count of windows) is 0 then return ""
-                    repeat with w in windows
-                        repeat with t in tabs of w
-                            set u to URL of t
-                            set n to title of t
-                            if u contains "youtube.com" or u contains "youtu.be" or n contains " - YouTube" or n contains "YouTube Music" then
-                                try
-                                    tell t
-                                        return (execute javascript "\(js)") as text
-                                    end tell
-                                end try
-                            end if
-                        end repeat
-                    end repeat
-                    return ""
-                end tell
-                """
-            } else {
-                scriptSource = """
-                tell application "\(browser.name)"
-                    if (count of windows) is 0 then return ""
-                    repeat with w in windows
-                        repeat with t in tabs of w
-                            set u to URL of t
-                            set n to name of t
-                            if u contains "youtube.com" or u contains "youtu.be" or n contains " - YouTube" or n contains "YouTube Music" then
-                                try
-                                    return (do JavaScript "\(js)" in t) as text
-                                end try
-                            end if
-                        end repeat
-                    end repeat
-                    return ""
-                end tell
-                """
-            }
-
-            var error: NSDictionary?
-            if let script = NSAppleScript(source: scriptSource) {
-                let result = script.executeAndReturnError(&error)
-                guard error == nil,
-                      let res = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
-                else { continue }
-                if res == "playing" || res == "paused" {
-                    // The toggle script returned the authoritative post-toggle
-                    // state, so set `isPlaying` from it directly rather than
-                    // re-reading the DOM — that read races the player's own
-                    // state transition (YouTube's getPlayerState() takes a beat
-                    // to flip after pauseVideo()), and the periodic probe still
-                    // catches any genuine drift. Stop here: going on to the next
-                    // browser would toggle a second time.
-                    setPlaying(res == "playing")
-                    // The script's answer is the page's own, but it can be
-                    // optimistic — a `play()` the page's autoplay policy never
-                    // honoured still reports 'playing'. One read-back keeps the
-                    // transport honest instead of leaving the claim standing.
-                    schedulePlaybackReadBack()
-                    return
-                }
-                if res == "none" {
-                    // Our tab, but this page exposes no player we can drive.
-                    // The system channel is the fallback here, not a duplicate.
-                    break
-                }
-            }
+        if let wanted = sourceMediaURL, BrowserMediaProbe.play(url: wanted) {
+            setPlaying(true)
+            schedulePlaybackReadBack()
+            return
         }
 
         sendBrowserFallback(.togglePlayPause)
@@ -1580,7 +1513,7 @@ final class MediaController {
         body += "return 'none';})();"
         let js = body
 
-        for browser in Self.browserTargets {
+        for browser in BrowserMediaProbe.targets {
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else { continue }
             let scriptSource: String
             if browser.isChromium {
@@ -1647,7 +1580,7 @@ final class MediaController {
     }
 
     private func seekBrowser(to seconds: TimeInterval) {
-        for browser in Self.browserTargets {
+        for browser in BrowserMediaProbe.targets {
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else { continue }
             let js = "(function(){var p=document.querySelector('#movie_player');if(p&&p.seekTo){p.seekTo(\(seconds),true);return 'seeked';}var v=document.querySelector('video');if(v){v.currentTime=\(seconds);return 'seeked';}return 'none';})();"
             let scriptSource: String
@@ -1730,7 +1663,12 @@ final class MediaController {
     /// The media source `openSourceApp()` would open, or nil when there is
     /// nothing to open.
     var openableSourceName: String? {
-        if isBrowserVideo, sourceMediaURL != nil { return "YouTube video" }
+        // The site is the item's own: a Bilibili video is not a YouTube one,
+        // and `track.album` is where the probe records it.
+        if isBrowserVideo, sourceMediaURL != nil {
+            if let site = track?.album, !site.isEmpty { return "\(site) video" }
+            return "Browser video"
+        }
         if let sourceAppName { return sourceAppName }
         return hasTrack ? controlAppName : nil
     }
@@ -1741,7 +1679,7 @@ final class MediaController {
     func openSourceApp() {
         if isBrowserVideo {
             if let bundleID = sourceAppBundleID,
-               let browser = Self.browserTargets.first(where: { $0.bundleID == bundleID }),
+               let browser = BrowserMediaProbe.targets.first(where: { $0.bundleID == bundleID }),
                let sourceMediaURL {
                 focusBrowserTab(browser, matching: sourceMediaURL)
             } else if let bundleID = sourceAppBundleID {
@@ -1770,7 +1708,7 @@ final class MediaController {
         }
 
         let targetURL = Self.appleScriptStringLiteral(mediaURL.absoluteString)
-        let videoID = Self.extractYouTubeVideoID(from: mediaURL.absoluteString) ?? ""
+        let videoID = BrowserMediaProbe.youtubeVideoID(from: mediaURL.absoluteString) ?? ""
         let videoMatchers = ["v=", "youtu.be/", "shorts/", "live/", "embed/"]
             .map { "u contains \(Self.appleScriptStringLiteral($0 + videoID))" }
             .joined(separator: " or ")
@@ -2007,7 +1945,7 @@ final class MediaController {
                 }
 
                 let title = (info[MediaRemoteBridge.InfoKey.title] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let isBrowser = self.sourceAppBundleID.map { bundle in Self.browserTargets.contains(where: { $0.bundleID == bundle }) } ?? false
+                let isBrowser = self.sourceAppBundleID.map { bundle in BrowserMediaProbe.targets.contains(where: { $0.bundleID == bundle }) } ?? false
 
                 // If MediaRemote reports for a browser without a title, defer to the browser probe.
                 if isBrowser && title.isEmpty {
@@ -2125,8 +2063,8 @@ final class MediaController {
         if !isShowingBrowserSnapshot {
             sourceMediaURL = nil
         }
-        let title = Self.normalizedTitle(info[MediaRemoteBridge.InfoKey.title] as? String ?? "")
-        let isBrowser = sourceAppBundleID.map { Self.isBrowserBundle($0) } ?? false
+        let title = SourceArbitration.normalizedTitle(info[MediaRemoteBridge.InfoKey.title] as? String ?? "")
+        let isBrowser = sourceAppBundleID.map { BrowserMediaProbe.isBrowser($0) } ?? false
         if !isBrowser {
             sourceMediaURL = nil
         }
@@ -2211,12 +2149,12 @@ final class MediaController {
 
         var newTrack = Track()
         let rawTitle = info[MediaRemoteBridge.InfoKey.title] as? String ?? ""
-        newTrack.title = Self.normalizedTitle(rawTitle)
+        newTrack.title = SourceArbitration.normalizedTitle(rawTitle)
         newTrack.artist = info[MediaRemoteBridge.InfoKey.artist] as? String ?? ""
         newTrack.album = info[MediaRemoteBridge.InfoKey.album] as? String ?? ""
         newTrack.duration = info[MediaRemoteBridge.InfoKey.duration] as? TimeInterval ?? 0
 
-        let isBrowser = sourceAppBundleID.map { bundle in Self.browserTargets.contains(where: { $0.bundleID == bundle }) } ?? false
+        let isBrowser = sourceAppBundleID.map { bundle in BrowserMediaProbe.targets.contains(where: { $0.bundleID == bundle }) } ?? false
         if !isBrowser {
             sourceMediaURL = nil
         } else if !newTrack.title.isEmpty, newTrack.title != track?.title {
@@ -2342,7 +2280,7 @@ final class MediaController {
             // exactly how the Automation prompt gets raised.
             let snapshot: Snapshot?
             if avoidPrompt, !self.automationIsAllowed() {
-                snapshot = self.browserYouTubeSnapshot(
+                snapshot = self.browserMediaSnapshot(
                     avoidPrompt: true, musicOwnsSession: inputs.musicOwnsSession
                 )
             } else {
@@ -2409,7 +2347,7 @@ final class MediaController {
         // at the notch, which is how that consent is obtained.
         let avoidPrompt = !isActive
         Self.scriptQueue.async { [weak self] in
-            let snapshot = self?.browserYouTubeSnapshot(
+            let snapshot = self?.browserMediaSnapshot(
                 avoidPrompt: avoidPrompt, musicOwnsSession: inputs.musicOwnsSession
             )
             DispatchQueue.main.async { [weak self] in
@@ -2425,6 +2363,20 @@ final class MediaController {
                     }
                     return
                 }
+                // A reading may only take the notch from what is showing when
+                // it is playing, is the same item, or nothing is playing. A
+                // paused tab used to replace a playing video here, which is
+                // what made the video the user was watching disappear a few
+                // seconds after it took the notch.
+                let sameItem = self.track.map {
+                    Self.titlesAgree($0.title, snapshot.track.title)
+                } ?? false
+                guard SourceArbitration.probeMayReplace(
+                    showingIsPlaying: self.isPlaying,
+                    probeIsPlaying: snapshot.playbackStateKnown && snapshot.isPlaying,
+                    sameItem: sameItem
+                ) else { return }
+
                 self.isShowingBrowserSnapshot = true
                 self.isBrowserVideo = true
                 self.pendingClearWork?.cancel()
@@ -2638,84 +2590,6 @@ final class MediaController {
         !NSRunningApplication.runningApplications(withBundleIdentifier: fallbackBundleID).isEmpty
     }
 
-    private struct BrowserTarget {
-        let name: String
-        let bundleID: String
-        let isChromium: Bool
-    }
-
-    private static let browserTargets: [BrowserTarget] = [
-        BrowserTarget(name: "Safari", bundleID: "com.apple.Safari", isChromium: false),
-        BrowserTarget(name: "Google Chrome", bundleID: "com.google.Chrome", isChromium: true),
-        BrowserTarget(name: "Google Chrome Canary", bundleID: "com.google.Chrome.canary", isChromium: true),
-        BrowserTarget(name: "Arc", bundleID: "company.thebrowser.Browser", isChromium: true),
-        BrowserTarget(name: "Brave Browser", bundleID: "com.brave.Browser", isChromium: true),
-        BrowserTarget(name: "Microsoft Edge", bundleID: "com.microsoft.edgemac", isChromium: true),
-        BrowserTarget(name: "Vivaldi", bundleID: "com.vivaldi.Vivaldi", isChromium: true),
-        BrowserTarget(name: "Orion", bundleID: "com.kagi.kagisafari", isChromium: false),
-        BrowserTarget(name: "Opera", bundleID: "com.operasoftware.Opera", isChromium: true),
-        BrowserTarget(name: "Opera GX", bundleID: "com.operasoftware.OperaGX", isChromium: true),
-        BrowserTarget(name: "Zen Browser", bundleID: "app.zen-browser.zen", isChromium: false),
-        BrowserTarget(name: "Chromium", bundleID: "org.chromium.Chromium", isChromium: true)
-    ]
-
-    private static func validatedYouTubeURL(from rawValue: String?) -> URL? {
-        guard let rawValue,
-              let components = URLComponents(string: rawValue.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let scheme = components.scheme?.lowercased(),
-              scheme == "https" || scheme == "http",
-              let host = components.host?.lowercased()
-        else { return nil }
-        let isYouTubeHost = host == "youtube.com"
-            || host.hasSuffix(".youtube.com")
-            || host == "youtu.be"
-            || host.hasSuffix(".youtu.be")
-        guard isYouTubeHost else { return nil }
-        return components.url
-    }
-
-    private static func extractYouTubeVideoID(from urlString: String) -> String? {
-        guard let url = URL(string: urlString) else { return nil }
-
-        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-           let v = components.queryItems?.first(where: { $0.name == "v" })?.value,
-           !v.isEmpty {
-            return v
-        }
-
-        if urlString.contains("youtu.be/") {
-            if let id = url.pathComponents.dropFirst().first, !id.isEmpty {
-                return id.components(separatedBy: "?").first?.components(separatedBy: "&").first?.components(separatedBy: "#").first
-            }
-        }
-
-        let pathComponents = url.pathComponents
-        for prefix in ["shorts", "embed", "live", "v"] {
-            if let idx = pathComponents.firstIndex(of: prefix), idx + 1 < pathComponents.count {
-                let candidate = pathComponents[idx + 1]
-                if !candidate.isEmpty {
-                    return candidate.components(separatedBy: "?").first?.components(separatedBy: "&").first?.components(separatedBy: "#").first
-                }
-            }
-        }
-
-        return nil
-    }
-
-    private static func doubleValue(_ value: Any?) -> Double? {
-        if let value = value as? Double { return value }
-        if let value = value as? NSNumber { return value.doubleValue }
-        if let value = value as? String { return Double(value) }
-        return nil
-    }
-
-    private static func boolValue(_ value: Any?) -> Bool? {
-        if let value = value as? Bool { return value }
-        if let value = value as? NSNumber { return value.boolValue }
-        if let value = value as? String { return Bool(value) }
-        return nil
-    }
-
     /// The playing state a MediaRemote payload reports, or nil when it carries
     /// none. `playbackRate` is the normalized form both sources deliver (the
     /// adapter folds its own `playing` flag into it); the raw flag is read too,
@@ -2727,18 +2601,6 @@ final class MediaController {
         }
         if let playing = info[MediaRemoteAdapter.Key.playing] as? Bool { return playing }
         return nil
-    }
-
-    /// A now-playing title with the platform suffixes stripped, so a
-    /// MediaRemote reading and a DOM reading of the same item compare equal
-    /// ("Song - YouTube" and "Song" are the same video).
-    private static func normalizedTitle(_ raw: String) -> String {
-        var title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        for suffix in [" - YouTube", " - YouTube Music"] where title.hasSuffix(suffix) {
-            title = String(title.dropLast(suffix.count))
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return title
     }
 
     /// Whether two now-playing titles describe the same item. Prefixes are
@@ -2761,10 +2623,6 @@ final class MediaController {
         MusicProvider.spotify.bundleID
     ]
 
-    private static func isBrowserBundle(_ bundleID: String) -> Bool {
-        browserTargets.contains { $0.bundleID == bundleID }
-    }
-
     var isMusicConnectedOrActive: Bool {
         // Music holds the session only while it is *actually playing*. The old
         // test also accepted "a music player is running and has a track", and
@@ -2782,196 +2640,55 @@ final class MediaController {
         return Self.musicPlayerBundleIDs.contains(bundle)
     }
 
-    private func browserYouTubeSnapshot(
+    /// One reading of whatever the browsers are playing, turned into the
+    /// player's `Snapshot`.
+    ///
+    /// The asking lives in `BrowserMediaProbe`; what stays here is the one thing
+    /// the probe cannot do — the channel lookup for a page whose title carries
+    /// no artist, which needs this controller's cache.
+    ///
+    /// - Parameters:
+    ///   - avoidPrompt: whether a browser we may not script has to be skipped.
+    ///     A probe nobody asked for — the closed notch, the background poll —
+    ///     must never be what raises the Automation dialog.
+    ///   - musicOwnsSession: the caller has already decided a playing music
+    ///     player outranks any browser.
+    private func browserMediaSnapshot(
         avoidPrompt: Bool, musicOwnsSession: Bool
     ) -> Snapshot? {
-        guard !musicOwnsSession else { return nil }
+        guard !musicOwnsSession,
+              let reading = BrowserMediaProbe.read(avoidPrompt: avoidPrompt)
+        else { return nil }
 
-        var fallbackSnapshot: Snapshot?
-        for browser in Self.browserTargets {
-            guard !NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleID).isEmpty else {
-                continue
-            }
-            // A background probe must not be what raises the Automation
-            // prompt; only the interactive probe (notch open) may.
-            if avoidPrompt,
-               !IntegrationPermissions.isAutomationAllowed(browser.bundleID) {
-                continue
-            }
-
-            // The DOM script is what carries the real payload: the rendered
-            // title (no " - YouTube" suffix), the channel name, the video ID
-            // for the thumbnail, and the live currentTime/duration for the
-            // progress bar. Chromium exposes it through `execute javascript`;
-            // Safari through `do JavaScript`, falling back to the tab-title
-            // path when "Allow JavaScript from Apple Events" is off.
-            let js = "(function(){try{var title=(document.querySelector('h1.ytd-watch-metadata')||document.querySelector('h1')).innerText||document.title;var channel=(document.querySelector('#upload-info #channel-name a')||document.querySelector('ytd-channel-name a')).innerText||'';var p=document.querySelector('#movie_player');var d=p&&p.getDuration?p.getDuration():0;var c=p&&p.getCurrentTime?p.getCurrentTime():0;var id=p&&p.getVideoData?p.getVideoData().video_id:'';var playing=false;try{playing=p&&p.getPlayerState?p.getPlayerState()===1:(function(){var v=document.querySelector('video');return !!v&&!v.paused&&!v.ended;})();}catch(e){}return (playing?'PLAYING||':'PAUSED||')+JSON.stringify({title:title,youtuber:channel,thumbnail:id?'https://img.youtube.com/vi/'+id+'/maxresdefault.jpg':'',sourceURL:location.href,progress:d>0?c/d:0,duration:d,playing:playing});}catch(e){return '';}})();"
-
-            let scriptSource: String
-            if browser.isChromium {
-                scriptSource = """
-                tell application "\(browser.name)"
-                    set fallback to ""
-                    repeat with w in windows
-                        repeat with t in tabs of w
-                            set u to URL of t
-                            set n to title of t
-                            if u contains "youtube.com/watch" or u contains "youtu.be" or u contains "music.youtube.com" or u contains "youtube.com/shorts" or u contains "youtube.com/live" or u contains "youtube.com/embed" or n contains " - YouTube" or n contains "YouTube Music" then
-                                set candidate to ""
-                                try
-                                    tell t
-                                        set candidate to (execute javascript "\(js)") as text
-                                    end tell
-                                on error
-                                    set candidate to n & "||" & u
-                                end try
-                                if candidate begins with "PLAYING||" then return text 10 thru -1 of candidate
-                                if fallback is "" and candidate begins with "PAUSED||" then
-                                    set fallback to text 9 thru -1 of candidate
-                                else if fallback is "" and candidate is not "" then
-                                    set fallback to candidate
-                                end if
-                            end if
-                        end repeat
-                    end repeat
-                    return fallback
-                end tell
-                """
-            } else {
-                scriptSource = """
-                tell application "\(browser.name)"
-                    set fallback to ""
-                    repeat with w in windows
-                        repeat with t in tabs of w
-                            set u to URL of t
-                            set n to name of t
-                            if u contains "youtube.com/watch" or u contains "youtu.be" or u contains "music.youtube.com" or u contains "youtube.com/shorts" or u contains "youtube.com/live" or u contains "youtube.com/embed" or n contains " - YouTube" or n contains "YouTube Music" then
-                                set candidate to ""
-                                try
-                                    set candidate to (do JavaScript "\(js)" in t) as text
-                                on error
-                                    set candidate to n & "||" & u
-                                end try
-                                if candidate begins with "PLAYING||" then return text 10 thru -1 of candidate
-                                if fallback is "" and candidate begins with "PAUSED||" then
-                                    set fallback to text 9 thru -1 of candidate
-                                else if fallback is "" and candidate is not "" then
-                                    set fallback to candidate
-                                end if
-                            end if
-                        end repeat
-                    end repeat
-                    return fallback
-                end tell
-                """
-            }
-
-            var error: NSDictionary?
-            guard let script = NSAppleScript(source: scriptSource) else { continue }
-            let result = script.executeAndReturnError(&error)
-            guard error == nil, let raw = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !raw.isEmpty else {
-                continue
-            }
-
-            // The DOM script returns JSON on its own — no "||" separator —
-            // so the legacy tab-title path must only run when the reply is
-            // not JSON. (The old guard demanded "||", which silently threw
-            // away every Chromium reply and left "Nothing Playing" on screen
-            // while YouTube played.)
-            if let data = raw.data(using: .utf8),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let jsTitle = json["title"] as? String,
-               !jsTitle.isEmpty {
-                let channel = json["youtuber"] as? String ?? "YouTube"
-                let thumbnail = json["thumbnail"] as? String ?? ""
-                let progress = Self.doubleValue(json["progress"])
-                    .map { min(max($0, 0), 1) } ?? 0
-                let duration = max(Self.doubleValue(json["duration"]) ?? 0, 0)
-
-                var track = Track()
-                track.title = jsTitle
-                track.artist = channel
-                track.album = "YouTube"
-                track.duration = duration
-                // A missing `playing` key is not "paused": the page answered
-                // without it, so the reading simply has no state to report.
-                let playing = Self.boolValue(json["playing"])
-                let snapshot = Snapshot(
-                    track: track,
-                    elapsed: progress * duration,
-                    duration: duration,
-                    isPlaying: playing ?? false,
-                    bundleID: browser.bundleID,
-                    appName: browser.name,
-                    artworkURL: thumbnail.isEmpty ? nil : URL(string: thumbnail),
-                    mediaURL: Self.validatedYouTubeURL(from: json["sourceURL"] as? String),
-                    isBrowser: true,
-                    playbackStateKnown: playing != nil
-                )
-                if snapshot.isPlaying { return snapshot }
-                if fallbackSnapshot == nil { fallbackSnapshot = snapshot }
-                continue
-            }
-
-            // Legacy tab-title path: "Title - YouTube||https://…".
-            guard raw.contains("||") else { continue }
-            let parts = raw.components(separatedBy: "||")
-            guard parts.count >= 2 else { continue }
-
-            var title = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
-            let urlString = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if title.hasSuffix(" - YouTube") {
-                title = String(title.dropLast(" - YouTube".count))
-            } else if title.hasSuffix(" - YouTube Music") {
-                title = String(title.dropLast(" - YouTube Music".count))
-            }
-
-            var artist = "YouTube"
-            if title.contains(" - ") {
-                let split = title.components(separatedBy: " - ")
-                if split.count >= 2 {
-                    artist = split[0].trimmingCharacters(in: .whitespacesAndNewlines)
-                    title = split[1...].joined(separator: " - ").trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-            }
-
-            var artworkURL: URL?
-            if let videoID = Self.extractYouTubeVideoID(from: urlString) {
-                artworkURL = URL(string: "https://img.youtube.com/vi/\(videoID)/hqdefault.jpg")
-                // A watch-page tab title is just "Title - YouTube" — no
-                // channel. Pull the real channel name from the video so the
-                // player shows who made it, not the platform.
-                if artist == "YouTube", let channel = channelName(for: videoID) {
-                    artist = channel
-                }
-            }
-
-            var track = Track()
-            track.title = title
-            track.artist = artist
-            track.album = "YouTube"
-            if fallbackSnapshot == nil {
-                fallbackSnapshot = Snapshot(
-                    track: track,
-                    elapsed: 0,
-                    duration: 0,
-                    isPlaying: false,
-                    bundleID: browser.bundleID,
-                    appName: browser.name,
-                    artworkURL: artworkURL,
-                    mediaURL: Self.validatedYouTubeURL(from: urlString),
-                    isBrowser: true,
-                    // The tab title says nothing about playback, so this
-                    // reading must not claim the video is paused — the
-                    // now-playing channel answers that instead, through the
-                    // playback reconcile.
-                    playbackStateKnown: false
-                )
-            }
+        var artist = reading.artist
+        // A watch page's own title carries no channel, so YouTube's oEmbed
+        // endpoint is asked for it — once per video, cached. Any other site
+        // reports its own artist through mediaSession; when it has none, the
+        // site name is what belongs there.
+        if artist.isEmpty, let id = reading.videoID, let channel = channelName(for: id) {
+            artist = channel
         }
-        return fallbackSnapshot
+
+        var track = Track()
+        track.title = SourceArbitration.normalizedTitle(reading.title)
+        track.artist = artist.isEmpty ? reading.site : artist
+        track.album = reading.site
+        track.duration = reading.duration
+
+        return Snapshot(
+            track: track,
+            elapsed: reading.duration > 0
+                ? min(reading.position, reading.duration)
+                : reading.position,
+            duration: reading.duration,
+            isPlaying: reading.isPlaying,
+            bundleID: reading.browser.bundleID,
+            appName: reading.browser.name,
+            artworkURL: reading.artworkURL,
+            mediaURL: reading.mediaURL,
+            isBrowser: true,
+            playbackStateKnown: reading.playbackStateKnown
+        )
     }
 
     /// Channel names for video IDs already looked up, so the periodic browser
@@ -3142,7 +2859,7 @@ final class MediaController {
         // what raises the Automation prompt. Skipped while a player is playing:
         // the browser cannot outrank it, so asking would only cost a script.
         let browserSnap: Snapshot? = (browserProbe && playingPlayer == nil)
-            ? browserYouTubeSnapshot(
+            ? browserMediaSnapshot(
                 avoidPrompt: avoidPrompt, musicOwnsSession: inputs.musicOwnsSession
             )
             : nil
@@ -3397,7 +3114,20 @@ extension MediaController: CoverArtwork.Host {
     /// which the probe fetches, and asking a player for it would put a paused
     /// song's art on a video.
     var coverOwnerBundleID: String? {
-        guard let source = sourceAppBundleID else { return fallbackBundleID }
+        // A browser item's cover is its page's own artwork — the thumbnail the
+        // probe carries, the video's poster frame, nothing else. Asking a
+        // player here is what dressed a video in a paused song's album art:
+        // the source app is often unresolved for a browser item, the fallback
+        // is the configured player, and its cover then sat beside a transport
+        // aimed at the page.
+        if isBrowserVideo || isShowingBrowserSnapshot { return nil }
+        guard let source = sourceAppBundleID else {
+            // A track with no resolved source app is not demonstrably a
+            // player's, so there is no player to read a cover from. With no
+            // track at all the provider is still the sensible answer —
+            // pressing play starts it.
+            return hasTrack ? nil : fallbackBundleID
+        }
         return Self.isPlayerBundle(source) ? source : nil
     }
 

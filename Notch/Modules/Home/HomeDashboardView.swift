@@ -424,11 +424,7 @@ struct HomeDashboardView: View {
 
     @ViewBuilder
     private var artworkContent: some View {
-        if state.media.isBrowserVideo, let image = state.media.cover.image {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-        } else if let image = state.media.cover.image {
+        if let image = state.media.cover.image {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)

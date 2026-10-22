@@ -68,6 +68,13 @@ final class CoverArtwork {
     /// current one, which is what the old title-and-artist comparison was for.
     private var loadedBrowserURL: URL?
 
+    /// The album the image in hand was fetched for, so a *different* item can
+    /// never inherit it. The image is kept while a read is in flight, which is
+    /// what stops a slow cover from blanking the panel — but only for the same
+    /// album. A new item from a new source has no artwork yet, and wearing the
+    /// previous one is how a video ended up under Spotify's album art.
+    private var imageAlbum: String?
+
     /// How many times the current track's cover has already been asked for, so
     /// a reader that keeps answering nothing is retried a few times and then
     /// left alone rather than polled for the rest of the song.
@@ -103,6 +110,19 @@ final class CoverArtwork {
         readAttempts = 0
         pendingRead?.cancel()
         pendingRead = nil
+
+        // The image in hand belongs to the item it was fetched for. A browser
+        // item's cover is its own page's artwork, so anything on screen from
+        // before it is wrong by definition; between two items from the same
+        // album it is the same picture, and keeping it avoids a needless
+        // blink while the new read lands.
+        let isBrowserItem = host?.showsBrowserSnapshot == true
+        let nextAlbum = host?.coverReadTrack?.album
+        if isBrowserItem || (imageAlbum != nil && imageAlbum != nextAlbum) {
+            set(nil, data: nil)
+            imageAlbum = nil
+        }
+
         guard host?.coverReadTrack != nil, host?.coverOwnerBundleID != nil else { return }
         armRead()
     }
@@ -110,6 +130,7 @@ final class CoverArtwork {
     /// Nothing is playing: the cover and its accent go with the track.
     func clear() {
         set(nil, data: nil)
+        imageAlbum = nil
         accent = .white
         accentSourceHash = nil
     }
@@ -213,6 +234,7 @@ final class CoverArtwork {
         guard changed else { return }
         lastData = data
         self.image = image
+        imageAlbum = image == nil ? nil : host?.coverReadTrack?.album
         version += 1
     }
 

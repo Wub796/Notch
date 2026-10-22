@@ -67,4 +67,45 @@ enum SourceArbitration {
         if sourceOnScreen == pushBundleID { return true }
         return pushIsPlaying
     }
+
+    /// Whether a fresh browser-probe reading may take the notch from the item
+    /// currently showing.
+    ///
+    /// The probe re-reads the browser every couple of seconds and needs to be
+    /// able to replace what is on screen when something else starts playing.
+    /// It also used to apply whatever it found, unconditionally — and when two
+    /// pages have media (a YouTube tab the browser still holds and a Bilibili
+    /// video actually running), the reading that came back was whichever page
+    /// the scan reached first, usually the paused one. The playing video then
+    /// stayed on the notch for a few seconds and vanished, which read as the
+    /// notch refusing to follow the video that was making sound.
+    ///
+    /// Three questions, and the answer is yes on any of them:
+    /// - the reading is *playing*: it is the item making sound, whatever else
+    ///   is open, so it takes the notch;
+    /// - it is the same item that is already showing, so this is its own state
+    ///   moving (a pause, a seek, a new position) rather than a takeover;
+    /// - nothing is playing, so a paused reading is the best there is.
+    ///
+    /// A reading that is paused, about a different item, while something else
+    /// plays may not replace it.
+    static func probeMayReplace(
+        showingIsPlaying: Bool, probeIsPlaying: Bool, sameItem: Bool
+    ) -> Bool {
+        if probeIsPlaying { return true }
+        if sameItem { return true }
+        return !showingIsPlaying
+    }
+
+    /// A now-playing title with the platform suffixes stripped, so readings of
+    /// the same item from two sources compare equal ("Song - YouTube" and
+    /// "Song" are the same video).
+    static func normalizedTitle(_ raw: String) -> String {
+        var title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        for suffix in [" - YouTube", " - YouTube Music"] where title.hasSuffix(suffix) {
+            title = String(title.dropLast(suffix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return title
+    }
 }

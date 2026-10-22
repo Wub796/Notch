@@ -226,6 +226,78 @@ check(
     )
 )
 
+// MARK: - Which reading may take the notch
+//
+// The browser probe re-reads the browser every couple of seconds, and it used
+// to apply whatever it found. With a paused YouTube tab open beside the video
+// actually playing, the reading that came back was the tab the scan reached
+// first — so the playing video held the notch for a few seconds and then lost
+// it to a tab that was not making a sound.
+
+// A reading that is playing is the item making sound, whatever else is open.
+check(
+    "a playing reading takes the notch from a paused one",
+    SourceArbitration.probeMayReplace(
+        showingIsPlaying: false, probeIsPlaying: true, sameItem: false
+    )
+)
+// Two things making sound is a source change in progress; the newer reading
+// owns the notch, exactly as a resuming player does elsewhere in these rules.
+check(
+    "a playing reading takes the notch from another playing one",
+    SourceArbitration.probeMayReplace(
+        showingIsPlaying: true, probeIsPlaying: true, sameItem: false
+    )
+)
+// The same item reporting its own pause is a state change, not a takeover.
+check(
+    "the same item may report its own pause",
+    SourceArbitration.probeMayReplace(
+        showingIsPlaying: true, probeIsPlaying: false, sameItem: true
+    )
+)
+// The reported failure: the paused tab must not displace the playing video.
+check(
+    "a paused reading may not displace a playing one",
+    !SourceArbitration.probeMayReplace(
+        showingIsPlaying: true, probeIsPlaying: false, sameItem: false
+    )
+)
+// Nothing is playing: a paused reading is the best description there is.
+check(
+    "a paused reading may take an idle notch",
+    SourceArbitration.probeMayReplace(
+        showingIsPlaying: false, probeIsPlaying: false, sameItem: false
+    )
+)
+// …and may replace one paused item with another, which is how a browser
+// following a tab the user moved to still updates.
+check(
+    "a paused reading replaces another paused item",
+    SourceArbitration.probeMayReplace(
+        showingIsPlaying: false, probeIsPlaying: false, sameItem: true
+    )
+)
+
+// MARK: - Making two readings of one item comparable
+//
+// The browser reports a page's own title and the system's now-playing channel
+// reports the same item with the platform's suffix still on it. The notch has
+// to see those as one item, or a pause in one channel looks like a source
+// change to the other.
+check(
+    "a YouTube suffix is stripped",
+    SourceArbitration.normalizedTitle("Island in the Sun - YouTube") == "Island in the Sun"
+)
+check(
+    "the longer YouTube Music suffix is stripped whole",
+    SourceArbitration.normalizedTitle("Island in the Sun - YouTube Music") == "Island in the Sun"
+)
+check(
+    "a title with no suffix is left alone",
+    SourceArbitration.normalizedTitle("Island in the Sun") == "Island in the Sun"
+)
+
 // MARK: - The media-key tap's health check
 //
 // The tap behind the notch's own volume and brightness HUD cannot be built,
