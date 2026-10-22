@@ -15,6 +15,7 @@ final class NotchWindowController: NSWindowController {
     private var isFaceIDOverlayActive = false
     private var shouldShowPanelAfterFaceID = false
     private var spaceObserver: NSObjectProtocol?
+    private var appActivationObserver: NSObjectProtocol?
     private var mouseMoveGlobalMonitor: Any?
     private var mouseMoveLocalMonitor: Any?
     private var cursorTrackingTimer: Timer?
@@ -73,6 +74,7 @@ final class NotchWindowController: NSWindowController {
 
         setupModeChangeObserver()
         setupSpaceObserver()
+        setupActivationObserver()
         setupScreenParametersObserver()
         setupMouseTracking()
         syncWindowSize()
@@ -100,6 +102,10 @@ final class NotchWindowController: NSWindowController {
         if let spaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver)
             self.spaceObserver = nil
+        }
+        if let appActivationObserver {
+            NotificationCenter.default.removeObserver(appActivationObserver)
+            self.appActivationObserver = nil
         }
         if let screenParametersObserver {
             NotificationCenter.default.removeObserver(screenParametersObserver)
@@ -486,7 +492,36 @@ final class NotchWindowController: NSWindowController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.reanchorToTrackedScreen()
+            guard let self else { return }
+            // A Space or full-screen switch is a window-server transition, not
+            // just a move: the panel can come back resized, still ignoring the
+            // mouse, or with a hover latched from the Space it left. Re-derive
+            // all of it rather than only the origin, so the notch is whole
+            // again on the Space that has just arrived.
+            self.cancelPendingShrink()
+            self.reanchorToTrackedScreen()
+            self.syncWindowSize()
+            self.repairFrameIfDrifted()
+            self.updateIgnoreMouseEvents()
+        }
+    }
+
+    /// Keeps the notch honest when the user moves to another app.
+    ///
+    /// Leaving this app for another window does not move the pointer, so a
+    /// hover that was latched when the click landed stays latched: the pill
+    /// keeps its peek (or the panel opens on the open delay) over someone
+    /// else's window. Releasing it here is what makes that hand-off look like
+    /// one motion instead of the notch reacting late.
+    private func setupActivationObserver() {
+        appActivationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            if self.state.isHovering { self.state.hoverChanged(false) }
+            self.repairFrameIfDrifted()
         }
     }
 
@@ -654,8 +689,14 @@ final class NotchWindowController: NSWindowController {
         let probeRect = probeScreenRect(on: screen)
         // Scoped to the probe, never the wider interactive area: the notch
         // must not peek just because the cursor is near it.
+        //
+        // A held mouse button means the pointer is being *used* — a window
+        // dragged between screens, a window resized, a file dragged out of
+        // Finder. Starting a hover there opened the panel on top of the drag
+        // and, with the open delay, had it growing in the middle of the
+        // gesture. An already-latched hover is still allowed to end.
         if probeRect.contains(pointer) {
-            if !state.isHovering { state.hoverChanged(true) }
+            if !dragging, !state.isHovering { state.hoverChanged(true) }
         } else if state.isHovering {
             state.hoverChanged(false)
         }
