@@ -369,11 +369,14 @@ private struct NotchSettingsPane: View {
             Section {
                 Toggle("Expand on hover", isOn: $settings.expandOnHover)
                 Toggle("Scroll on the notch to open/close", isOn: $settings.scrollToExpand)
+                Toggle("Return to Home when closed", isOn: $settings.returnsToHomeOnClose)
             } header: {
-                Label("Expansion Gestures", systemImage: "cursorarrow.click.2")
+                Label("Open & Close", systemImage: "cursorarrow.click.2")
             } footer: {
                 Text("Hovering peeks the notch. A click opens it fully; with hover expansion on, lingering does too.")
             }
+
+            OpenNotchButtonsSection()
 
             if settings.expandOnHover {
                 Section {

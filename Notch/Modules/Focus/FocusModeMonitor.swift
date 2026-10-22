@@ -15,6 +15,14 @@ final class FocusModeMonitor {
 
     private(set) var activeMode: Mode?
 
+    /// True while a Focus change is in flight, so a second click on the notch's
+    /// focus button cannot queue another assertion behind the first.
+    private(set) var isChanging = false
+
+    /// Fired when a change is refused, so the click is answered with the
+    /// reason instead of silence.
+    var onError: ((String) -> Void)?
+
     /// Fired whenever the active focus changes, for the live activity.
     var onChange: ((Mode?) -> Void)?
 
@@ -64,6 +72,42 @@ final class FocusModeMonitor {
 
     deinit {
         source?.cancel()
+    }
+
+    // MARK: - Changing it
+
+    /// Turns the Focus that is on off, or Do Not Disturb on when none is.
+    ///
+    /// This is what the notch's focus indicator does: it used to open the Tools
+    /// screen, which left the mode itself untouched — an indicator that looked
+    /// like a control and was a signpost. The change goes through the system's
+    /// own assertion service (`FocusAssertion`), and the state shown is then
+    /// read back from the database this monitor already watches, so the glyph
+    /// reflects what macOS did rather than what was asked for.
+    func toggleFocus() {
+        guard !isChanging else { return }
+        isChanging = true
+        let turningOff = activeMode != nil
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let failure = turningOff
+                ? FocusAssertion.setActive(modeIdentifier: nil)
+                : FocusAssertion.setActive(modeIdentifier: FocusAssertion.doNotDisturb)
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.isChanging = false
+                if let message = failure?.message { self.onError?(message) }
+                // The daemon writes the assertion a moment after it accepts
+                // it, so the file is read once now and once after it has had
+                // time to land — the second read is what moves the glyph when
+                // the first was too early.
+                self.reload(notify: true)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+                    self?.reload(notify: true)
+                }
+            }
+        }
     }
 
     private func reload(notify: Bool) {

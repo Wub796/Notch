@@ -11,23 +11,24 @@ import SwiftUI
 struct NotchTopBarView: View {
     let state: NotchState
 
-    /// The modules, left to right after Home. Media is a control of its own
-    /// rather than only the dashboard's music card, so the player is one click
-    /// from any screen.
-    static let modules: [(tab: NotchTab, symbol: String, name: String)] = [
-        (.audio, "play.circle", "Media"),
-        (.shelf, "tray", "Shelf"),
-        (.tools, "timer", "Tools"),
-        (.telemetry, "chart.xyaxis.line", "System Stats"),
-        (.notes, "doc.text", "Notes"),
-        (.camera, "video", "Camera"),
-        (.faceID, "faceid", "Face ID"),
-    ]
+    /// The modules, left to right after Home, in the order the user arranged
+    /// them in Settings. Media is a control of its own rather than only the
+    /// dashboard's music card, so the player is one click from any screen.
+    ///
+    /// Read from the preference rather than written down here: the rail is the
+    /// user's to arrange, and a second copy of the list is exactly the kind of
+    /// thing that drifts away from the one the settings page edits.
+    static var modules: [(tab: NotchTab, symbol: String, name: String)] {
+        NotchSettings.shared.topBarModules.map { item in
+            (tab: item.tab, symbol: item.symbol, name: item.title)
+        }
+    }
 
-    /// The left rail's control count: Home and every module. `NotchSizing`
-    /// floors the slab width against this, so it is derived rather than
-    /// written down twice.
-    static var railControlCount: Int { modules.count + 1 }
+    /// The left rail's control count: Home and every configured module.
+    /// `NotchSizing` floors the slab width against this, so it is derived
+    /// rather than written down twice — a rail the user has trimmed needs less
+    /// room, and one they have filled needs more.
+    static var railControlCount: Int { NotchSettings.shared.topBarModules.count + 1 }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -94,15 +95,17 @@ struct NotchTopBarView: View {
             ) { state.togglePin() }
 
             // Only while a Focus is on: an idle mask glyph was one more grey
-            // icon that said nothing at a glance.
+            // icon that said nothing at a glance. Clicking it turns the Focus
+            // off, which is what the indicator promises — it used to open the
+            // Tools screen and leave the mode running.
             if let focus = state.activeFocus {
                 RailButton(
                     symbol: focus.symbolName,
                     isSelected: true,
                     tint: .purple,
-                    help: "Focus: \(focus.name) — open Tools"
+                    help: "Focus: \(focus.name) — click to turn off"
                 ) {
-                    state.select(.tools)
+                    state.toggleFocus()
                 }
             }
 

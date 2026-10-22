@@ -488,7 +488,29 @@ final class NotchState {
         settings.onHUDReplacementChanged = { [weak self] _ in
             self?.applyHUDSources()
         }
+        // A screen whose button has been taken off the rail is unreachable from
+        // the very panel showing it, so the panel goes back to Home rather than
+        // stranding the user on a module with no way out. Runs on the rail
+        // changing as well as at launch, where a restored `lastTab` can name a
+        // module the user has since removed.
+        settings.onTopBarModulesChanged = { [weak self] in
+            self?.reconcileTabWithRail()
+        }
+        reconcileTabWithRail()
+
         installMediaKeyInterceptor()
+        // The volume HUD is raised from CoreAudio *and* from the key press, so
+        // the two have to agree on who owns the keys. When the tap is gone the
+        // change that reached CoreAudio is one macOS is overlaying itself, and
+        // this is where the notch declines to draw a second bar — and asks for
+        // the keys back while it is there.
+        activities.volumeChangeIsOurs = {
+            guard MediaKeyInterceptor.shared.isIntercepting else {
+                MediaKeyInterceptor.shared.ensureRunning()
+                return false
+            }
+            return true
+        }
         applyHUDSources()
         calendar.bootstrapIfAuthorized()
         weather.refresh()
@@ -611,6 +633,12 @@ final class NotchState {
                 return
             }
             self?.activities.showFocusChange(name: mode.name, symbol: mode.symbolName)
+        }
+        // A refusal is said out loud: the read-back alone would leave the click
+        // looking like it did nothing, which is the same as a button that does
+        // nothing.
+        focusMonitor.onError = { [weak self] message in
+            self?.showToast(message, symbol: "exclamationmark.triangle.fill")
         }
         focusMonitor.start()
 
@@ -761,6 +789,38 @@ final class NotchState {
     /// The focus mode currently active, for the dashboard.
     var activeFocus: FocusModeMonitor.Mode? {
         focusMonitor.activeMode
+    }
+
+    /// Leaves a screen that is no longer reachable from the rail.
+    ///
+    /// Only modules need a rail button to be left: weather and calendar open
+    /// from Home cards and carry a back button, and Audio has one too. So the
+    /// question is asked of `NotchRailItem` alone.
+    private func reconcileTabWithRail() {
+        guard tab != .home,
+              let item = NotchRailItem.allCases.first(where: { $0.tab == tab }),
+              !settings.topBarModules.contains(item)
+        else { return }
+        if mode == .expanded {
+            select(.home)
+        } else {
+            tab = .home
+        }
+    }
+
+    /// Turns the active Focus off, or Do Not Disturb on when none is.
+    ///
+    /// The header's focus indicator calls this. It is a control rather than a
+    /// signpost: the glyph only appears while a Focus is on, so the click that
+    /// matters is the one that ends the mode.
+    ///
+    /// Nothing is announced on the way in. macOS is the one that decides, and
+    /// the live activity the monitor raises when it reads the new state back is
+    /// the confirmation; a toast raised here would be a claim the system can
+    /// refuse — a Focus the user turned on in Control Center is not an
+    /// assertion this app can invalidate.
+    func toggleFocus() {
+        focusMonitor.toggleFocus()
     }
 
     // MARK: - Live activity resolution
@@ -1211,6 +1271,21 @@ final class NotchState {
         guard mode == .expanded else { return }
         expandedAt = nil
         mode = .collapsed
+        // Back to the dashboard, before the open transition is torn down, so
+        // the next open starts where the user expects. Kept out of any
+        // animation: the module is not on screen any more, and letting the
+        // content spring run against a closing slab is a flash of the outgoing
+        // screen. `lastTab` is deliberately untouched — it is what a relaunch
+        // restores, and the point of this setting is the notch's own habit,
+        // not the app's.
+        if settings.returnsToHomeOnClose, tab != .home {
+            var transaction = Transaction()
+            transaction.animation = nil
+            withTransaction(transaction) {
+                tab = .home
+                mediaShowsFullLyrics = false
+            }
+        }
         toastDismissWork?.cancel()
         toastDismissWork = nil
         toast = nil

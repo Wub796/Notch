@@ -520,6 +520,32 @@ final class NotchSettings {
         }
     }
 
+    /// The modules on the open notch's rail, left to right. Sanitized like the
+    /// dashboard's widget list, and for the same reason: a stale default or a
+    /// bad write must not leave the rail empty or twice-populated. Home is not
+    /// in this list — it is always the first control.
+    var topBarModules: [NotchRailItem] = NotchRailItem.defaults {
+        didSet {
+            let clean = NotchRailItem.sanitized(topBarModules)
+            if clean != topBarModules { topBarModules = clean }
+            save(topBarModules.map(\.rawValue), "topBarModules")
+            onTopBarModulesChanged?()
+        }
+    }
+
+    /// Fired when the rail's contents or order change, so the panel can leave a
+    /// screen whose own button has just been removed from it.
+    var onTopBarModulesChanged: (() -> Void)?
+
+    /// Whether closing the notch puts it back on Home.
+    ///
+    /// On by default: the notch is glanced at far more often than it is
+    /// navigated, and opening on whichever module was last read is how the
+    /// panel ends up showing the calendar when you wanted the player.
+    var returnsToHomeOnClose = true {
+        didSet { save(returnsToHomeOnClose, "returnsToHomeOnClose") }
+    }
+
     /// When a new output device connects (a headset pairing, a USB DAC),
     /// switch the system default to it automatically. Off by default: many
     /// people prefer their desktop speakers to stay put.
@@ -784,6 +810,14 @@ final class NotchSettings {
             dashboardWidgets = DashboardWidget.sanitized(
                 stored.compactMap(DashboardWidget.init(rawValue:))
             )
+        }
+        if let stored = defaults.stringArray(forKey: "topBarModules") {
+            topBarModules = NotchRailItem.sanitized(
+                stored.compactMap(NotchRailItem.init(rawValue:))
+            )
+        }
+        if defaults.object(forKey: "returnsToHomeOnClose") != nil {
+            returnsToHomeOnClose = defaults.bool(forKey: "returnsToHomeOnClose")
         }
         lastTab = defaults.string(forKey: "lastTab") ?? ""
         hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
