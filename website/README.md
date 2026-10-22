@@ -209,4 +209,6 @@ Worth re-checking after a change:
 
 Zero build step: publish this directory as-is (`website/` with `wrangler.jsonc`,
 or the repository root). `_headers` is applied by Cloudflare Pages / Netlify;
-`robots.txt` and `sitemap.xml` point at `https://notch.app/`.
+`robots.txt` and `sitemap.xml` point at `https://notch.sysctl.workers.dev/`,
+the origin the site is actually deployed to. Point them at a custom domain only
+after that domain resolves and is verified in Search Console.

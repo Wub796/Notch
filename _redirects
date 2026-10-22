@@ -1,0 +1,4 @@
+# Google Search Console wants the verification file served verbatim at its
+# .html URL. Static assets redirect /x.html to /x, so proxy the exact path back
+# to the canonical URL, which returns the file with a 200.
+/google4456f053766efe68.html /google4456f053766efe68 200

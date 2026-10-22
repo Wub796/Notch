@@ -16,5 +16,10 @@ xcuserdata/
 
 # Agent & local tooling
 .agents/
+.claude/
 .freebuff/
 skills-lock.json
+
+# Local hosting & verification scratch
+.wrangler/
+_verify.html
