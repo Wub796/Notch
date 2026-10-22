@@ -98,7 +98,7 @@ final class LiveActivityManager {
         guard !isStarted else { return }
         isStarted = true
         volumeMonitor.onChange = { [weak self] level, muted in
-            self?.showVolume(level: level, muted: muted)
+            self?.handleObservedVolume(level: level, muted: muted)
         }
         syncVolumeMonitoring()
 
@@ -156,6 +156,29 @@ final class LiveActivityManager {
         dismissWork?.cancel()
         dismissWork = nil
         transient = nil
+    }
+
+    /// Whether a volume change that reached the CoreAudio listener is one the
+    /// notch's own key handling caused.
+    ///
+    /// The app supplies the answer (`MediaKeyInterceptor.isIntercepting`) and
+    /// re-arms the tap from inside it. Kept as a hook rather than a call into
+    /// the interceptor so this manager stays a plain observable with no AppKit
+    /// in it — the same reason the workflow checks beside this file can build
+    /// it on its own. The default is "yes": without an interceptor there is no
+    /// second HUD to collide with.
+    var volumeChangeIsOurs: () -> Bool = { true }
+
+    /// A volume change seen by the CoreAudio listener.
+    ///
+    /// The notch draws its bar only while the media-key tap owns the keys. A
+    /// change the tap did not swallow is one macOS is raising its own overlay
+    /// for, and drawing the notch's bar beside it is two HUDs for one key press
+    /// — exactly what happened once the system switched the tap off after a
+    /// while of use.
+    func handleObservedVolume(level: Float, muted: Bool) {
+        guard volumeChangeIsOurs() else { return }
+        showVolume(level: level, muted: muted)
     }
 
     /// Settings toggles must change the source itself, not just hide its

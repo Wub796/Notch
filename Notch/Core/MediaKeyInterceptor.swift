@@ -53,11 +53,28 @@ final class MediaKeyInterceptor {
     /// local `tapIsEnabled` call — no polling of anything outside this process
     /// — and the only thing that notices a tap the system switched off without
     /// telling us.
-    private static let healthInterval: TimeInterval = 15
+    ///
+    /// Five seconds rather than fifteen: while the tap is off, macOS draws its
+    /// own volume and brightness overlay, so the gap is exactly as long as the
+    /// notch is liable to draw a second one beside it. The check is a single
+    /// boolean read of a local port, so the cost of asking more often is nil.
+    private static let healthInterval: TimeInterval = 5
 
     /// Called with the new value so the notch can raise its HUD.
     var onVolume: ((Float, Bool) -> Void)?
     var onBrightness: ((Float) -> Void)?
+
+    /// True while a volume or brightness key press is ours: HUD replacement is
+    /// wanted, Accessibility is granted, and the system still has the tap
+    /// enabled.
+    ///
+    /// The honest answer to "who is drawing the level overlay right now". When
+    /// it is false the key press reached macOS, which raised its own HUD — and
+    /// the notch must not raise a second one from the CoreAudio listener that
+    /// sees the same change.
+    var isIntercepting: Bool {
+        NotchSettings.shared.hudReplacement && Self.isAccessibilityTrusted && host.isEnabled
+    }
 
     /// Reads and writes the actual system values.
     var volumeSource: (() -> Float)?

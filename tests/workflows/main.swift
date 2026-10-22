@@ -147,6 +147,23 @@ activities.syncVolumeMonitoring()
 expect(volumeMonitoring(activities), "Re-enabling HUD attaches real CoreAudio listeners without relaunch")
 activities.showVolume(level: 0.5, muted: false)
 expect(activities.transient?.kind == "volume", "Enabled volume HUD publishes its activity")
+
+// The duplicated HUD: once the media-key tap is switched off by the system,
+// macOS draws its own volume overlay for the key press. The CoreAudio listener
+// sees the same change, and raising the notch's bar there too put two HUDs on
+// screen for one press.
+activities.volumeChangeIsOurs = { false }
+activities.handleObservedVolume(level: 0.4, muted: false)
+expect(
+    activities.transient == .volume(level: 0.5, muted: false),
+    "A volume change the notch's keys did not cause raises no second HUD"
+)
+activities.volumeChangeIsOurs = { true }
+activities.handleObservedVolume(level: 0.4, muted: false)
+expect(
+    activities.transient == .volume(level: 0.4, muted: false),
+    "A volume change the notch handled itself raises its HUD"
+)
 NotchSettings.shared.volumeHUDEnabled = false
 activities.syncVolumeMonitoring()
 expect(!volumeMonitoring(activities) && activities.transient == nil, "Disabling HUD detaches listeners and immediately clears its activity")
