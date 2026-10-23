@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let state = NotchState()
 
     private var windowController: NotchWindowController?
+    private var lockScreenHUD: LockScreenHUDController?
     private var onboardingController: OnboardingWindowController?
     private var scrollMonitor: Any?
     private var outsideClickMonitor: Any?
@@ -484,6 +485,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         windowController = NotchWindowController(state: state, screen: screen)
         windowController?.showPanel()
+        if lockScreenHUD == nil {
+            lockScreenHUD = LockScreenHUDController(state: state)
+        }
     }
 
     @objc private func screenParametersDidChange() {

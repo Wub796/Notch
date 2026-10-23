@@ -389,11 +389,7 @@ final class NotchState {
 
     @MainActor var faceID: FaceIDController {
         if let cachedFaceID { return cachedFaceID }
-        let controller = FaceIDController(
-            mediaController: media,
-            audioController: audio,
-            brightnessController: brightness
-        )
+        let controller = FaceIDController(mediaController: media, audioController: audio)
         cachedFaceID = controller
         return controller
     }

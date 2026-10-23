@@ -7,8 +7,8 @@ import SwiftUI
 /// Let the system render the material instead of painting our own tints,
 /// highlights, and borders on top of it — that is exactly the custom-background
 /// layering Apple asks us to remove. Liquid Glass "reflects color and light of
-/// surrounding content", so a restrained artwork tint is enough to make the
-/// pane feel owned by the track.
+/// surrounding content" on its own, and what surrounds this pane is the user's
+/// lock-screen photograph.
 ///
 /// The panel takes the `.clear` variant, not `.regular`. The brief is a pane
 /// that reads as *glass* — you should see the lock-screen photograph bending
@@ -21,15 +21,15 @@ import SwiftUI
 /// deliberately shallow (a fifth of black) — deep enough to anchor white text,
 /// shallow enough that the photograph still reads through the pane.
 ///
-/// The artwork tint only nudges the hue; it is kept faint (see the call site)
-/// so it cannot haze over the backdrop the way a `.regular` tint would.
+/// The pane is deliberately colourless. It used to carry a tint taken from the
+/// artwork, which made the glass read as a wash of the album cover rather than
+/// as glass — and this pane sits on the user's own lock-screen photograph, whose
+/// colour is the only one that belongs there.
 ///
 /// The deployment target is still macOS 14, so the frosted-material fallback
 /// remains for older systems. Its fill drops to half opacity to match the
 /// clearer read of the glass path rather than the old near-opaque frost.
 private struct FaceIDNowPlayingGlassBackground: View {
-    let tint: Color
-
     /// Depth of the legibility scrim behind the clear glass. Shallow by
     /// design: Apple's `.clear` guidance is only that content "remains
     /// legible", not that the pane should stop being see-through.
@@ -44,7 +44,7 @@ private struct FaceIDNowPlayingGlassBackground: View {
         if #available(macOS 26.0, *) {
             shape
                 .fill(.clear)
-                .glassEffect(.clear.tint(tint), in: shape)
+                .glassEffect(.clear, in: shape)
                 // Behind the glass, per Apple's `.clear` example, so the
                 // material keeps refracting the backdrop while the scrim holds
                 // the ink legible over a bright desktop.
@@ -55,7 +55,7 @@ private struct FaceIDNowPlayingGlassBackground: View {
                 .overlay {
                     shape.fill(
                         LinearGradient(
-                            colors: [.white.opacity(0.1), .white.opacity(0.02), tint.opacity(0.06)],
+                            colors: [.white.opacity(0.1), .white.opacity(0.02), .white.opacity(0.05)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -66,61 +66,20 @@ private struct FaceIDNowPlayingGlassBackground: View {
         }
     }
 }
-
-/// Rounds an individual control with the Liquid Glass material — Apple's
-/// guidance is to reach for `glassEffect(_:in:)` on custom interactive
-/// controls rather than hand-rolled fills. On macOS 26 the system renders the
-/// glass; older systems fall back to a subtle frosted disc so the affordance
-/// survives everywhere. The effect is applied *after* the label's own frame so
-/// it flows through the transport row and merges in the effect container.
-private struct NowPlayingGlassControl: ViewModifier {
-    let shape: AnyShape
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: shape)
-        } else {
-            content.background(shape.fill(.ultraThinMaterial.opacity(0.4)))
-        }
-    }
-}
-
-extension NowPlayingGlassControl {
-    static var circle: NowPlayingGlassControl { NowPlayingGlassControl(shape: AnyShape(Circle())) }
-
-    static func roundedRect(cornerRadius: CGFloat) -> NowPlayingGlassControl {
-        NowPlayingGlassControl(shape: AnyShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)))
-    }
-}
-
-/// Groups sibling Liquid Glass controls in a `GlassEffectContainer`. Apple
-/// recommends a container both for rendering performance and so the controls'
-/// glass can blend/merge instead of stacking as separate layers. A no-op on
-/// pre-26 systems, which use a flat material fallback.
-private struct NowPlayingGlassRow<Content: View>: View {
-    let spacing: CGFloat
-    let content: Content
-
-    init(spacing: CGFloat, @ViewBuilder content: () -> Content) {
-        self.spacing = spacing
-        self.content = content()
-    }
-
-    var body: some View {
-        if #available(macOS 26.0, *) {
-            GlassEffectContainer(spacing: spacing) { content }
-        } else {
-            content
-        }
-    }
-}
-/// A lock-screen now-playing surface driven by the app's shared media, audio,
-/// and brightness controllers. Its glass follows the Liquid Glass reference.
+/// A lock-screen now-playing surface driven by the app's shared media model.
+///
+/// The composition is the one macOS and iOS put on a lock screen: the artwork
+/// on the leading side with the title and artist beside it, a seek bar reading
+/// elapsed on the left and remaining on the right, and one row of evenly spaced
+/// transport glyphs beneath it. The glass behind all of it takes no colour from
+/// the track, so the pane stays glass over the user's own photograph.
+///
+/// It is only ever the player: volume and brightness belong to the notch's own
+/// HUD, which is where the rest of the app shows them, and repeating that pair
+/// here put two of the same control on one lock screen.
 struct FaceIDNowPlayingPlayer: View {
     let media: MediaController
     let audioController: AudioOutputManager
-    let brightnessController: BrightnessController
 
     private var title: String {
         if let title = media.track?.title, !title.isEmpty { return title }
@@ -133,27 +92,21 @@ struct FaceIDNowPlayingPlayer: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 16) {
+        VStack(spacing: 14) {
+            HStack(spacing: 14) {
                 artwork
-                    .frame(width: 112, height: 112)
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .frame(width: 92, height: 92)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.22), lineWidth: 0.8)
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.8)
                     }
-                    .shadow(color: media.cover.accent.opacity(0.18), radius: 12, y: 5)
+                    .shadow(color: .black.opacity(0.28), radius: 10, y: 4)
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(media.sourceAppName?.uppercased() ?? "NOW PLAYING")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .tracking(1.25)
-                        .foregroundStyle(media.cover.accent.opacity(0.95))
-                        .lineLimit(1)
-
+                VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        .font(.system(size: 19, weight: .semibold))
                         .foregroundStyle(NotchTheme.inkPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -166,42 +119,14 @@ struct FaceIDNowPlayingPlayer: View {
                         .animation(NotchAnimations.content, value: title)
 
                     Text(subtitle)
-                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .font(.system(size: 15))
                         .foregroundStyle(NotchTheme.inkSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentTransition(.opacity)
                         .animation(NotchAnimations.content, value: subtitle)
-
-                    NowPlayingGlassRow(spacing: 21) {
-                        HStack(spacing: 21) {
-                            transportButton("backward.fill", label: "Previous track", size: 15) {
-                                media.previousTrack()
-                            }
-
-                            Button {
-                                media.togglePlayPause()
-                            } label: {
-                                Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundStyle(NotchTheme.inkPrimary)
-                                    .frame(width: 40, height: 36)
-                                    .contentShape(Circle())
-                                    .modifier(NowPlayingGlassControl.circle)
-                            }
-                            .buttonStyle(PressableButtonStyle())
-                            .contentTransition(.symbolEffect(.replace))
-                            .accessibilityLabel(media.isPlaying ? "Pause" : "Play")
-
-                            transportButton("forward.fill", label: "Next track", size: 15) {
-                                media.nextTrack()
-                            }
-                        }
-                        .padding(.top, 1)
-                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             TimelineView(.animation(minimumInterval: 0.1, paused: !media.isPlaying)) { _ in
@@ -211,43 +136,34 @@ struct FaceIDNowPlayingPlayer: View {
                     // Matches the timeline above: the fill glides between two
                     // of its ticks instead of stepping at each one.
                     sampleInterval: 0.1,
-                    accent: media.cover.accent,
+                    // White, not the artwork's accent: on this pane the
+                    // reference keeps every control monochrome and lets the
+                    // photograph around the glass carry the colour.
+                    accent: .white,
                     onSeek: { media.seek(to: $0) },
                     onScrubPreview: { media.previewScrub(to: $0) },
                     onScrubEnd: { media.endScrubPreview() }
                 )
             }
             .frame(height: 18)
-            .padding(.horizontal, 2)
 
-            NowPlayingGlassRow(spacing: 12) {
-                HStack(spacing: 12) {
-                    levelControl(
-                        title: "Volume",
-                        symbol: audioController.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                        value: audioController.volume,
-                        tint: .white,
-                        isAvailable: audioController.currentDeviceID != 0,
-                        onChange: { audioController.setVolume($0) }
-                    )
-
-                    levelControl(
-                        title: "Brightness",
-                        symbol: "sun.max.fill",
-                        value: brightnessController.brightness,
-                        tint: Color(red: 1, green: 0.8, blue: 0.2),
-                        isAvailable: brightnessController.isAvailable,
-                        onChange: { _ = brightnessController.setBrightness($0) }
-                    )
+            HStack(spacing: 0) {
+                favoriteButton
+                transportButton("backward.fill", label: "Previous track") {
+                    media.previousTrack()
                 }
-                .padding(.top, 2)
+                playPauseButton
+                transportButton("forward.fill", label: "Next track") {
+                    media.nextTrack()
+                }
+                outputMenu
             }
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 22)
         .padding(.vertical, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
-            FaceIDNowPlayingGlassBackground(tint: media.cover.accent.opacity(0.14))
+            FaceIDNowPlayingGlassBackground()
         }
         .overlay {
             // A whisper of a rim so the pane reads as an edge against the
@@ -257,7 +173,7 @@ struct FaceIDNowPlayingPlayer: View {
             RoundedRectangle(cornerRadius: FaceIDGeometry.nowPlayingPanelCornerRadius, style: .continuous)
                 .strokeBorder(
                     LinearGradient(
-                        colors: [.white.opacity(0.22), media.cover.accent.opacity(0.14), .white.opacity(0.06)],
+                        colors: [.white.opacity(0.22), .white.opacity(0.10), .white.opacity(0.06)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
@@ -270,53 +186,6 @@ struct FaceIDNowPlayingPlayer: View {
         .shadow(color: .black.opacity(0.22), radius: 24, y: 12)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Now playing: \(title) by \(subtitle)")
-    }
-
-    private func levelControl(
-        title: String,
-        symbol: String,
-        value: Float,
-        tint: Color,
-        isAvailable: Bool,
-        onChange: @escaping (Float) -> Void
-    ) -> some View {
-        VStack(spacing: 3) {
-            HStack(spacing: 6) {
-                Image(systemName: symbol)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 13)
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(NotchTheme.inkSecondary)
-                    .lineLimit(1)
-                Spacer(minLength: 2)
-                Text("\(Int(min(max(value, 0), 1) * 100))%")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(NotchTheme.inkPrimary)
-                    .contentTransition(.numericText())
-            }
-
-            Slider(
-                value: Binding(
-                    get: { Double(value) },
-                    set: { onChange(Float($0)) }
-                ),
-                in: 0...1
-            )
-            .controlSize(.small)
-            .tint(tint)
-            .disabled(!isAvailable)
-            .accessibilityLabel(title)
-            .accessibilityValue("\(Int(min(max(value, 0), 1) * 100)) percent")
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, minHeight: 52)
-        .modifier(NowPlayingGlassControl.roundedRect(cornerRadius: 16))
-        .opacity(isAvailable ? 1 : 0.55)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(title) control")
     }
 
     @ViewBuilder
@@ -332,7 +201,7 @@ struct FaceIDNowPlayingPlayer: View {
             Image(nsImage: icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .padding(15)
+                .padding(12)
                 .background(Color.white.opacity(0.08))
         } else {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -345,22 +214,82 @@ struct FaceIDNowPlayingPlayer: View {
         }
     }
 
+    /// Every control in the row takes an equal share of the width, which is what
+    /// spaces the five glyphs evenly from edge to edge.
     private func transportButton(
         _ symbol: String,
         label: String,
-        size: CGFloat,
+        size: CGFloat = 20,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: size, weight: .semibold))
                 .foregroundStyle(NotchTheme.inkPrimary)
-                .frame(width: 36, height: 36)
-                .contentShape(Circle())
-                .modifier(NowPlayingGlassControl.circle)
+                .frame(maxWidth: .infinity, minHeight: 36)
+                .contentShape(Rectangle())
         }
         .buttonStyle(PressableButtonStyle())
         .accessibilityLabel(label)
+    }
+
+    private var playPauseButton: some View {
+        Button {
+            media.togglePlayPause()
+        } label: {
+            Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
+                .font(.system(size: 26, weight: .bold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .frame(maxWidth: .infinity, minHeight: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .contentTransition(.symbolEffect(.replace))
+        .accessibilityLabel(media.isPlaying ? "Pause" : "Play")
+    }
+
+    /// Only one player can take a favourite from here — see `MediaController`'s
+    /// `canFavorite` — so the glyph dims rather than pretending when the track
+    /// belongs to an app that has no such switch.
+    private var favoriteButton: some View {
+        Button {
+            media.toggleFavorite()
+        } label: {
+            Image(systemName: media.isFavorite ? "heart.fill" : "heart")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .frame(maxWidth: .infinity, minHeight: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .disabled(!media.canFavorite)
+        .opacity(media.canFavorite ? 1 : 0.35)
+        .accessibilityLabel(media.isFavorite ? "Remove from favourites" : "Add to favourites")
+    }
+
+    /// Where the sound is going, and where else it could go — the same system
+    /// default output the notch's own audio screens read and set.
+    private var outputMenu: some View {
+        Menu {
+            ForEach(audioController.devices) { device in
+                Button {
+                    audioController.select(device)
+                } label: {
+                    Label(device.name, systemImage: device.symbolName)
+                }
+            }
+        } label: {
+            Image(systemName: audioController.currentSymbol)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(NotchTheme.inkPrimary)
+                .frame(maxWidth: .infinity, minHeight: 36)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel("Output: \(audioController.currentDeviceName)")
     }
 }
 
@@ -397,16 +326,14 @@ final class FaceIDNowPlayingWindowController {
     func configure(
         mediaController: MediaController,
         lockMonitor: LockMonitor,
-        audioController: AudioOutputManager,
-        brightnessController: BrightnessController
+        audioController: AudioOutputManager
     ) {
         media = mediaController
         self.lockMonitor = lockMonitor
         window.contentView = NSHostingView(
             rootView: FaceIDNowPlayingPlayer(
                 media: mediaController,
-                audioController: audioController,
-                brightnessController: brightnessController
+                audioController: audioController
             )
         )
         observeMediaVisibility()

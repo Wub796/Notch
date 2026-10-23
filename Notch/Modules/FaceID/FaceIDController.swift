@@ -111,18 +111,13 @@ final class FaceIDController {
     /// on this rather than each one remembering to skip the video.
     private var showsUI: Bool { settings.showUnlockAnimation }
 
-    init(
-        mediaController: MediaController,
-        audioController: AudioOutputManager,
-        brightnessController: BrightnessController
-    ) {
+    init(mediaController: MediaController, audioController: AudioOutputManager) {
         credentials = .shared
         pipeline = .shared
         FaceIDOverlayController.shared.configureNowPlaying(
             mediaController: mediaController,
             lockMonitor: lockMonitor,
-            audioController: audioController,
-            brightnessController: brightnessController
+            audioController: audioController
         )
         // The lock monitor also feeds the independent now-playing window, so its
         // lifecycle is not tied to the Face ID enable switch.

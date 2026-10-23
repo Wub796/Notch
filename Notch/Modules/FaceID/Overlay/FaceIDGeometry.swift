@@ -32,10 +32,12 @@ struct FaceIDGeometry: Equatable {
     static let pillOpenSize = CGSize(width: 180, height: 180)
 
     /// Larger, detached lock-screen media surface positioned above the native
-    /// login card. Its own window keeps it out of the notch scan and fits artwork,
-    /// transport, seek, volume, and brightness controls.
+    /// login card. Its own window keeps it out of the notch scan, and the height
+    /// fits the card's four bands: artwork and title, the seek bar, the transport
+    /// row, and the padding above and below them. Volume and brightness are the
+    /// notch's own HUD and are deliberately not repeated on this pane.
     static let nowPlayingPlayerWidth: CGFloat = 480
-    static let nowPlayingPlayerHeight: CGFloat = 270
+    static let nowPlayingPlayerHeight: CGFloat = 216
     /// macOS doesn't expose a stable public frame for the lock-screen account
     /// card. Keep the player in the lower half of the display with comfortable
     /// space below the native account and password controls on short screens.

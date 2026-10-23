@@ -90,14 +90,12 @@ final class FaceIDOverlayController {
     func configureNowPlaying(
         mediaController: MediaController,
         lockMonitor: LockMonitor,
-        audioController: AudioOutputManager,
-        brightnessController: BrightnessController
+        audioController: AudioOutputManager
     ) {
         nowPlayingWindowController.configure(
             mediaController: mediaController,
             lockMonitor: lockMonitor,
-            audioController: audioController,
-            brightnessController: brightnessController
+            audioController: audioController
         )
     }
 
