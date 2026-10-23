@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -134,10 +135,22 @@ final class LiveActivityManager {
                 forName: Notification.Name("com.apple.screenIsLocked"),
                 object: nil, queue: .main
             ) { [weak self] _ in
+                let soundName = NotchSettings.shared.lockSoundName
+                if NotchSettings.shared.lockSoundsEnabled, !soundName.isEmpty {
+                    NSSound(named: soundName)?.play()
+                }
                 guard NotchSettings.shared.liveActivitiesEnabled,
                       NotchSettings.shared.screenLockActivityEnabled
                 else { return }
                 self?.show(.screenLock, for: Self.lockEventDuration)
+            },
+            center.addObserver(
+                forName: Notification.Name("com.apple.screenIsUnlocked"),
+                object: nil, queue: .main
+            ) { _ in
+                let soundName = NotchSettings.shared.unlockSoundName
+                guard NotchSettings.shared.lockSoundsEnabled, !soundName.isEmpty else { return }
+                NSSound(named: soundName)?.play()
             },
         ]
     }

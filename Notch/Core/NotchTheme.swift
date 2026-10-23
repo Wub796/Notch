@@ -112,12 +112,19 @@ struct PressableButtonStyle: ButtonStyle {
         // dip still confirms the press.
         let reduced = NotchAnimations.prefersReducedMotion
         return configuration.label
-            .scaleEffect(configuration.isPressed && !reduced ? 0.96 : 1)
-            .opacity(configuration.isPressed ? 0.88 : 1)
+            .scaleEffect(configuration.isPressed && !reduced ? 0.94 : 1)
+            .brightness(configuration.isPressed ? -0.06 : 0)
+            .opacity(configuration.isPressed ? 0.82 : 1)
             .animation(
                 configuration.isPressed ? NotchAnimations.press : NotchAnimations.release,
                 value: configuration.isPressed
             )
+            .onChange(of: configuration.isPressed) { _, pressed in
+                guard pressed, NotchSettings.shared.hapticsEnabled else { return }
+                NSHapticFeedbackManager.defaultPerformer.perform(
+                    .alignment, performanceTime: .now
+                )
+            }
     }
 }
 

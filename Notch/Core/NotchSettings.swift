@@ -198,6 +198,27 @@ final class NotchSettings {
         didSet { save(animationProfile.rawValue, "animationProfile") }
     }
 
+    /// Whether the Settings window wears the liquid-glass treatment, and how
+    /// smoked that glass is: 0 is clear water, 1 is nearly its own surface.
+    ///
+    /// The window is drawn from materials and gradients rather than the macOS
+    /// 26 `glassEffect` API this app cannot deploy against, so the depth is the
+    /// one thing the system cannot give us — how much of the desktop reads
+    /// through.
+    var liquidGlassEnabled = true {
+        didSet { save(liquidGlassEnabled, "liquidGlassEnabled") }
+    }
+    var glassDepth = 0.35 {
+        didSet { save(glassDepth, "glassDepth") }
+    }
+
+    /// Keep the notch and the Settings window out of screen recordings and
+    /// screen shares. Off by default: the notch *is* the app, and someone
+    /// sharing their screen usually means to show it.
+    var hideFromScreenCapture = false {
+        didSet { save(hideFromScreenCapture, "hideFromScreenCapture") }
+    }
+
     /// Master switch for the system events that interrupt the collapsed notch.
     /// Each source below also has its own switch, so this is the "all of it"
     /// answer rather than the only one.
@@ -218,6 +239,32 @@ final class NotchSettings {
     /// Announce the session locking. Unlocking is deliberately not announced.
     var screenLockActivityEnabled = true {
         didSet { save(screenLockActivityEnabled, "screenLockActivityEnabled") }
+    }
+
+    /// Play a short system sound when the session locks and unlocks.
+    var lockSoundsEnabled = true {
+        didSet { save(lockSoundsEnabled, "lockSoundsEnabled") }
+    }
+
+    /// The system sound played on lock and on unlock. An empty name is the
+    /// silent choice, so the picker can turn one off without turning off the
+    /// other.
+    var lockSoundName = "Tink" {
+        didSet { save(lockSoundName, "lockSoundName") }
+    }
+    var unlockSoundName = "Pop" {
+        didSet { save(unlockSoundName, "unlockSoundName") }
+    }
+
+    /// The sounds the two pickers offer. `""` is "None"; the rest are the
+    /// system's own, which `NSSound(named:)` resolves without bundling audio.
+    static let feedbackSoundChoices = [
+        "", "Tink", "Pop", "Glass", "Ping", "Funk", "Sosumi", "Hero", "Basso", "Purr",
+    ]
+
+    /// Trackpad haptic tick when a notch control is pressed.
+    var hapticsEnabled = true {
+        didSet { save(hapticsEnabled, "hapticsEnabled") }
     }
 
     /// Mirror the system Clock's timer — set with Siri, or in the Clock app —
@@ -662,6 +709,17 @@ final class NotchSettings {
            let profile = AnimationProfile(rawValue: profileString) {
             animationProfile = profile
         }
+        if defaults.object(forKey: "liquidGlassEnabled") != nil {
+            liquidGlassEnabled = defaults.bool(forKey: "liquidGlassEnabled")
+        }
+        if defaults.object(forKey: "glassDepth") != nil {
+            // Clamped on the way in: the value drives an opacity, so a stored
+            // outlier from an older build would otherwise paint over the window.
+            glassDepth = min(max(defaults.double(forKey: "glassDepth"), 0), 1)
+        }
+        if defaults.object(forKey: "hideFromScreenCapture") != nil {
+            hideFromScreenCapture = defaults.bool(forKey: "hideFromScreenCapture")
+        }
         if let unitString = defaults.string(forKey: "temperatureUnit"),
            let unit = TemperatureUnit(rawValue: unitString) {
             temperatureUnit = unit
@@ -677,6 +735,14 @@ final class NotchSettings {
         }
         if defaults.object(forKey: "screenLockActivityEnabled") != nil {
             screenLockActivityEnabled = defaults.bool(forKey: "screenLockActivityEnabled")
+        }
+        if defaults.object(forKey: "lockSoundsEnabled") != nil {
+            lockSoundsEnabled = defaults.bool(forKey: "lockSoundsEnabled")
+        }
+        lockSoundName = defaults.string(forKey: "lockSoundName") ?? "Tink"
+        unlockSoundName = defaults.string(forKey: "unlockSoundName") ?? "Pop"
+        if defaults.object(forKey: "hapticsEnabled") != nil {
+            hapticsEnabled = defaults.bool(forKey: "hapticsEnabled")
         }
         if defaults.object(forKey: "clockTimerActivityEnabled") != nil {
             clockTimerActivityEnabled = defaults.bool(forKey: "clockTimerActivityEnabled")

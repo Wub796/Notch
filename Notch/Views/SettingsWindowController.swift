@@ -33,6 +33,9 @@ final class SettingsHostingView<Content: View>: NSHostingView<Content> {
 enum AppWindows {
     static func present(_ window: NSWindow?) {
         guard let window else { return }
+        // Every window this app shows passes through here, so this is where a
+        // window created after launch picks the capture setting up.
+        ScreenCapturePrivacy.apply()
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)

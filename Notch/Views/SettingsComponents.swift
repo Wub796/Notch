@@ -236,3 +236,34 @@ struct SettingsPane<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
+
+/// The page's own title, at the top of its content — the tab's glyph beside a
+/// bold name, the page-identity header of a modern macOS settings window.
+///
+/// It scrolls with the page and fades under the header's blur, which is where
+/// the motion comes from: the title leaves before the rows do.
+struct SettingsPageTitle: View {
+    let tab: SettingsTab
+
+    var body: some View {
+        HStack(spacing: 10) {
+            SettingsTabGlyph(icon: tab.icon, size: 23)
+                .foregroundStyle(SettingsMetrics.textPrimary)
+            Text(tab.title)
+                .font(.system(size: 26, weight: .bold))
+                .foregroundStyle(SettingsMetrics.textPrimary)
+                .lineLimit(1)
+        }
+        .padding(.leading, 4)
+        .padding(.top, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        .scrollTransition(.interactive, axis: .vertical) { content, phase in
+            content
+                .opacity(phase.isIdentity ? 1 : 0)
+                .blur(radius: phase.isIdentity ? 0 : 3)
+                .scaleEffect(phase.isIdentity ? 1 : 0.97, anchor: .topLeading)
+        }
+    }
+}

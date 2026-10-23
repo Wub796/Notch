@@ -11,6 +11,9 @@ final class NotchSettings {
     var volumeHUDEnabled = false
     var liveActivitiesEnabled = true
     var screenLockActivityEnabled = true
+    var lockSoundsEnabled = false
+    var lockSoundName = ""
+    var unlockSoundName = ""
     var sneakPeekEnabled = true
     var sneakPeekDuration = 3.5
     var focusChangeEnabled = true

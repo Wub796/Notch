@@ -20,8 +20,9 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
-            VisualEffectView()
-            SettingsMetrics.windowTintColor
+            // The window's own glass, and the smoke over it, driven by the
+            // Appearance card's depth slider — see `LiquidGlass`.
+            LiquidGlassBackdrop()
             contentPage
         }
         // No `.clipShape`, manual stroke, or `.shadow` on the outer window —
@@ -72,7 +73,9 @@ struct SettingsView: View {
                 // scrolls beneath both without ever softening the buttons
                 // themselves.
                 ZStack(alignment: .top) {
-                    ProgressiveHeaderBlur(height: SettingsMetrics.headerBlurHeight)
+                    if LiquidGlass.isEnabled {
+                        ProgressiveHeaderBlur(height: SettingsMetrics.headerBlurHeight)
+                    }
                     header
                 }
             }
@@ -120,7 +123,11 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var pageBody: some View {
+        // The title is part of the swapped page, not the window: it names the
+        // screen the content belongs to, and it leaves with that screen.
         VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
+            SettingsPageTitle(tab: selection)
+
             Group {
                 switch selection {
                 case .general: GeneralSettingsPane()
@@ -134,9 +141,9 @@ struct SettingsView: View {
                 case .about: AboutSettingsPane()
                 }
             }
-            .id(selection)
-            .transition(NotchAnimations.settingsPageSwap)
         }
+        .id(selection)
+        .transition(NotchAnimations.settingsPageSwap)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -173,67 +180,113 @@ private struct WeatherSettingsPane: View {
         IntegrationPermissions.shared.status(for: .location)
     }
 
+    private var isPending: Bool {
+        IntegrationPermissions.shared.pending.contains(.location)
+    }
+
     var body: some View {
-        Form {
-            Section {
-                Toggle("Show weather", isOn: $settings.showWeather)
-                Toggle("Weather in the compact notch", isOn: $settings.showCompactWeather)
-                Picker("Temperature unit", selection: $settings.temperatureUnit) {
-                    ForEach(TemperatureUnit.allCases) { unit in
-                        Text(unit.title).tag(unit)
+        SettingsPane {
+            SettingsCard(title: "Display") {
+                SettingsRow(
+                    systemImage: "cloud.sun.fill",
+                    tint: .blue,
+                    title: "Show Weather"
+                ) {
+                    SettingsToggle(isOn: $settings.showWeather)
+                }
+
+                SettingsRow(
+                    systemImage: "rectangle.topthird.inset.filled",
+                    tint: .blue,
+                    title: "Weather in the Compact Notch",
+                    subtitle: "The current temperature beside the notch, without opening it."
+                ) {
+                    SettingsToggle(isOn: $settings.showCompactWeather)
+                }
+
+                SettingsRow(
+                    systemImage: "thermometer.medium",
+                    tint: .orange,
+                    title: "Temperature Unit",
+                    showsDivider: false
+                ) {
+                    SettingsMenuPickerPill(label: settings.temperatureUnit.title) {
+                        ForEach(TemperatureUnit.allCases) { unit in
+                            Button(unit.title) {
+                                settings.temperatureUnit = unit
+                            }
+                        }
                     }
                 }
-            } header: {
-                Text("Display")
             }
 
-            Section {
-                LabeledContent("Location access") {
-                    HStack(spacing: 8) {
+            SettingsCard(title: "Location") {
+                SettingsRow(
+                    systemImage: "location.fill",
+                    tint: .green,
+                    title: "Location Access",
+                    subtitle: isPending ? "Waiting for macOS…" : locationStatus.title
+                ) {
+                    if isPending {
+                        ProgressView().controlSize(.small)
+                    } else {
                         Circle()
                             .fill(locationStatus == .granted ? .green : .orange)
                             .frame(width: 7, height: 7)
-                        Text(locationStatus.title)
-                            .foregroundStyle(.secondary)
                     }
                 }
 
-                if IntegrationPermissions.shared.pending.contains(.location) {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Waiting for macOS…").foregroundStyle(.secondary)
-                    }
-                } else if locationStatus != .granted {
-                    Button("Grant Location Access") {
-                        IntegrationPermissions.shared.request(.location)
+                if locationStatus != .granted {
+                    SettingsRow(
+                        systemImage: "hand.raised.fill",
+                        tint: .orange,
+                        title: "Grant Location Access",
+                        showsDivider: true
+                    ) {
+                        Button("Grant") {
+                            IntegrationPermissions.shared.request(.location)
+                        }
+                        .controlSize(.small)
                     }
                 }
 
-                Button("Open Location Settings") {
-                    if let url = IntegrationPermissions.Integration.location.settingsURL {
-                        NSWorkspace.shared.open(url)
+                SettingsRow(
+                    systemImage: "gearshape",
+                    tint: .gray,
+                    title: "Open Location Settings",
+                    showsDivider: true
+                ) {
+                    Button("Open") {
+                        if let url = IntegrationPermissions.Integration.location.settingsURL {
+                            NSWorkspace.shared.open(url)
+                        }
                     }
-                }
-                .buttonStyle(.link)
-
-                if let note = IntegrationPermissions.shared.notes[.location] {
-                    Text(note)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    .controlSize(.small)
                 }
 
-                Toggle(
-                    "Use an approximate location from my network",
-                    isOn: $settings.approximateLocationFallback
-                )
-            } header: {
-                Text("Location")
-            } footer: {
-                Text("Granting location access makes the forecast accurate to your city. Without it, Notch can ask ipapi.co to estimate your rough position from your network — the one request this app makes to anyone but the forecast service. If you have explicitly denied location access, that estimate is never requested.")
+                SettingsRow(
+                    systemImage: "wifi",
+                    tint: .teal,
+                    title: "Approximate Location from My Network",
+                    subtitle: notesText,
+                    showsDivider: false
+                ) {
+                    SettingsToggle(isOn: $settings.approximateLocationFallback)
+                }
             }
+
+            SettingsCaption(
+                text: "Granting location access makes the forecast accurate to your city. Without it, "
+                    + "Notch can ask ipapi.co to estimate your rough position from your network — the "
+                    + "one request this app makes to anyone but the forecast service. If you have "
+                    + "explicitly denied location access, that estimate is never requested."
+            )
         }
-        .formStyle(.grouped)
         .onAppear { IntegrationPermissions.shared.refresh() }
+    }
+
+    private var notesText: String? {
+        IntegrationPermissions.shared.notes[.location]
     }
 }
 
@@ -325,6 +378,34 @@ private struct GeneralSettingsPane: View {
                 }
             }
 
+            SettingsCard(title: "Appearance") {
+                SettingsRow(
+                    systemImage: "sparkles",
+                    tint: .cyan,
+                    title: "Liquid Glass",
+                    subtitle: "Draw the window and its cards as panes of the desktop's own light.",
+                    showsDivider: settings.liquidGlassEnabled
+                ) {
+                    Toggle("", isOn: $settings.liquidGlassEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                if settings.liquidGlassEnabled {
+                    SettingsSliderRow(
+                        title: "Glass Depth",
+                        value: $settings.glassDepth,
+                        range: 0 ... 1,
+                        step: 0.05,
+                        format: { String(format: "%.0f%%", $0 * 100) },
+                        showsDivider: false
+                    )
+                }
+            }
+            // The depth slider only exists while the glass does, so the card
+            // animates its own reveal instead of snapping on the click.
+            .animation(NotchAnimations.content, value: settings.liquidGlassEnabled)
+
             SettingsCard(title: "System") {
                 SettingsRow(
                     systemImage: "power",
@@ -365,72 +446,121 @@ private struct NotchSettingsPane: View {
     @Bindable var settings = NotchSettings.shared
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Expand on hover", isOn: $settings.expandOnHover)
-                Toggle("Scroll on the notch to open/close", isOn: $settings.scrollToExpand)
-                Toggle("Return to Home when closed", isOn: $settings.returnsToHomeOnClose)
-            } header: {
-                Label("Open & Close", systemImage: "cursorarrow.click.2")
-            } footer: {
-                Text("Hovering peeks the notch. A click opens it fully; with hover expansion on, lingering does too.")
+        SettingsPane {
+            SettingsCard(title: "Open & Close") {
+                SettingsRow(
+                    systemImage: "cursorarrow.click.2",
+                    tint: .cyan,
+                    title: "Expand on Hover"
+                ) {
+                    SettingsToggle(isOn: $settings.expandOnHover)
+                }
+                SettingsRow(
+                    systemImage: "scroll",
+                    tint: .blue,
+                    title: "Scroll on the Notch to Open or Close"
+                ) {
+                    SettingsToggle(isOn: $settings.scrollToExpand)
+                }
+                SettingsRow(
+                    systemImage: "house.fill",
+                    tint: .green,
+                    title: "Return to Home When Closed",
+                    showsDivider: false
+                ) {
+                    SettingsToggle(isOn: $settings.returnsToHomeOnClose)
+                }
             }
+
+            SettingsCaption(
+                text: "Hovering peeks the notch. A click opens it fully; with hover expansion on, "
+                    + "lingering does too."
+            )
 
             OpenNotchButtonsSection()
 
             if settings.expandOnHover {
-                Section {
-                    sliderRow(
-                        title: "Open delay",
+                SettingsCard(title: "Hover Timing") {
+                    SettingsSliderRow(
+                        title: "Open Delay",
                         value: $settings.openDelay,
                         range: 0 ... 0.5,
-                        format: "%.2f s"
+                        step: 0.01,
+                        format: { String(format: "%.2f s", $0) }
                     )
-                    sliderRow(
-                        title: "Close delay",
+                    SettingsSliderRow(
+                        title: "Close Delay",
                         value: $settings.closeDelay,
                         range: 0.2 ... 1.0,
-                        format: "%.2f s"
+                        step: 0.01,
+                        format: { String(format: "%.2f s", $0) },
+                        showsDivider: false
                     )
-                } header: {
-                    Label("Hover Timing", systemImage: "timer")
-                } footer: {
-                    Text("Configures dwell time before the notch opens or closes on pointer hover.")
                 }
+
+                SettingsCaption(
+                    text: "Configures dwell time before the notch opens or closes on pointer hover."
+                )
             }
 
-            Section {
-                Picker("Toggle shortcut", selection: $settings.hotKey) {
-                    ForEach(HotKeyManager.Shortcut.allCases) { shortcut in
-                        Text(shortcut.title).tag(shortcut.rawValue)
+            SettingsCard(title: "Shortcut & Display") {
+                SettingsRow(
+                    systemImage: "keyboard",
+                    tint: .purple,
+                    title: "Toggle Shortcut"
+                ) {
+                    SettingsMenuPickerPill(label: hotKeyLabel) {
+                        ForEach(HotKeyManager.Shortcut.allCases) { shortcut in
+                            Button(shortcut.title) {
+                                settings.hotKey = shortcut.rawValue
+                            }
+                        }
                     }
                 }
 
-                Picker("Show notch on", selection: $settings.preferredScreenName) {
-                    Text("Automatic").tag("")
-                    ForEach(NSScreen.screens, id: \.localizedName) { screen in
-                        Text(screen.localizedName).tag(screen.localizedName)
+                SettingsRow(
+                    systemImage: "display",
+                    tint: .blue,
+                    title: "Show Notch On",
+                    showsDivider: false
+                ) {
+                    SettingsMenuPickerPill(label: displayLabel) {
+                        Button("Automatic") { settings.preferredScreenName = "" }
+                        ForEach(NSScreen.screens, id: \.localizedName) { screen in
+                            Button(screen.localizedName) {
+                                settings.preferredScreenName = screen.localizedName
+                            }
+                        }
                     }
                 }
-            } header: {
-                Label("Shortcut & Display", systemImage: "keyboard")
-            } footer: {
-                Text("The shortcut works system-wide without Accessibility access. Automatic picks the display with a real notch, falling back to the main display.")
             }
 
-            Section {
+            SettingsCaption(
+                text: "The shortcut works system-wide without Accessibility access. Automatic picks "
+                    + "the display with a real notch, falling back to the main display."
+            )
+
+            SettingsCard(title: "Home Dashboard") {
                 ForEach(widgetRows) { widget in
                     widgetRow(widget)
                 }
-            } header: {
-                Label("Home Dashboard", systemImage: "rectangle.3.group")
-            } footer: {
-                Text("Choose up to \(DashboardWidget.maximumVisible) widgets for the Home screen. They appear left to right in this order.")
             }
+
+            SettingsCaption(
+                text: "Choose up to \(DashboardWidget.maximumVisible) widgets for the Home screen. "
+                    + "They appear left to right in this order."
+            )
 
             DimensionSliders()
         }
-        .formStyle(.grouped)
+    }
+
+    private var hotKeyLabel: String {
+        HotKeyManager.Shortcut(rawValue: settings.hotKey)?.title ?? "None"
+    }
+
+    private var displayLabel: String {
+        settings.preferredScreenName.isEmpty ? "Automatic" : settings.preferredScreenName
     }
 
     /// Enabled widgets first, in dashboard order, then the rest — so the list
@@ -449,7 +579,7 @@ private struct NotchSettingsPane: View {
             ? enabled.count > 1
             : enabled.count < DashboardWidget.maximumVisible
 
-        return LabeledContent {
+        return SettingsRow(systemImage: widget.symbol, title: widget.title) {
             HStack(spacing: 8) {
                 if let index {
                     Button { move(widget, by: -1) } label: {
@@ -486,8 +616,6 @@ private struct NotchSettingsPane: View {
                 .disabled(!canToggle)
                 .accessibilityLabel("Show \(widget.title)")
             }
-        } label: {
-            Label(widget.title, systemImage: widget.symbol)
         }
     }
 
@@ -500,23 +628,6 @@ private struct NotchSettingsPane: View {
         withAnimation(NotchAnimations.content) { settings.dashboardWidgets = list }
     }
 
-    private func sliderRow(
-        title: String,
-        value: Binding<Double>,
-        range: ClosedRange<Double>,
-        format: String
-    ) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Slider(value: value, in: range, step: 0.05)
-                .frame(width: 170)
-            Text(String(format: format, value.wrappedValue))
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 52, alignment: .trailing)
-        }
-    }
 }
 
 // MARK: - Dimension sliders
@@ -526,86 +637,85 @@ private struct NotchSettingsPane: View {
 private struct DimensionSliders: View {
     @Bindable var settings = NotchSettings.shared
 
-    /// Two sibling sections, so this needs the builder for the same reason
+    /// Two sibling cards, so this needs the builder for the same reason
     /// `spotifyCard` does: without it the first is discarded and the property
     /// returns nothing.
     @ViewBuilder
     var body: some View {
-        Section {
-            slider(
-                "Notch width",
+        SettingsCard(title: "Closed Notch") {
+            SettingsSliderRow(
+                title: "Notch Width",
                 value: $settings.notchWidthAdjustment,
                 range: -40 ... 80,
                 step: 1,
                 format: { String(format: "%+.0f pt", $0) }
             )
-            slider(
-                "Notch height",
+            SettingsSliderRow(
+                title: "Notch Height",
                 value: $settings.notchHeightAdjustment,
                 range: -10 ... 30,
                 step: 1,
                 format: { String(format: "%+.0f pt", $0) }
             )
-            slider(
-                "Hover grow",
+            SettingsSliderRow(
+                title: "Hover Grow",
                 value: $settings.peekScale,
                 range: 1.0 ... 1.4,
                 step: 0.02,
-                format: { String(format: "%.0f%%", $0 * 100) }
+                format: { String(format: "%.0f%%", $0 * 100) },
+                showsDivider: false
             )
-        } header: {
-            Label("Closed Notch", systemImage: "ruler")
-        } footer: {
-            Text("Width and height trim the notch the app measured from your display. Use them if the drawn pill doesn't quite cover the hardware.")
         }
 
-        Section {
-            slider(
-                "Open width",
+        SettingsCaption(
+            text: "Width and height trim the notch the app measured from your display. Use "
+                + "them if the drawn pill doesn't quite cover the hardware."
+        )
+
+        SettingsCard(title: "Open Panel") {
+            SettingsSliderRow(
+                title: "Open Width",
                 value: $settings.openNotchWidth,
                 range: NotchSizing.minimumOpenWidth ... NotchSizing.maxAllowedOpenWidth(),
                 step: 10,
                 format: { String(format: "%.0f pt", $0) }
             )
-            slider(
-                "Open height",
+            SettingsSliderRow(
+                title: "Open Height",
                 value: $settings.openNotchHeight,
                 range: NotchSizing.minimumOpenHeight ... NotchSizing.maximumOpenHeight,
                 step: 5,
                 format: { String(format: "%.0f pt", $0) }
             )
 
-            Toggle("Round the open corners further", isOn: $settings.cornerRadiusScaling)
-
-            Button("Reset Dimensions") {
-                settings.resetNotchDimensions()
+            SettingsRow(
+                systemImage: "rectangle.roundedtop",
+                tint: .indigo,
+                title: "Round the Open Corners Further"
+            ) {
+                SettingsToggle(isOn: $settings.cornerRadiusScaling)
             }
-        } header: {
-            Label("Open Panel", systemImage: "square.on.circle")
-        } footer: {
-            Text("These scale every screen together — each one keeps its own shape, so switching tabs does move the panel, but always between sizes you chose here. The width is capped to your display. Hovering is detected over the closed pill exactly as it is drawn: the notch and whatever it is wearing beside it, and nothing else.")
-        }
-    }
 
-    private func slider(
-        _ title: String,
-        value: Binding<Double>,
-        range: ClosedRange<Double>,
-        step: Double,
-        format: @escaping (Double) -> String
-    ) -> some View {
-        LabeledContent {
-            HStack(spacing: 10) {
-                Slider(value: value, in: range, step: step)
-                    .frame(width: 190)
-                Text(format(value.wrappedValue))
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 62, alignment: .trailing)
+            SettingsRow(
+                systemImage: "arrow.counterclockwise",
+                tint: .orange,
+                title: "Reset Dimensions",
+                showsDivider: false
+            ) {
+                Button("Reset") {
+                    settings.resetNotchDimensions()
+                }
+                .controlSize(.small)
             }
-        } label: {
-            Text(title)
         }
+
+        SettingsCaption(
+            text: "These scale every screen together — each one keeps its own shape, so "
+                + "switching tabs does move the panel, but always between sizes you chose here. "
+                + "The width is capped to your display. Hovering is detected over the closed pill "
+                + "exactly as it is drawn: the notch and whatever it is wearing beside it, and "
+                + "nothing else."
+        )
     }
 }
 
@@ -1123,6 +1233,42 @@ private struct ActivitiesSettingsPane: View {
                           $settings.focusChangeEnabled)
                 toggleRow("lock.fill", .gray, "Screen Lock",
                           $settings.screenLockActivityEnabled)
+                toggleRow("speaker.wave.2.fill", .gray, "Lock and Unlock Sounds",
+                          $settings.lockSoundsEnabled)
+                if settings.lockSoundsEnabled {
+                    SettingsRow(
+                        systemImage: "lock.fill",
+                        tint: .gray,
+                        title: "Lock Sound"
+                    ) {
+                        SettingsMenuPickerPill(
+                            label: settings.lockSoundName.isEmpty ? "None" : settings.lockSoundName
+                        ) {
+                            ForEach(NotchSettings.feedbackSoundChoices, id: \.self) { name in
+                                Button(name.isEmpty ? "None" : name) {
+                                    settings.lockSoundName = name
+                                }
+                            }
+                        }
+                    }
+                    SettingsRow(
+                        systemImage: "lock.open.fill",
+                        tint: .gray,
+                        title: "Unlock Sound"
+                    ) {
+                        SettingsMenuPickerPill(
+                            label: settings.unlockSoundName.isEmpty ? "None" : settings.unlockSoundName
+                        ) {
+                            ForEach(NotchSettings.feedbackSoundChoices, id: \.self) { name in
+                                Button(name.isEmpty ? "None" : name) {
+                                    settings.unlockSoundName = name
+                                }
+                            }
+                        }
+                    }
+                }
+                toggleRow("hand.tap.fill", .gray, "Haptic Feedback on Buttons",
+                          $settings.hapticsEnabled)
                 toggleRow("airpodspro", .cyan, "Accessory Battery Levels",
                           $settings.showAccessoryBattery,
                           showsDivider: false)
@@ -1276,29 +1422,54 @@ private struct ActivitiesSettingsPane: View {
 
 private struct PrivacySettingsPane: View {
     private var permissions = IntegrationPermissions.shared
+    @Bindable private var settings = NotchSettings.shared
 
     var body: some View {
-        Form {
+        SettingsPane {
             accessSummary
 
-            Section {
-                ForEach(IntegrationPermissions.Integration.allCases) { integration in
-                    PermissionRow(integration: integration)
+            SettingsCard(title: "Screen Recording") {
+                SettingsRow(
+                    systemImage: "eye.slash.fill",
+                    tint: .indigo,
+                    title: "Hide from Screen Capture",
+                    showsDivider: false
+                ) {
+                    SettingsToggle(isOn: $settings.hideFromScreenCapture)
+                        // Applies to every window this app owns, including
+                        // the one the user is about to record.
+                        .onChange(of: settings.hideFromScreenCapture) { _, _ in
+                            ScreenCapturePrivacy.apply()
+                        }
                 }
-            } header: {
-                Label("Integrations & Permissions", systemImage: "hand.raised.fill")
-            } footer: {
-                Text("Everything Notch can ask for, in the order System Settings lists it. "
+            }
+
+            SettingsCaption(
+                text: "Keeps the notch and this window out of screen recordings and screen "
+                    + "shares. A capture that records the whole display instead of picking "
+                    + "a window is a different path, and macOS gives an app no way to hide "
+                    + "from it."
+            )
+
+            SettingsCard(title: "Integrations & Permissions") {
+                ForEach(IntegrationPermissions.Integration.allCases) { integration in
+                    PermissionRow(
+                        integration: integration,
+                        showsDivider: integration != IntegrationPermissions.Integration.allCases.last
+                    )
+                }
+            }
+
+            SettingsCaption(
+                text: "Everything Notch can ask for, in the order System Settings lists it. "
                     + "macOS asks once per permission: while the answer is still open these "
                     + "rows raise the system prompt, and once it has been answered they open "
                     + "the exact pane instead, because macOS will not ask a second time. "
                     + "Apple Events access can only be verified while the target app is "
                     + "running, so Music control reads Unavailable until Music or Spotify is "
-                    + "open.")
-            }
-
+                    + "open."
+            )
         }
-        .formStyle(.grouped)
         // `probeFolders` only from here. Checking access to the folders the file
         // catcher watches means reading them, and that read is the one check in
         // this type that can put a consent prompt on screen — so it is tied to
@@ -1324,38 +1495,38 @@ extension PrivacySettingsPane {
     /// app actually able to do what it says it does" — which is the question
     /// somebody opens this pane with. It is also the only place the flow can be
     /// run again, since it deliberately never reappears on its own.
+    @ViewBuilder
     private var accessSummary: some View {
-        Section {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(summaryTint)
-                    .frame(width: 7, height: 7)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(summaryTitle)
-                        .fontWeight(.medium)
-                    if let detail = summaryDetail {
-                        Text(detail)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
+        SettingsCard(title: "Access") {
+            SettingsRow(
+                systemImage: "checkmark.shield.fill",
+                tint: summaryTint,
+                title: summaryTitle,
+                subtitle: summaryDetail
+            ) {
                 Button("Re-check Now") {
                     permissions.refresh(probeFolders: true)
                 }
                 .controlSize(.small)
             }
 
-            Button("Run the welcome again") {
-                AppDelegate.shared?.showOnboarding()
+            SettingsRow(
+                systemImage: "arrow.counterclockwise",
+                tint: .blue,
+                title: "Run the Welcome Again",
+                showsDivider: false
+            ) {
+                Button("Run") {
+                    AppDelegate.shared?.showOnboarding()
+                }
+                .controlSize(.small)
             }
-            .controlSize(.small)
-        } header: {
-            Text("Access")
-        } footer: {
-            Text("The welcome asks one permission at a time and skips whatever is already on, "
-                + "so running it again is short. It never opens by itself after the first run.")
         }
+
+        SettingsCaption(
+            text: "The welcome asks one permission at a time and skips whatever is already on, "
+                + "so running it again is short. It never opens by itself after the first run."
+        )
     }
 
     /// Counts, in the same words the rows below use.
@@ -1389,34 +1560,52 @@ extension PrivacySettingsPane {
 
 private struct PermissionRow: View {
     let integration: IntegrationPermissions.Integration
+    var showsDivider = true
 
     private var permissions = IntegrationPermissions.shared
 
     @State private var isChoosingPlayer = false
 
-    init(integration: IntegrationPermissions.Integration) {
+    init(integration: IntegrationPermissions.Integration, showsDivider: Bool = true) {
         self.integration = integration
+        self.showsDivider = showsDivider
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            content
+                .padding(.horizontal, SettingsMetrics.rowHorizontalInset)
+                .padding(.vertical, 10)
+
+            if showsDivider {
+                SettingsGroupDivider()
+            }
+        }
+    }
+
+    /// One permission: what it is for, what state it is in, and the one or two
+    /// things a click can do about it.
+    private var content: some View {
         let status = permissions.status(for: integration)
         let canPrompt = permissions.canPrompt(for: integration)
         let isPending = permissions.pending.contains(integration)
 
-        VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
                 Image(systemName: integration.systemImage)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(status.tint)
                     .frame(width: 22)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(integration.title)
-                        .fontWeight(.medium)
+                        .font(SettingsMetrics.rowFont)
+                        .foregroundStyle(SettingsMetrics.textPrimary)
                     Text(integration.detail)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(SettingsMetrics.textTertiary)
                 }
+
 
                 Spacer()
 
@@ -1466,7 +1655,8 @@ private struct PermissionRow: View {
             // Say what still works without it, and why it can't be read.
             Text(permissions.notes[integration] ?? integration.fallbackNote)
                 .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(SettingsMetrics.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, 32)
 
             if isChoosingPlayer {
@@ -1475,7 +1665,6 @@ private struct PermissionRow: View {
                     .padding(.top, 2)
             }
         }
-        .padding(.vertical, 2)
     }
 
     /// Picks the player, then hands off to the permission request, which
@@ -1545,112 +1734,200 @@ private struct SystemSettingsPane: View {
         )
     }
 
+    private var alertVolume: Binding<Double> {
+        Binding(
+            get: { Double(AudioOutputManager.shared.alertVolume) },
+            set: { AudioOutputManager.shared.setAlertVolume(Float($0)) }
+        )
+    }
+
+    private var samplingLabel: String {
+        switch settings.telemetryInterval {
+        case 0.5: "0.5 seconds"
+        case 1: "1 second"
+        case 2: "2 seconds"
+        case 5: "5 seconds"
+        default: String(format: "%.1f seconds", settings.telemetryInterval)
+        }
+    }
+
+    /// Why the mixer is not running, when it is not.
+    private var mixerNote: String? {
+        guard let mixer else {
+            return "The mixer starts with the app; reopen Settings if this stays off."
+        }
+        guard mixer.isSupported == false else { return nil }
+        return "Per-app volume needs macOS 14.2 or later. On this macOS an app's own "
+            + "level cannot be changed by anything but the app itself, so the mixer stays off."
+    }
+
     var body: some View {
-        Form {
-            Section {
-                Picker("Refresh every", selection: $settings.telemetryInterval) {
-                    Text("0.5 seconds").tag(0.5)
-                    Text("1 second").tag(1.0)
-                    Text("2 seconds").tag(2.0)
-                    Text("5 seconds").tag(5.0)
-                }
-            } header: {
-                Label("Sampling Rate", systemImage: "gauge.with.dots.needle.50percent")
-            } footer: {
-                Text("Telemetry hardware sensors only sample while the notch is expanded. Zero CPU is consumed when collapsed.")
-            }
-
-            Section {
-                Toggle("Show CPU rolling sparkline", isOn: $settings.showCPUSparkline)
-                Toggle("Show Memory pressure ring", isOn: $settings.showMemoryPressure)
-                Toggle("Show Network throughput speeds", isOn: $settings.showNetworkSpeed)
-                Toggle("Show Battery health and power draw", isOn: $settings.showBatteryHealth)
-            } header: {
-                Label("Metrics Display", systemImage: "chart.line.uptrend.xyaxis")
-            } footer: {
-                Text("Customizes which telemetry components appear in the System tab and main dashboard.")
-            }
-
-            Section {
-                Toggle("Switch to newly connected output devices", isOn: $settings.autoSwitchOutputOnConnect)
-
-                Slider(
-                    value: Binding(
-                        get: { Double(AudioOutputManager.shared.alertVolume) },
-                        set: { AudioOutputManager.shared.setAlertVolume(Float($0)) }
-                    ),
-                    in: 0...1
+        SettingsPane {
+            SettingsCard(title: "Sampling Rate") {
+                SettingsRow(
+                    systemImage: "gauge.with.dots.needle.50percent",
+                    tint: .pink,
+                    title: "Refresh Every",
+                    showsDivider: false
                 ) {
-                    Text("Alert Volume")
-                } minimumValueLabel: {
-                    Image(systemName: "speaker.fill")
-                } maximumValueLabel: {
-                    Image(systemName: "speaker.wave.3.fill")
+                    SettingsMenuPickerPill(label: samplingLabel) {
+                        Button("0.5 seconds") { settings.telemetryInterval = 0.5 }
+                        Button("1 second") { settings.telemetryInterval = 1.0 }
+                        Button("2 seconds") { settings.telemetryInterval = 2.0 }
+                        Button("5 seconds") { settings.telemetryInterval = 5.0 }
+                    }
                 }
-                Toggle("Control external display speakers", isOn: displayVolumeEnabled)
-            } header: {
-                Label("Audio", systemImage: "speaker.wave.2.fill")
-            } footer: {
-                Text("Alert volume controls the volume macOS uses for notification sounds, matching System Settings → Sound. Auto-switch routes output to a device the moment it connects. Display speakers are set over the display's own control channel, because they are not an audio device macOS lists at all.")
+            }
+
+            SettingsCaption(
+                text: "Telemetry hardware sensors only sample while the notch is expanded. "
+                    + "Zero CPU is consumed when collapsed."
+            )
+
+            SettingsCard(title: "Metrics Display") {
+                SettingsRow(
+                    systemImage: "waveform.path.ecg",
+                    tint: .green,
+                    title: "Show CPU Rolling Sparkline"
+                ) {
+                    SettingsToggle(isOn: $settings.showCPUSparkline)
+                }
+                SettingsRow(
+                    systemImage: "memorychip",
+                    tint: .purple,
+                    title: "Show Memory Pressure Ring"
+                ) {
+                    SettingsToggle(isOn: $settings.showMemoryPressure)
+                }
+                SettingsRow(
+                    systemImage: "network",
+                    tint: .blue,
+                    title: "Show Network Throughput Speeds"
+                ) {
+                    SettingsToggle(isOn: $settings.showNetworkSpeed)
+                }
+                SettingsRow(
+                    systemImage: "battery.75percent",
+                    tint: .green,
+                    title: "Show Battery Health and Power Draw",
+                    showsDivider: false
+                ) {
+                    SettingsToggle(isOn: $settings.showBatteryHealth)
+                }
+            }
+
+            SettingsCaption(
+                text: "Customizes which telemetry components appear in the System tab and "
+                    + "main dashboard."
+            )
+
+            SettingsCard(title: "Audio") {
+                SettingsRow(
+                    systemImage: "arrow.triangle.2.circlepath",
+                    tint: .blue,
+                    title: "Switch to Newly Connected Output Devices"
+                ) {
+                    SettingsToggle(isOn: $settings.autoSwitchOutputOnConnect)
+                }
+
+                SettingsSliderRow(
+                    systemImage: "speaker.wave.2.fill",
+                    tint: .blue,
+                    title: "Alert Volume",
+                    value: alertVolume,
+                    range: 0 ... 1,
+                    step: 0.01,
+                    format: { "\(Int($0 * 100))%" }
+                )
+
+                SettingsRow(
+                    systemImage: "display",
+                    tint: .indigo,
+                    title: "Control External Display Speakers",
+                    showsDivider: false
+                ) {
+                    SettingsToggle(isOn: displayVolumeEnabled)
+                }
             }
             .onAppear {
                 // AppleScript read is slow, so only refresh when the pane opens.
                 AudioOutputManager.shared.refreshAlertVolume()
             }
 
+            SettingsCaption(
+                text: "Alert volume controls the volume macOS uses for notification sounds, "
+                    + "matching System Settings → Sound. Auto-switch routes output to a device the "
+                    + "moment it connects. Display speakers are set over the display's own control "
+                    + "channel, because they are not an audio device macOS lists at all."
+            )
+
             // The mixer's per-app controls live in the notch — that is where you
             // can hear what you are changing. What belongs in a window is the
             // switch, the corrections it can apply, and what happens when a tap
             // is refused.
-            Section {
-                Toggle("Enable the per-app mixer", isOn: mixerEnabled)
-                    .disabled(mixer == nil)
-
-                if mixer == nil {
-                    Text("The mixer starts with the app; reopen Settings if this stays off.")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
-                } else if mixer?.isSupported == false {
-                    Text("Per-app volume needs macOS 14.2 or later. On this macOS an app's own level cannot be changed by anything but the app itself, so the mixer stays off.")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
+            SettingsCard(title: "Per-App Mixer") {
+                SettingsRow(
+                    systemImage: "slider.horizontal.3",
+                    tint: .teal,
+                    title: "Enable the Per-App Mixer",
+                    subtitle: mixerNote,
+                    showsDivider: false
+                ) {
+                    SettingsToggle(isOn: mixerEnabled)
+                        .disabled(mixer == nil)
                 }
-            } header: {
-                Label("Per-App Mixer", systemImage: "slider.horizontal.3")
-            } footer: {
-                Text("Gives each app its own level — above 100%, up to 4x — plus mute, output routing, an equalizer and loudness compensation. Nothing runs for an app you have not changed: each one is taken over only once you move its slider, and it returns to the system's own audio path the moment you reset it. If taking over an app fails with a CoreAudio error, a newer macOS may be holding back the audio-capture permission — allow Notch under Privacy & Security, then switch this off and on again.")
             }
 
-            Section {
+            SettingsCaption(
+                text: "Gives each app its own level — above 100%, up to 4x — plus mute, "
+                    + "output routing, an equalizer and loudness compensation. Nothing runs for "
+                    + "an app you have not changed: each one is taken over only once you move its "
+                    + "slider, and it returns to the system's own audio path the moment you reset "
+                    + "it. If taking over an app fails with a CoreAudio error, a newer macOS may be "
+                    + "holding back the audio-capture permission — allow Notch under Privacy & "
+                    + "Security, then switch this off and on again."
+            )
+
+            SettingsCard(title: "Headphone Corrections") {
                 if profiles.isEmpty {
-                    Text("No corrections imported yet. An AutoEQ profile is a text file describing how one pair of headphones deviates from a target curve — parametric or graphic, both read here.")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
+                    SettingsRow(
+                        systemImage: "headphones",
+                        title: "No Corrections Imported Yet",
+                        subtitle: "An AutoEQ profile is a text file describing how one pair of "
+                            + "headphones deviates from a target curve — parametric or graphic, "
+                            + "both read here."
+                    ) { EmptyView() }
                 } else {
                     ForEach(profiles) { profile in
                         profileRow(profile)
                     }
                 }
 
-                HStack {
-                    Button("Import from File…") { isImportingProfile = true }
-                    Spacer()
-                    Button("Show Folder") { revealLibraryFolder() }
+                SettingsRow(
+                    systemImage: "square.and.arrow.down",
+                    tint: .blue,
+                    title: "Import a Correction",
+                    showsDivider: false
+                ) {
+                    HStack(spacing: 8) {
+                        Button("Import") { isImportingProfile = true }
+                        Button("Show Folder") { revealLibraryFolder() }
+                            .buttonStyle(.link)
+                    }
+                    .controlSize(.small)
                 }
+            }
 
-                if let failure = importFailure ?? AutoEQLibrary.shared.lastImportFailure {
-                    Text(failure)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } header: {
-                Label("Headphone Corrections", systemImage: "headphones")
-            } footer: {
-                Text("Import a measured correction here, then choose it for an app in the notch's Mixer. Corrections are per app rather than per device, because the one that applies is the one for the headphones that app is playing into.")
+            SettingsCaption(
+                text: "Import a measured correction here, then choose it for an app in the "
+                    + "notch's Mixer. Corrections are per app rather than per device, because "
+                    + "the one that applies is the one for the headphones that app is playing into."
+            )
+
+            if let failure = importFailure ?? AutoEQLibrary.shared.lastImportFailure {
+                SettingsCallout(text: failure, systemImage: "exclamationmark.triangle.fill", tint: .orange)
             }
         }
-        .formStyle(.grouped)
         .fileImporter(
             isPresented: $isImportingProfile,
             allowedContentTypes: [.plainText, .text]
@@ -1670,25 +1947,11 @@ private struct SystemSettingsPane: View {
     private var profiles: [AutoEQProfile] { AutoEQLibrary.shared.profiles }
 
     private func profileRow(_ profile: AutoEQProfile) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "headphones")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 20)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(profile.name)
-                    .fontWeight(.medium)
-
-                Text(detail(for: profile))
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-
-            Spacer(minLength: 8)
-
+        SettingsRow(
+            systemImage: "headphones",
+            title: profile.name,
+            subtitle: detail(for: profile)
+        ) {
             Button("Remove") {
                 do {
                     try AutoEQLibrary.shared.remove(profile.id)
@@ -1697,6 +1960,7 @@ private struct SystemSettingsPane: View {
                     importFailure = error.localizedDescription
                 }
             }
+            .controlSize(.small)
         }
     }
 

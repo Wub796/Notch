@@ -32,6 +32,18 @@ enum SettingsMetrics {
     /// Tint over `VisualEffectView`'s `.sidebar` material, which spans the
     /// whole window. Clear in both appearances — the material alone is the
     /// look — but kept as the one place to tune it.
+    /// The window with Liquid Glass off: an opaque surface, no desktop blur.
+    static let solidWindowColor = adaptiveColor(
+        dark: NSColor(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1),
+        light: NSColor(red: 0xF2 / 255, green: 0xF2 / 255, blue: 0xF7 / 255, alpha: 1)
+    )
+
+    /// Card fill with Liquid Glass off, one step above `solidWindowColor`.
+    static let solidCardColor = adaptiveColor(
+        dark: NSColor(red: 0x2C / 255, green: 0x2C / 255, blue: 0x2E / 255, alpha: 1),
+        light: NSColor(white: 1, alpha: 1)
+    )
+
     static let windowTintColor = adaptiveColor(
         dark: NSColor(red: 0x37 / 255, green: 0x37 / 255, blue: 0x37 / 255, alpha: 0),
         light: NSColor(red: 0xFF / 255, green: 0xFF / 255, blue: 0xFF / 255, alpha: 0)
@@ -49,7 +61,7 @@ enum SettingsMetrics {
     static let tabBarHorizontalPadding: CGFloat = 20
     static let tabBarTint = adaptiveColor(
         dark: NSColor(white: 1, alpha: 0.15),
-        light: NSColor(white: 1, alpha: 0.5)
+        light: NSColor(white: 1, alpha: 0.3)
     )
     static let tabBarBorder = adaptiveColor(
         dark: NSColor(white: 1, alpha: 0.16),
@@ -101,8 +113,8 @@ enum SettingsMetrics {
         light: NSColor(white: 0, alpha: 0.4)
     )
 
-    static let rowHeight: CGFloat = 44
-    static let rowRadius: CGFloat = 16
+    static let rowHeight: CGFloat = 46
+    static let rowRadius: CGFloat = 18
     static let rowIconSize: CGFloat = 20
     static let rowIconBoxSize: CGFloat = 34
     /// Light mode goes slightly darker than the page instead of lighter,
@@ -117,8 +129,8 @@ enum SettingsMetrics {
     )
     static let rowBorderWidth: CGFloat = 1
     static let rowFont = Font.system(size: 13, weight: .regular)
-    static let rowSpacing: CGFloat = 12
-    static let rowHorizontalInset: CGFloat = 22
+    static let rowSpacing: CGFloat = 14
+    static let rowHorizontalInset: CGFloat = 28
     /// Shared cap on a row's subtitle width — keeps a longer explanatory
     /// line from stretching toward the trailing control/tiles, and keeps
     /// every subtitle (plain rows and `SettingsLabeledOptionRow` alike)
@@ -183,7 +195,9 @@ enum SettingsMetrics {
     static let optionPreviewOuterStrokeWidth: CGFloat = 1
     static let optionPreviewBorderWidth: CGFloat = 1
     static let sectionTitleFont = Font.system(size: 13, weight: .medium)
-    static let sectionTitleHorizontalInset: CGFloat = 10
+    /// Section titles line up with the rows' leading content rather than
+    /// hugging the card's edge above them.
+    static let sectionTitleHorizontalInset: CGFloat = 28
     static let sectionTitleVerticalPadding: CGFloat = 8
 
     /// Page content's inset from the window's side edges; the header's
@@ -217,7 +231,7 @@ enum SettingsMetrics {
 
     /// Resolves live against the current system appearance rather than a
     /// value fixed at evaluation time.
-    private static func adaptiveColor(dark: NSColor, light: NSColor) -> Color {
+    static func adaptiveColor(dark: NSColor, light: NSColor) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
         })

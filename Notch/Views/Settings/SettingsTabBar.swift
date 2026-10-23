@@ -52,15 +52,35 @@ struct SettingsTabBar: View {
         .padding(.horizontal, SettingsMetrics.tabBarHorizontalPadding)
         .frame(height: SettingsMetrics.tabBarHeight)
         .background {
-            Capsule()
-                .fill(.regularMaterial)
-            Capsule()
-                .fill(SettingsMetrics.tabBarTint)
+            if LiquidGlass.isEnabled {
+                if #available(macOS 26.0, *) {
+                    // The bar is a pane of the same glass the cards are, so on
+                    // 26 it is the system's own: it samples the rows scrolling
+                    // beneath it instead of a fixed blur of them.
+                    Capsule()
+                        .fill(.clear)
+                        .glassEffect(.regular, in: Capsule())
+                } else {
+                    Capsule()
+                        .fill(.regularMaterial)
+                }
+                Capsule()
+                    .fill(SettingsMetrics.tabBarTint)
+            } else {
+                Capsule()
+                    .fill(SettingsMetrics.solidWindowColor)
+            }
         }
-        .overlay(
-            Capsule()
-                .strokeBorder(SettingsMetrics.tabBarBorder, lineWidth: 1)
-        )
+        .overlay {
+            // The bar is a pane of the same glass the cards are, so it wears the
+            // same rim rather than its own flat hairline.
+            if LiquidGlass.isEnabled {
+                LiquidGlassRim(shape: Capsule())
+            } else {
+                Capsule()
+                    .strokeBorder(SettingsMetrics.tabBarBorder, lineWidth: 1)
+            }
+        }
         .onPreferenceChange(TabFramePreferenceKey.self) { frames in
             guard frames != tabFrames else { return }
             tabFrames = frames
@@ -92,7 +112,7 @@ struct SettingsTabBar: View {
             .frame(height: SettingsMetrics.tabItemHeight)
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
         .background(
             GeometryReader { proxy in
                 Color.clear.preference(
@@ -108,26 +128,30 @@ struct SettingsTabBar: View {
 }
 
 /// A tab's bare glyph — an SF Symbol or template asset, no badge behind it.
-private struct SettingsTabGlyph: View {
+///
+/// Also what a page's own title draws, one size up, so the two always agree
+/// on which mark a given tab wears.
+struct SettingsTabGlyph: View {
     let icon: SettingsTabIcon
+    var size: CGFloat = SettingsMetrics.tabGlyphSize
 
     var body: some View {
         Group {
             switch icon {
             case .system(let name):
                 Image(systemName: name)
-                    .font(.system(size: SettingsMetrics.tabGlyphSize, weight: .medium))
+                    .font(.system(size: size, weight: .medium))
             case .asset(let name):
                 Image(name)
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: SettingsMetrics.tabGlyphSize + 1, height: SettingsMetrics.tabGlyphSize + 1)
+                    .frame(width: size + 1, height: size + 1)
                     .offset(y: 1)
             }
         }
         // Fixed box so glyphs of different widths space evenly along the bar.
-        .frame(width: SettingsMetrics.tabGlyphSize + 4, height: SettingsMetrics.tabGlyphSize + 4)
+        .frame(width: size + 4, height: size + 4)
     }
 }
 

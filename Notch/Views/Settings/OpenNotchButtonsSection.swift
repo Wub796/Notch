@@ -18,13 +18,16 @@ struct OpenNotchButtonsSection: View {
     }
 
     var body: some View {
-        Section {
+        SettingsCard(title: "Open Notch Buttons") {
             ForEach(settings.topBarModules) { item in
-                LabeledContent {
+                SettingsRow(
+                    systemImage: item.symbol,
+                    title: item.title
+                ) {
                     HStack(spacing: 8) {
                         Image(systemName: "line.3.horizontal")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(SettingsMetrics.textTertiary)
                             .accessibilityHidden(true)
 
                         Button {
@@ -32,15 +35,13 @@ struct OpenNotchButtonsSection: View {
                         } label: {
                             Image(systemName: "minus.circle.fill")
                                 .font(.system(size: 13))
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(SettingsMetrics.textTertiary)
                         }
                         .buttonStyle(.borderless)
                         .disabled(settings.topBarModules.count <= 1)
                         .help("Remove \(item.title)")
                         .accessibilityLabel("Remove \(item.title) from the notch")
                     }
-                } label: {
-                    Label(item.title, systemImage: item.symbol)
                 }
                 .draggable(item.rawValue)
                 .dropDestination(for: String.self) { values, _ in
@@ -55,7 +56,11 @@ struct OpenNotchButtonsSection: View {
             }
 
             if !available.isEmpty {
-                LabeledContent("Add") {
+                SettingsRow(
+                    systemImage: "plus.circle",
+                    title: "Add",
+                    showsDivider: false
+                ) {
                     HStack(spacing: 6) {
                         ForEach(available) { item in
                             Button {
@@ -73,11 +78,12 @@ struct OpenNotchButtonsSection: View {
                     }
                 }
             }
-        } header: {
-            Label("Open Notch Buttons", systemImage: "rectangle.stack")
-        } footer: {
-            Text("Drag a button to change its place on the rail. Home always comes first, and at least one module stays on it.")
         }
+
+        SettingsCaption(
+            text: "Drag a button to change its place on the rail. Home always comes first, "
+                + "and at least one module stays on it."
+        )
     }
 
     /// Puts `item` directly before `target`, which is what dropping onto a row

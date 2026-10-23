@@ -74,6 +74,45 @@ model with the same 112x112 input and 512-dimensional output, then re-enrolling
 every face (the embedder's `modelIdentifier` deliberately invalidates templates
 from a different model).
 
+## ybouane/liquidglass — the Settings window's glass
+
+The lighting model of the Settings window's glass (`Notch/Views/Settings/LiquidGlass.swift`)
+is ported from **LiquidGlass** by **[@ybouane](https://x.com/ybouane)** —
+<https://github.com/ybouane/liquidglass> — which is MIT licensed (the repository
+carries the licence in its README rather than a `LICENSE` file):
+
+```
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+What was ported is the light, not the renderer. The reference is a WebGL
+pipeline: it captures the page behind each glass element, blurs it, and runs a
+fragment shader over a rounded-rect signed distance field — refraction through
+a bevelled cross-section, chromatic dispersion, Fresnel, two Blinn-Phong
+specular lobes, a top-biased inner stroke, tint and saturation. This app draws
+the same terms as strokes and gradients on that same geometry (`LiquidGlassRim`),
+and hands the actual refraction of the desktop to macOS 26's `glassEffect` where
+the system has it. No JavaScript, shader source, or other code from the project
+is included.
+
 ## FineTune — per-app audio (design reference only)
 
 The per-app mixer (`Notch/Modules/Audio/Mixer/`) follows the **design** of

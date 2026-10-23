@@ -71,6 +71,10 @@ final class NotchWindowController: NSWindowController {
 
         super.init(window: panel)
         panel.delegate = self
+        // The panel is the app's own face, so a capture setting that hides it
+        // has to reach this window too — and again whenever a display change
+        // rebuilds it.
+        ScreenCapturePrivacy.apply()
 
         setupModeChangeObserver()
         setupSpaceObserver()

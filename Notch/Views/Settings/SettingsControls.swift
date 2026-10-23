@@ -115,8 +115,8 @@ struct SettingsMenuPickerPill<MenuContent: View>: View {
                     .foregroundStyle(SettingsMetrics.textSecondary)
             }
             .font(.system(size: 13))
-            .padding(.horizontal, 12)
-            .frame(height: 28)
+            .padding(.horizontal, 14)
+            .frame(height: 30)
             .background(Capsule().fill(SettingsMetrics.pickerPillFill))
             .overlay {
                 Capsule()
@@ -144,12 +144,11 @@ struct SettingsGroup<Content: View>: View {
         VStack(spacing: 0) {
             content()
         }
-        .background(SettingsMetrics.rowColor)
-        .overlay(
-            RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
-                .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius))
+        // One pane of the window's glass, not a flat fill — see `LiquidGlass`.
+        // The card keeps the window's radius and its rows, so every pane that
+        // already passes a `SettingsGroup` picks the treatment up at once.
+        .background { LiquidGlassPaneBackground() }
+        .clipShape(RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius, style: .continuous))
     }
 }
 
@@ -256,12 +255,12 @@ private struct SettingsActionButton: View {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
                 .background(isDestructive ? Color.red.opacity(0.85) : SettingsMetrics.accent)
                 .clipShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.4)
     }
@@ -470,7 +469,7 @@ struct SettingsSectionTitle: View {
             .foregroundStyle(SettingsMetrics.textTertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, SettingsMetrics.sectionTitleHorizontalInset)
-            .padding(.top, SettingsMetrics.sectionTitleVerticalPadding)
+            .padding(.vertical, SettingsMetrics.sectionTitleVerticalPadding)
     }
 }
 
@@ -496,14 +495,8 @@ struct SettingsOptionCard<Content: View>: View {
 
     var body: some View {
         SettingsOptionRow(content: content)
-            .background(
-                RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
-                    .fill(SettingsMetrics.rowColor)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
-                    .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
-            )
+            .background { LiquidGlassPaneBackground() }
+            .clipShape(RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius, style: .continuous))
     }
 }
 
@@ -642,7 +635,7 @@ struct SettingsOptionTile<Preview: View>: View {
             .frame(maxWidth: previewWidth == nil ? .infinity : nil)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
     }
 }
 
@@ -959,6 +952,9 @@ final class WindowConfiguringView: NSView {
         // rounded frame. Left at defaults, the system mask applies and the
         // corner is the real thing. Translucency still works since the
         // `NSVisualEffectView` behind the content blends on its own.
+
+        // The Settings window carries the same capture setting as the notch.
+        ScreenCapturePrivacy.apply()
 
         let target = SettingsMetrics.windowSize
         var frame = window.frame

@@ -27,7 +27,7 @@ struct SessionLockButton: View {
                     .contentTransition(.opacity)
             }
             .foregroundStyle(SettingsMetrics.textPrimary)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .frame(height: SettingsMetrics.headerButtonHeight)
             .background(Capsule().fill(SettingsMetrics.rowColor))
             .overlay(
@@ -36,7 +36,7 @@ struct SessionLockButton: View {
             )
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
         // Only disabled mid-authentication — a tap then would double up the
         // Touch ID prompt or race the unresolved lock.
         .disabled(isUnlocking)
