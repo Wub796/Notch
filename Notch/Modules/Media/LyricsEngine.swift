@@ -144,6 +144,7 @@ final class LyricsEngine {
     /// Called on each playback tick; moves the highlighted line to the last
     /// timestamp at or before the playhead.
     func updateCurrentLine(for time: TimeInterval) {
+        guard NotchSettings.shared.autoScrollLyrics else { return }
         guard isSynced, !lines.isEmpty else { return }
         let index = lines.lastIndex { $0.time <= time }
         if index != currentIndex {

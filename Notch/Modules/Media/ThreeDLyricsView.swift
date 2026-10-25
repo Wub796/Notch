@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// 3D perspective-tilted lyric view:
@@ -73,6 +74,9 @@ struct ThreeDLyricsView: View {
                             .opacity(0.38)
                             .contentShape(Rectangle())
                             .onTapGesture {
+                                if NotchSettings.shared.hapticsEnabled {
+                                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                                }
                                 onSelect?(prev.time)
                             }
                     } else {
@@ -94,6 +98,9 @@ struct ThreeDLyricsView: View {
                             .contentTransition(.numericText())
                             .contentShape(Rectangle())
                             .onTapGesture {
+                                if NotchSettings.shared.hapticsEnabled {
+                                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                                }
                                 onSelect?(curr.time)
                             }
                     } else {
@@ -117,6 +124,9 @@ struct ThreeDLyricsView: View {
                             .opacity(0.38)
                             .contentShape(Rectangle())
                             .onTapGesture {
+                                if NotchSettings.shared.hapticsEnabled {
+                                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                                }
                                 onSelect?(next.time)
                             }
                     } else {

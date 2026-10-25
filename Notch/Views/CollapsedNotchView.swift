@@ -7,6 +7,7 @@ import SwiftUI
 /// or an imminent meeting.
 struct CollapsedNotchView: View {
     let state: NotchState
+    let namespace: Namespace.ID
 
     var body: some View {
         // Top-anchored, deliberately. The strip fills a frame exactly as tall as

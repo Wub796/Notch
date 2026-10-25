@@ -344,10 +344,20 @@ final class NotchSettings {
     }
 
     /// Shows the weather glyph and a bold temperature in the compact notch.
-    var showCompactWeather = true { didSet { save(showCompactWeather, "showCompactWeather") } }
+    var showCompactWeather = true {
+        didSet {
+            save(showCompactWeather, "showCompactWeather")
+            notify(onDimensionsChanged)
+        }
+    }
 
     /// Show the numeric percentage beside the battery glyph.
-    var showBatteryPercentage = true { didSet { save(showBatteryPercentage, "showBatteryPercentage") } }
+    var showBatteryPercentage = true {
+        didSet {
+            save(showBatteryPercentage, "showBatteryPercentage")
+            notify(onDimensionsChanged)
+        }
+    }
 
     /// A small bolt — plus the live percentage while actually charging —
     /// beside the closed notch whenever the charger is connected. The
@@ -356,14 +366,22 @@ final class NotchSettings {
     /// Low battery notification threshold.
     var lowBatteryThreshold = 20 { didSet { save(lowBatteryThreshold, "lowBatteryThreshold") } }
 
-    var showMediaWings = true { didSet { save(showMediaWings, "showMediaWings") } }
+    var showMediaWings = true {
+        didSet {
+            save(showMediaWings, "showMediaWings")
+            notify(onDimensionsChanged)
+        }
+    }
 
     /// Whether the closed notch also wears the cover-and-visualiser wings for
     /// audio that has no now-playing session — a video in a browser, a game,
     /// a call. CoreAudio reports the stream, not the sound, so an app that
     /// holds one open keeps this on; turn it off if that gets in the way.
     var showWingsForAnyAudio = true {
-        didSet { save(showWingsForAnyAudio, "showWingsForAnyAudio") }
+        didSet {
+            save(showWingsForAnyAudio, "showWingsForAnyAudio")
+            notify(onDimensionsChanged)
+        }
     }
 
     /// Which player the notch follows and controls.
@@ -498,7 +516,13 @@ final class NotchSettings {
     /// retunes at once instead of at its next start.
     var onAudioMeterBarCountChanged: ((Int) -> Void)?
 
-    var autoScrollLyrics = true { didSet { save(autoScrollLyrics, "autoScrollLyrics") } }
+    var autoScrollLyrics = true {
+        didSet {
+            save(autoScrollLyrics, "autoScrollLyrics")
+            notify(onAutoScrollLyricsChanged, autoScrollLyrics)
+        }
+    }
+    var onAutoScrollLyricsChanged: ((Bool) -> Void)?
 
     /// How often the gauges resample, in seconds. The sampler reads this when
     /// it arms its timer, so a change is pushed through `onTelemetryIntervalChanged`
@@ -615,30 +639,56 @@ final class NotchSettings {
 
     /// Trims or extends the detected notch width, in points. Useful when the
     /// measured hardware notch does not match what the display reports.
-    var notchWidthAdjustment = 0.0 { didSet { save(notchWidthAdjustment, "notchWidthAdjustment") } }
+    var notchWidthAdjustment = 0.0 {
+        didSet {
+            save(notchWidthAdjustment, "notchWidthAdjustment")
+            notify(onDimensionsChanged)
+        }
+    }
 
     /// Trims or extends the detected notch height, in points.
-    var notchHeightAdjustment = 0.0 { didSet { save(notchHeightAdjustment, "notchHeightAdjustment") } }
+    var notchHeightAdjustment = 0.0 {
+        didSet {
+            save(notchHeightAdjustment, "notchHeightAdjustment")
+            notify(onDimensionsChanged)
+        }
+    }
 
     /// The open slab, shared by every tab (boring.notch and Atoll both open
     /// to one fixed panel rather than resizing per screen). Clamped in
     /// `NotchSizing`, so a slider can never produce a slab wider than the
     /// display or shorter than its content.
     var openNotchWidth = NotchSizing.defaultOpenWidth {
-        didSet { save(openNotchWidth, "openNotchWidth") }
+        didSet {
+            save(openNotchWidth, "openNotchWidth")
+            notify(onDimensionsChanged)
+        }
     }
     var openNotchHeight = NotchSizing.defaultOpenHeight {
-        didSet { save(openNotchHeight, "openNotchHeight") }
+        didSet {
+            save(openNotchHeight, "openNotchHeight")
+            notify(onDimensionsChanged)
+        }
     }
 
     /// How much the closed pill grows on hover.
-    var peekScale = 1.10 { didSet { save(peekScale, "peekScale") } }
+    var peekScale = 1.10 {
+        didSet {
+            save(peekScale, "peekScale")
+            notify(onDimensionsChanged)
+        }
+    }
 
     /// Scales the open corner radii; off gives the closed radii in both
     /// states, which is the references' `cornerRadiusScaling` switch.
     var cornerRadiusScaling = true {
-        didSet { save(cornerRadiusScaling, "cornerRadiusScaling") }
+        didSet {
+            save(cornerRadiusScaling, "cornerRadiusScaling")
+            notify(onDimensionsChanged)
+        }
     }
+
+    var onDimensionsChanged: (() -> Void)?
 
     /// Restores every dimension above to its shipped value.
     func resetNotchDimensions() {
@@ -649,6 +699,7 @@ final class NotchSettings {
         openNotchHeight = NotchSizing.defaultOpenHeight
         peekScale = 1.10
         cornerRadiusScaling = true
+        notify(onDimensionsChanged)
     }
 
     /// Raw value of the last tab the user opened; restored across launches.
@@ -933,6 +984,11 @@ final class NotchSettings {
         callback?(value)
     }
 
+    private func notify(_ callback: (() -> Void)?) {
+        guard !isLoading else { return }
+        callback?()
+    }
+
     private func applyLaunchAtLogin() {
         guard !isApplyingLoginItem else { return }
         isApplyingLoginItem = true
@@ -998,11 +1054,8 @@ final class NotchSettings {
         )
         try data.write(to: launchAgentURL, options: .atomic)
 
-        // Re-register cleanly even if an earlier run left it loaded.
+        // Drop any stale loaded job so the next login starts clean.
         bootoutLaunchAgent()
-        guard launchctl(["bootstrap", "gui/\(getuid())", launchAgentURL.path]) == 0 else {
-            throw LaunchAtLoginError.launchctlFailed
-        }
     }
 
     private static func removeLaunchAgent() {
@@ -1015,7 +1068,8 @@ final class NotchSettings {
     }
 
     private static func launchAgentIsBootstrapped() -> Bool {
-        launchctl(["print", "gui/\(getuid())/\(launchAgentLabel)"]) == 0
+        FileManager.default.fileExists(atPath: launchAgentURL.path)
+            || launchctl(["print", "gui/\(getuid())/\(launchAgentLabel)"]) == 0
     }
 
     @discardableResult

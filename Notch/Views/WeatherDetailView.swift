@@ -9,6 +9,7 @@ import SwiftUI
 /// the strip; the chips that swap between them live in the header.
 struct WeatherDetailView: View {
     let state: NotchState
+    var namespace: Namespace.ID? = nil
 
     /// The hero illustration keeps a few points of its 112pt box empty on the
     /// left — an SF Symbol's glyph sits inset inside its frame — so a label

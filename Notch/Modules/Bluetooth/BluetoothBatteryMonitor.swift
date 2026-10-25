@@ -39,6 +39,9 @@ final class BluetoothBatteryMonitor {
     }
 
     private(set) var devices: [Device] = []
+    private var lastSeenDeviceIDs: Set<String> = []
+    private var hasScannedOnce = false
+    var onDeviceConnected: ((Device) -> Void)?
 
     private var timer: Timer?
 
@@ -61,7 +64,16 @@ final class BluetoothBatteryMonitor {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let found = Self.scanRegistry()
             DispatchQueue.main.async { [weak self] in
-                self?.devices = found
+                guard let self else { return }
+                let newDevices = found.filter { !self.lastSeenDeviceIDs.contains($0.id) }
+                self.lastSeenDeviceIDs = Set(found.map(\.id))
+                self.devices = found
+                if self.hasScannedOnce {
+                    for device in newDevices {
+                        self.onDeviceConnected?(device)
+                    }
+                }
+                self.hasScannedOnce = true
             }
         }
     }

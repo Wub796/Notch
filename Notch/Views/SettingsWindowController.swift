@@ -22,6 +22,11 @@ final class SettingsHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
     }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard self.bounds.contains(point) else { return nil }
+        return super.hitTest(point) ?? self
+    }
 }
 
 /// Activation for the app's ordinary windows — Settings and Clipboard.
@@ -38,11 +43,13 @@ enum AppWindows {
         ScreenCapturePrivacy.apply()
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        window.orderFrontRegardless()
         window.makeKeyAndOrderFront(nil)
         // Re-asserted a turn later: the policy change only takes effect on the
         // next pass of the run loop, and without this the window can come up
         // behind the app it was opened from.
         DispatchQueue.main.async {
+            window.orderFrontRegardless()
             window.makeKeyAndOrderFront(nil)
         }
     }
@@ -69,6 +76,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
+        window.isOpaque = false
+        window.backgroundColor = .clear
         super.init(window: window)
 
         // The chrome itself is Glance's (`WindowConfiguringView`, attached by
@@ -81,7 +90,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.identifier = NSUserInterfaceItemIdentifier("NotchSettingsWindow")
         window.collectionBehavior = [.managed, .participatesInCycle, .fullScreenAuxiliary]
-        window.level = .normal
+        window.level = .floating
+        window.ignoresMouseEvents = false
         window.hidesOnDeactivate = false
         window.contentView = SettingsHostingView(rootView: SettingsView())
         window.center()

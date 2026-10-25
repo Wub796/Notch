@@ -128,14 +128,14 @@ struct BatteryWidget: View {
             if telemetry.hasBattery {
                 mac
             }
-            if !accessories.isEmpty {
+            if state.settings.showAccessoryBattery, !accessories.isEmpty {
                 VStack(alignment: .leading, spacing: NotchTheme.Space.xs) {
                     ForEach(accessories) { device in
                         accessoryRow(device)
                     }
                 }
             }
-            if !telemetry.hasBattery && accessories.isEmpty {
+            if !telemetry.hasBattery && (!state.settings.showAccessoryBattery || accessories.isEmpty) {
                 VStack(spacing: NotchTheme.Space.xs) {
                     Image(systemName: "battery.0percent")
                         .font(.system(size: 20, weight: .light))

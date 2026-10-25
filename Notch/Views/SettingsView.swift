@@ -25,10 +25,8 @@ struct SettingsView: View {
             LiquidGlassBackdrop()
             contentPage
         }
-        // No `.clipShape`, manual stroke, or `.shadow` on the outer window —
-        // deliberately: the window keeps its native background (see
-        // `WindowConfigurator`), so AppKit masks it to the real macOS corner
-        // and draws its own edge highlight and shadow for free.
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
         .background(WindowConfigurator())
@@ -48,8 +46,10 @@ struct SettingsView: View {
                         .frame(height: 1)
                         .id("settings-page-top")
 
-                    pageBody
-                        .padding(.horizontal, SettingsMetrics.contentHorizontalPadding)
+                    ZStack(alignment: .topLeading) {
+                        pageBody
+                    }
+                    .padding(.horizontal, SettingsMetrics.contentHorizontalPadding)
                         .padding(.top, SettingsMetrics.headerHeight + 4)
                         .padding(.bottom, SettingsMetrics.pageBottomInset)
                         // Without an explicit top alignment the scroll view centers
@@ -75,6 +75,7 @@ struct SettingsView: View {
                 ZStack(alignment: .top) {
                     if LiquidGlass.isEnabled {
                         ProgressiveHeaderBlur(height: SettingsMetrics.headerBlurHeight)
+                            .opacity(pow(LiquidGlass.depth, 1.2))
                     }
                     header
                 }
@@ -297,68 +298,6 @@ private struct GeneralSettingsPane: View {
 
     var body: some View {
         SettingsPane {
-            SettingsCard(title: "Behavior") {
-                SettingsRow(
-                    systemImage: "cursorarrow.click.2",
-                    tint: .cyan,
-                    title: "Expand on Hover"
-                ) {
-                    Toggle("", isOn: $settings.expandOnHover)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                }
-
-                if settings.expandOnHover {
-                    SettingsSliderRow(
-                        title: "Hover Delay",
-                        value: $settings.openDelay,
-                        range: 0 ... 0.5,
-                        step: 0.01,
-                        format: { String(format: "%.2fs", $0) }
-                    )
-                    SettingsSliderRow(
-                        title: "Close Delay",
-                        value: $settings.closeDelay,
-                        range: 0.2 ... 1.0,
-                        step: 0.01,
-                        format: { String(format: "%.2fs", $0) }
-                    )
-                }
-
-                SettingsSliderRow(
-                    title: "Hover Side Tolerance",
-                    value: $settings.hoverTolerance,
-                    range: 0 ... 24,
-                    step: 1,
-                    format: { String(format: "%.0f pt", $0) }
-                )
-
-                SettingsRow(
-                    systemImage: "hand.draw.fill",
-                    tint: .orange,
-                    title: "Scroll to Open and Close"
-                ) {
-                    Toggle("", isOn: $settings.scrollToExpand)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                }
-
-                SettingsRow(
-                    systemImage: "arrow.up.left.and.arrow.down.right",
-                    tint: .blue,
-                    title: "Auto-Collapse when Mouse Leaves",
-                    showsDivider: false
-                ) {
-                    Toggle("", isOn: $settings.autoCollapseOnMouseExit)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                }
-            }
-            // Flipping the switch above reveals the two timing rows beneath
-            // it; keyed on the toggle, they ease in with the divider that
-            // closes the row above instead of appearing on the click.
-            .animation(NotchAnimations.content, value: settings.expandOnHover)
-
             SettingsCard(title: "Motion") {
                 SettingsRow(
                     systemImage: "wand.and.stars",
@@ -463,6 +402,13 @@ private struct NotchSettingsPane: View {
                     SettingsToggle(isOn: $settings.scrollToExpand)
                 }
                 SettingsRow(
+                    systemImage: "arrow.up.left.and.arrow.down.right",
+                    tint: .blue,
+                    title: "Auto-Collapse when Mouse Leaves"
+                ) {
+                    SettingsToggle(isOn: $settings.autoCollapseOnMouseExit)
+                }
+                SettingsRow(
                     systemImage: "house.fill",
                     tint: .green,
                     title: "Return to Home When Closed",
@@ -493,7 +439,14 @@ private struct NotchSettingsPane: View {
                         value: $settings.closeDelay,
                         range: 0.2 ... 1.0,
                         step: 0.01,
-                        format: { String(format: "%.2f s", $0) },
+                        format: { String(format: "%.2f s", $0) }
+                    )
+                    SettingsSliderRow(
+                        title: "Hover Side Tolerance",
+                        value: $settings.hoverTolerance,
+                        range: 0 ... 24,
+                        step: 1,
+                        format: { String(format: "%.0f pt", $0) },
                         showsDivider: false
                     )
                 }

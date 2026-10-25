@@ -46,38 +46,39 @@ struct NotchLayoutView: View {
     /// Closed, this is the live-activity strip; open, it is the module rail and
     /// status icons. Both wrap the same reserved dead zone for the camera
     /// housing, so the two states line up through the morph.
-    @ViewBuilder
     private var headerStrip: some View {
-        if state.mode == .expanded {
-            ExpandedNotchView(state: state, namespace: namespace)
-                // Both strips fill their width, so without an explicit one
-                // here the VStack has nothing to size itself from and takes
-                // the whole panel window — which is as wide as the display.
-                .frame(width: state.moduleContentSize.width, height: state.topBarHeight)
-                // Swapping the two strips with no transition is a hard cut in
-                // the middle of a slow expansion, which reads as a flash.
-                .transition(NotchAnimations.panelContent)
-                .zIndex(2)
-        } else {
-            CollapsedNotchView(state: state)
-                .frame(width: state.collapsedSize.width, height: state.collapsedSize.height)
-                // Hovering the closed pill widens it slightly, the way both
-                // references pad their wings out on hover. The amount is the
-                // user's "hover grow" preference, clamped in `hoverExpansion`
-                // itself — a `min(…, 5)` here used to cap it below the 6pt
-                // default, so every setting above 1.083x behaved identically
-                // and the slider looked broken.
-                //
-                // Padding on the *outside* of the pill's own frame, so the
-                // added black belongs to the notch shape and the wings keep
-                // their measured width. The hover target is what has to know
-                // this happened: `hoverProbeSize` grows by the same amount,
-                // which is also what stops the growth from dropping the hover
-                // that caused it.
-                .padding(.horizontal, isHovering ? state.hoverExpansion : 0)
-                .transition(NotchAnimations.closedStrip)
-                .zIndex(2)
+        ZStack(alignment: .top) {
+            if state.mode == .expanded {
+                ExpandedNotchView(state: state, namespace: namespace)
+                    // Both strips fill their width, so without an explicit one
+                    // here the VStack has nothing to size itself from and takes
+                    // the whole panel window — which is as wide as the display.
+                    .frame(width: state.moduleContentSize.width, height: state.topBarHeight)
+                    // Swapping the two strips with no transition is a hard cut in
+                    // the middle of a slow expansion, which reads as a flash.
+                    .transition(NotchAnimations.panelContent)
+            } else {
+                CollapsedNotchView(state: state, namespace: namespace)
+                    .frame(width: state.collapsedSize.width, height: state.collapsedSize.height)
+                    // Hovering the closed pill widens it slightly, the way both
+                    // references pad their wings out on hover. The amount is the
+                    // user's "hover grow" preference, clamped in `hoverExpansion`
+                    // itself — a `min(…, 5)` here used to cap it below the 6pt
+                    // default, so every setting above 1.083x behaved identically
+                    // and the slider looked broken.
+                    //
+                    // Padding on the *outside* of the pill's own frame, so the
+                    // added black belongs to the notch shape and the wings keep
+                    // their measured width. The hover target is what has to know
+                    // this happened: `hoverProbeSize` grows by the same amount,
+                    // which is also what stops the growth from dropping the hover
+                    // that caused it.
+                    .padding(.horizontal, isHovering ? state.hoverExpansion : 0)
+                    .transition(NotchAnimations.closedStrip)
+            }
         }
+        .frame(height: state.mode == .expanded ? state.topBarHeight : state.collapsedSize.height, alignment: .top)
+        .zIndex(2)
     }
 
     // MARK: - Module
@@ -152,7 +153,7 @@ struct NotchLayoutView: View {
         case .audio:
             DevicesScreenView(state: state, namespace: namespace)
         case .weather:
-            WeatherDetailView(state: state)
+            WeatherDetailView(state: state, namespace: namespace)
         case .calendar:
             CalendarDetailView(state: state)
         case .shelf:

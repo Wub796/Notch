@@ -28,26 +28,22 @@ enum LiquidGlass {
     /// toggle is a real switch, not a style that is always on.
     static var isEnabled: Bool { NotchSettings.shared.liquidGlassEnabled }
 
-    /// The smoke over the blurred backdrop. Black in dark mode, white in
-    /// light — the same slider smokes the glass in one and frosts it in the
-    /// other, which is what "Dark" means in either appearance.
+    /// The smoke over the blurred backdrop. Spans from pure crystal-clear
+    /// glass at 0% to a balanced, elegant smoked obsidian at 100%.
     static var bodyTint: Color {
         SettingsMetrics.adaptiveColor(
-            dark: NSColor(white: 0, alpha: 0.05 + depth * 0.30),
-            light: NSColor(white: 1, alpha: 0.06 + depth * 0.22)
+            dark: NSColor(white: 0, alpha: pow(depth, 1.25) * 0.45),
+            light: NSColor(white: 1, alpha: pow(depth, 1.25) * 0.40)
         )
     }
 
     /// Cards sit one step above the window's own glass, and lighter rather
-    /// than darker: a card is a pane resting on the window, catching more of
-    /// the room's light than the glass it sits on. Kept translucent on
-    /// purpose — the tint is how much light the pane holds, not a coat of
-    /// paint over its face, so the glass reads through the middle of a card
-    /// and not only along its rim.
+    /// than darker. Spans from a featherlight transparent plane to a distinct,
+    /// refined smoked glass slab.
     static var cardTint: Color {
         SettingsMetrics.adaptiveColor(
-            dark: NSColor(white: 1, alpha: 0.05 + depth * 0.16),
-            light: NSColor(white: 1, alpha: 0.16 + depth * 0.26)
+            dark: NSColor(white: 1, alpha: pow(depth, 1.25) * 0.22),
+            light: NSColor(white: 1, alpha: pow(depth, 1.25) * 0.26)
         )
     }
 
@@ -55,8 +51,8 @@ enum LiquidGlass {
     /// reference prescribes when the user asks macOS for less see-through.
     static var reduceTransparencyFill: Color {
         SettingsMetrics.adaptiveColor(
-            dark: NSColor(white: 0.08, alpha: 0.72),
-            light: NSColor(white: 1, alpha: 0.82)
+            dark: NSColor(white: 0.08, alpha: 0.78),
+            light: NSColor(white: 1, alpha: 0.86)
         )
     }
 
@@ -65,8 +61,77 @@ enum LiquidGlass {
     static var specularGradient: LinearGradient {
         LinearGradient(
             stops: [
-                .init(color: .white.opacity(0.10 + depth * 0.10), location: 0),
-                .init(color: .clear, location: 0.22)
+                .init(color: .white.opacity(0.10 + depth * 0.14), location: 0),
+                .init(color: .white.opacity(0.02 + depth * 0.04), location: 0.06),
+                .init(color: .clear, location: 0.18)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    /// Full-surface chromatic dispersion across the window backdrop.
+    /// Spans from delicate crystal separation to balanced prismatic dispersion.
+    static var backdropChromaticGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(red: 0.40, green: 0.75, blue: 1).opacity(0.03 + depth * 0.06),
+                .clear,
+                Color(red: 1, green: 0.55, blue: 0.85).opacity(0.02 + depth * 0.05)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    /// Full-surface specular wash across the window backdrop.
+    /// At 0% it is clear and unshadowed; at 100% it has subtle top reflections
+    /// and gentle bottom ambient depth.
+    static var backdropSpecularGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.white.opacity(0.03 + depth * 0.12),
+                Color.clear,
+                Color.black.opacity(pow(depth, 1.3) * 0.20)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    /// Caustic pooling along the top edge of the backdrop.
+    static var backdropCausticGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.white.opacity(0.03 + depth * 0.14),
+                Color.white.opacity(depth * 0.03),
+                .clear
+            ],
+            startPoint: .top,
+            endPoint: UnitPoint(x: 0.5, y: 0.25)
+        )
+    }
+
+    /// Ambient chromatic dispersion over the entire card surface.
+    static var elementChromaticGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(red: 0.40, green: 0.75, blue: 1).opacity(0.02 + depth * 0.05),
+                .clear,
+                Color(red: 1, green: 0.55, blue: 0.85).opacity(0.015 + depth * 0.04)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    /// Ambient specular sheen over the face of the element.
+    static var elementSpecularGradient: LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: Color.white.opacity(0.05 + depth * 0.10), location: 0),
+                .init(color: Color.white.opacity(0.01 + depth * 0.03), location: 0.08),
+                .init(color: .clear, location: 0.20)
             ],
             startPoint: .top,
             endPoint: .bottom
@@ -103,7 +168,7 @@ struct LiquidGlassPaneBackground: View {
                         .fill(.clear)
                         .glassEffect(.regular, in: shape)
                 } else {
-                    shape.fill(.ultraThinMaterial)
+                    shape.fill(.ultraThinMaterial.opacity(pow(LiquidGlass.depth, 1.4)))
                 }
 
                 if reduceTransparency {
@@ -114,6 +179,8 @@ struct LiquidGlassPaneBackground: View {
                 // the slider moves the same rim light, face tint and edge
                 // thickness however the pane is backed.
                 shape.fill(LiquidGlass.cardTint)
+                shape.fill(LiquidGlass.elementChromaticGradient)
+                shape.fill(LiquidGlass.elementSpecularGradient)
                 shape.fill(LiquidGlass.specularGradient)
                 LiquidGlassRim(shape: shape)
             }
@@ -152,14 +219,14 @@ struct LiquidGlassRim<S: InsettableShape>: View {
         ZStack {
             // Fresnel. `pow(1 - N·V, 4)` leaves nothing but the last pixel or
             // two of a bevel, so this is a hairline rather than a border.
-            shape.strokeBorder(.white.opacity(0.22 + depth * 0.14), lineWidth: 1)
+            shape.strokeBorder(.white.opacity(0.20 + depth * 0.16), lineWidth: 1)
 
             // The bevel's inner glow: a few pixels wide, and only on the side
             // the light reaches.
             shape
                 .inset(by: 1)
-                .strokeBorder(.white.opacity(0.08 + depth * 0.07), lineWidth: 3)
-                .blur(radius: 1.5)
+                .strokeBorder(.white.opacity(0.05 + depth * 0.10), lineWidth: 2)
+                .blur(radius: 1)
                 .mask {
                     LinearGradient(
                         colors: [.white, .white.opacity(0.12)],
@@ -175,13 +242,13 @@ struct LiquidGlassRim<S: InsettableShape>: View {
             shape
                 .inset(by: 0.5)
                 .strokeBorder(
-                    Color(red: 0.42, green: 0.78, blue: 1).opacity(0.18 + depth * 0.10),
+                    Color(red: 0.40, green: 0.75, blue: 1).opacity(0.12 + depth * 0.14),
                     lineWidth: 1.5
                 )
             shape
                 .inset(by: 1.5)
                 .strokeBorder(
-                    Color(red: 1, green: 0.62, blue: 0.86).opacity(0.13 + depth * 0.08),
+                    Color(red: 1, green: 0.55, blue: 0.85).opacity(0.08 + depth * 0.12),
                     lineWidth: 1.5
                 )
 
@@ -190,7 +257,7 @@ struct LiquidGlassRim<S: InsettableShape>: View {
             // just above it, the shadow the glass's depth casts on itself.
             shape
                 .inset(by: 1)
-                .strokeBorder(.white.opacity(0.10 + depth * 0.08), lineWidth: 1)
+                .strokeBorder(.white.opacity(0.06 + depth * 0.12), lineWidth: 1)
                 .mask {
                     LinearGradient(
                         colors: [.clear, .white],
@@ -200,7 +267,7 @@ struct LiquidGlassRim<S: InsettableShape>: View {
                 }
             shape
                 .inset(by: 2)
-                .strokeBorder(.black.opacity(0.10 + depth * 0.12), lineWidth: 3)
+                .strokeBorder(.black.opacity(pow(depth, 1.25) * 0.20), lineWidth: 2)
                 .blur(radius: 2)
                 .mask {
                     LinearGradient(
@@ -213,7 +280,7 @@ struct LiquidGlassRim<S: InsettableShape>: View {
             // The two specular lobes: a tight one over the top edge, and the
             // broad wash beneath it that `specularGradient` already lays down.
             shape
-                .strokeBorder(.white.opacity(0.28 + depth * 0.14), lineWidth: 2)
+                .strokeBorder(.white.opacity(0.18 + depth * 0.18), lineWidth: 1.5)
                 .blur(radius: 1.5)
                 .mask {
                     RadialGradient(
@@ -231,53 +298,61 @@ struct LiquidGlassRim<S: InsettableShape>: View {
 /// The window's own layer: the glass of the desktop, the smoke over it, and
 /// the light pooling along its top edge.
 struct LiquidGlassBackdrop: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+
         ZStack {
             if LiquidGlass.isEnabled {
                 if #available(macOS 26.0, *) {
                     // The whole window is the system's glass, not just the
                     // cards' faces: `.regular` lenses the desktop behind the
                     // window here the way the panes' glass lenses the window.
-                    Rectangle()
+                    shape
                         .fill(.clear)
-                        .glassEffect(.regular, in: Rectangle())
+                        .glassEffect(.regular, in: shape)
                 } else {
                     // No glass API below 26 — the blurred material is the
                     // closest stand-in for sampling the desktop.
                     VisualEffectView(material: .sidebar)
+                        .opacity(0.50 + pow(LiquidGlass.depth, 1.2) * 0.35)
                 }
+
+                if reduceTransparency {
+                    shape.fill(LiquidGlass.reduceTransparencyFill)
+                }
+
                 LiquidGlass.bodyTint
-
-                // Cool at the top-leading corner, warm shadow at the
-                // bottom-trailing one — what stops a big glass panel from
-                // reading as a flat slab of grey.
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.07),
-                        .clear,
-                        Color.black.opacity(0.05)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-
-                // The window's own lip. Its corner is AppKit's native mask, so
-                // it cannot take a stroke the way a card can; the light pooling
-                // at the top edge is where a full-window pane shows its bevel.
-                LinearGradient(
-                    colors: [
-                        .white.opacity(0.09 + LiquidGlass.depth * 0.06),
-                        .clear
-                    ],
-                    startPoint: .top,
-                    endPoint: UnitPoint(x: 0.5, y: 0.16)
-                )
+                shape.fill(LiquidGlass.backdropChromaticGradient)
+                shape.fill(LiquidGlass.backdropSpecularGradient)
+                shape.fill(LiquidGlass.backdropCausticGradient)
             } else {
                 // Off is a plain, opaque window: no blur of the desktop at all,
                 // so turning the glass off is visible on any wallpaper.
-                SettingsMetrics.solidWindowColor
+                shape.fill(SettingsMetrics.solidWindowColor)
             }
         }
-        .allowsHitTesting(false)
+        .clipShape(shape)
+        .contentShape(shape)
+        .overlay {
+            if LiquidGlass.isEnabled {
+                shape
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.20 + LiquidGlass.depth * 0.16),
+                                Color.white.opacity(0.05 + LiquidGlass.depth * 0.05),
+                                Color.clear,
+                                Color.black.opacity(pow(LiquidGlass.depth, 1.3) * 0.18)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+                    .allowsHitTesting(false)
+            }
+        }
     }
 }

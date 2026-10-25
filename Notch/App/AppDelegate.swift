@@ -19,6 +19,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenChangeWork: DispatchWorkItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let isDuplicate = NSWorkspace.shared.runningApplications.contains { app in
+            guard app.processIdentifier != currentPID else { return false }
+            if let bundleID = Bundle.main.bundleIdentifier, app.bundleIdentifier == bundleID {
+                return true
+            }
+            return app.executableURL == Bundle.main.executableURL
+        }
+        if isDuplicate {
+            NSApp.terminate(nil)
+            return
+        }
+
         Self.shared = self
         NSApp.setActivationPolicy(.accessory)
         _ = UpdateController.shared

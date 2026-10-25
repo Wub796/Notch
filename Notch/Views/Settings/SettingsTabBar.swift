@@ -62,10 +62,14 @@ struct SettingsTabBar: View {
                         .glassEffect(.regular, in: Capsule())
                 } else {
                     Capsule()
-                        .fill(.regularMaterial)
+                        .fill(.ultraThinMaterial.opacity(pow(LiquidGlass.depth, 1.4)))
                 }
                 Capsule()
-                    .fill(SettingsMetrics.tabBarTint)
+                    .fill(LiquidGlass.cardTint)
+                Capsule()
+                    .fill(LiquidGlass.elementChromaticGradient)
+                Capsule()
+                    .fill(LiquidGlass.elementSpecularGradient)
             } else {
                 Capsule()
                     .fill(SettingsMetrics.solidWindowColor)

@@ -651,6 +651,25 @@ final class NotchState {
             self?.eyeBreak.setEnabled(enabled)
         }
 
+        bluetooth.onDeviceConnected = { [weak self] device in
+            guard let self, let percent = device.lowestPercent else { return }
+            self.activities.showAccessoryBattery(
+                name: device.name,
+                symbol: device.symbolName,
+                percent: percent
+            )
+        }
+
+        settings.onDimensionsChanged = { [weak self] in
+            guard let self else { return }
+            self.syncMediaVisibility()
+            self.onModeChange?(self.mode)
+        }
+        settings.onAutoScrollLyricsChanged = { [weak self] enabled in
+            guard let self, enabled else { return }
+            self.media.lyrics.updateCurrentLine(for: self.media.currentElapsed)
+        }
+
         timer.onFinished = { [weak self] in
             self?.activities.clearTransient()
         }
@@ -1244,6 +1263,9 @@ final class NotchState {
             // springs. Two animations on the same transition fight each other.
             self.mode = .expanded
             self.onModeChange?(self.mode)
+            if self.settings.hapticsEnabled {
+                NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .default)
+            }
             self.scheduleModuleWake()
         }
         pendingExpandWork = work
@@ -1265,23 +1287,11 @@ final class NotchState {
         pendingHoverWork = nil
         pendingHoverID = nil
         guard mode == .expanded else { return }
+        if settings.hapticsEnabled {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+        }
         expandedAt = nil
         mode = .collapsed
-        // Back to the dashboard, before the open transition is torn down, so
-        // the next open starts where the user expects. Kept out of any
-        // animation: the module is not on screen any more, and letting the
-        // content spring run against a closing slab is a flash of the outgoing
-        // screen. `lastTab` is deliberately untouched — it is what a relaunch
-        // restores, and the point of this setting is the notch's own habit,
-        // not the app's.
-        if settings.returnsToHomeOnClose, tab != .home {
-            var transaction = Transaction()
-            transaction.animation = nil
-            withTransaction(transaction) {
-                tab = .home
-                mediaShowsFullLyrics = false
-            }
-        }
         toastDismissWork?.cancel()
         toastDismissWork = nil
         toast = nil
@@ -1310,6 +1320,16 @@ final class NotchState {
             self.rearmHoverID = nil
             self.rearmHoverWork = nil
             self.isClosing = false
+            // Reset to dashboard only after closing completes, so the panel
+            // animates down from the active tab's real size without glitching mid-spring.
+            if self.settings.returnsToHomeOnClose, self.tab != .home {
+                var transaction = Transaction()
+                transaction.animation = nil
+                withTransaction(transaction) {
+                    self.tab = .home
+                    self.mediaShowsFullLyrics = false
+                }
+            }
         }
         rearmHoverWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + NotchAnimations.closeSettle, execute: work)
@@ -1328,6 +1348,9 @@ final class NotchState {
             guard let self else { return }
             self.pendingSelectWork = nil
             if self.mode == .expanded { self.onWillShowTab?(newTab) }
+            if self.settings.hapticsEnabled, self.tab != newTab {
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+            }
             withAnimation(NotchAnimations.content) {
                 self.tab = newTab
                 // Leaving the player resets its lyric visibility, so returning
@@ -1359,6 +1382,9 @@ final class NotchState {
     /// (copied to the clipboard, cleared a list) visibly landed, not to shout
     /// over the action itself.
     func showToast(_ message: String, symbol: String) {
+        if settings.hapticsEnabled {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+        }
         toastDismissWork?.cancel()
         withAnimation(NotchAnimations.content) {
             toast = NotchToast(message: message, symbol: symbol)

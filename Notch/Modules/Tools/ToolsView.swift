@@ -162,7 +162,7 @@ struct ToolsView: View {
         VStack(alignment: .leading, spacing: NotchTheme.Space.s) {
             sectionLabel("ACCESSORIES")
 
-            if state.bluetooth.devices.isEmpty {
+            if !state.settings.showAccessoryBattery || state.bluetooth.devices.isEmpty {
                 placeholder("Nothing connected")
             } else {
                 VStack(alignment: .leading, spacing: 6) {

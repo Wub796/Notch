@@ -30,10 +30,7 @@ import SwiftUI
 /// remains for older systems. Its fill drops to half opacity to match the
 /// clearer read of the glass path rather than the old near-opaque frost.
 private struct FaceIDNowPlayingGlassBackground: View {
-    /// Depth of the legibility scrim behind the clear glass. Shallow by
-    /// design: Apple's `.clear` guidance is only that content "remains
-    /// legible", not that the pane should stop being see-through.
-    private let scrimOpacity: Double = 0.2
+    @Bindable private var settings = NotchSettings.shared
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: FaceIDGeometry.nowPlayingPanelCornerRadius, style: .continuous)
@@ -41,28 +38,36 @@ private struct FaceIDNowPlayingGlassBackground: View {
 
     @ViewBuilder
     var body: some View {
-        if #available(macOS 26.0, *) {
-            shape
-                .fill(.clear)
-                .glassEffect(.clear, in: shape)
-                // Behind the glass, per Apple's `.clear` example, so the
-                // material keeps refracting the backdrop while the scrim holds
-                // the ink legible over a bright desktop.
-                .background(shape.fill(.black.opacity(scrimOpacity)))
-        } else {
-            shape
-                .fill(.ultraThinMaterial.opacity(0.5))
-                .overlay {
-                    shape.fill(
-                        LinearGradient(
-                            colors: [.white.opacity(0.1), .white.opacity(0.02), .white.opacity(0.05)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .blendMode(.screen)
+        let depth = LiquidGlass.depth
+
+        if settings.liquidGlassEnabled {
+            ZStack {
+                if #available(macOS 26.0, *) {
+                    shape
+                        .fill(.clear)
+                        .glassEffect(.clear, in: shape)
+                        .background(shape.fill(.black.opacity(pow(depth, 1.25) * 0.32)))
+                } else {
+                    VisualEffectView(material: .sidebar)
+                        .opacity(0.40 + pow(depth, 1.2) * 0.45)
                 }
-                .overlay { shape.strokeBorder(.white.opacity(0.16), lineWidth: 0.7) }
+
+                LiquidGlass.bodyTint
+                shape.fill(LiquidGlass.backdropChromaticGradient)
+                shape.fill(LiquidGlass.backdropSpecularGradient)
+                shape.fill(LiquidGlass.backdropCausticGradient)
+                shape.fill(LiquidGlass.specularGradient)
+                LiquidGlassRim(shape: shape)
+            }
+            .clipShape(shape)
+        } else {
+            ZStack {
+                shape.fill(SettingsMetrics.solidCardColor)
+                shape.strokeBorder(
+                    SettingsMetrics.rowBorder,
+                    lineWidth: SettingsMetrics.rowBorderWidth
+                )
+            }
         }
     }
 }
@@ -165,25 +170,16 @@ struct FaceIDNowPlayingPlayer: View {
         .background {
             FaceIDNowPlayingGlassBackground()
         }
-        .overlay {
-            // A whisper of a rim so the pane reads as an edge against the
-            // desktop photo. The material, not this stroke, does the work, so
-            // the stroke is kept barely-there — a heavier highlight would
-            // re-solidify the pane we just made see-through.
-            RoundedRectangle(cornerRadius: FaceIDGeometry.nowPlayingPanelCornerRadius, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [.white.opacity(0.22), .white.opacity(0.10), .white.opacity(0.06)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.6
-                )
-        }
         .clipShape(RoundedRectangle(cornerRadius: FaceIDGeometry.nowPlayingPanelCornerRadius, style: .continuous))
-        // A softer, tighter shadow. The old drop was heavy enough to lift the
-        // pane off the photo as a slab; glass sits *in* the scene.
-        .shadow(color: .black.opacity(0.22), radius: 24, y: 12)
+        .shadow(
+            color: .black.opacity(
+                LiquidGlass.isEnabled
+                    ? (0.08 + LiquidGlass.depth * 0.28)
+                    : 0.22
+            ),
+            radius: 24,
+            y: 12
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Now playing: \(title) by \(subtitle)")
     }

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The seekable playback bar shared by every surface that shows a player.
@@ -108,6 +109,9 @@ struct ScrubberBar: View {
                         }
                         .onEnded { _ in
                             if let fraction = dragFraction {
+                                if NotchSettings.shared.hapticsEnabled {
+                                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                                }
                                 onSeek(fraction * duration)
                             }
                             dragFraction = nil
@@ -128,7 +132,12 @@ struct ScrubberBar: View {
                 .foregroundStyle(NotchTheme.inkPrimary)
                 .fixedSize()
                 .contentShape(Rectangle())
-                .onTapGesture { showRemaining.toggle() }
+                .onTapGesture {
+                    if NotchSettings.shared.hapticsEnabled {
+                        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                    }
+                    showRemaining.toggle()
+                }
                 .accessibilityLabel(showRemaining ? "Time remaining" : "Track duration")
                 .accessibilityHint("Click to toggle between remaining and total time")
         }

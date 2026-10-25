@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The volume / brightness bar, ported from boring.notch's
@@ -85,7 +86,13 @@ struct DraggableProgressBar: View {
 
     private func update(to x: CGFloat, in geometry: GeometryProxy) {
         guard geometry.size.width > 0 else { return }
-        value = max(0, min(x / geometry.size.width, 1))
+        let raw = max(0, min(x / geometry.size.width, 1))
+        if NotchSettings.shared.hapticsEnabled {
+            if (raw == 0 && value > 0) || (raw == 1 && value < 1) {
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+            }
+        }
+        value = raw
         onChange?(value)
     }
 }

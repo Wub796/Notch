@@ -152,7 +152,26 @@ struct NotchContainerView: View {
             height: state.mode == .expanded ? state.expandedTotalHeight : state.collapsedSize.height,
             alignment: .top
         )
-        .background(.black)
+        .background {
+            ZStack {
+                Color.black
+                if state.mode == .expanded, state.media.isPlaying, state.media.cover.accent != .white {
+                    RadialGradient(
+                        colors: [
+                            state.media.cover.accent.opacity(0.18),
+                            state.media.cover.accent.opacity(0.04),
+                            .clear
+                        ],
+                        center: .topLeading,
+                        startRadius: 10,
+                        endRadius: max(state.expandedSize.width, state.expandedTotalHeight) * 0.85
+                    )
+                    .blur(radius: 16)
+                    .transition(.opacity)
+                }
+            }
+            .animation(NotchAnimations.content, value: state.media.cover.accent)
+        }
             // Keep the top edge bonded to the screen while the shape still
             // rounds into it. The clip is applied after the background, so
             // the rounded intersections remain visible instead of becoming
@@ -177,13 +196,12 @@ struct NotchContainerView: View {
                     : (state.isClosing ? notchAnimation : NotchAnimations.hover),
                 value: state.isHovering
             )
-            // Collapsed content can keep changing while the open slab is
-            // animating (audio discovery and transient activity updates are
-            // asynchronous). Do not let those unrelated changes restart the
-            // open/close geometry spring; CollapsedNotchView animates its own
-            // activity swaps, and only an actual closed-size change needs this
-            // spring. Timer ticks and volume payloads must update in place.
-            .animation(state.mode == .expanded ? nil : notchAnimation, value: state.collapsedSize)
+            // Closed activities morph with the responsive activity spring;
+            // open tabs, lyrics reveals and dimension sliders morph smoothly with the open spring.
+            .animation(
+                state.mode == .expanded ? notchAnimation : NotchAnimations.activity,
+                value: state.mode == .expanded ? state.expandedSize : state.collapsedSize
+            )
             // The HUD's drop band appears and disappears at a media-key's
             // transient pace, which is faster than the open/close spring — so
             // the slab's grow-and-shrink (and the bar popping in) settle with

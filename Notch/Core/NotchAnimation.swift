@@ -49,9 +49,9 @@ enum NotchAnimations {
     static var open: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.38, dampingFraction: 0.88, blendDuration: 0)
-        case .bouncy: return .spring(response: 0.44, dampingFraction: 0.76, blendDuration: 0)
-        case .calm: return .spring(response: 0.48, dampingFraction: 0.98, blendDuration: 0)
+        case .snappy: return .spring(response: 0.32, dampingFraction: 0.88, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.40, dampingFraction: 0.70, blendDuration: 0)
+        case .calm: return .spring(response: 0.52, dampingFraction: 1.0, blendDuration: 0)
         }
     }
 
@@ -59,9 +59,9 @@ enum NotchAnimations {
     static var close: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.32, dampingFraction: 0.96, blendDuration: 0)
-        case .bouncy: return .spring(response: 0.36, dampingFraction: 0.85, blendDuration: 0)
-        case .calm: return .spring(response: 0.40, dampingFraction: 1.0, blendDuration: 0)
+        case .snappy: return .spring(response: 0.26, dampingFraction: 0.94, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.32, dampingFraction: 0.78, blendDuration: 0)
+        case .calm: return .spring(response: 0.42, dampingFraction: 1.0, blendDuration: 0)
         }
     }
 
@@ -77,8 +77,8 @@ enum NotchAnimations {
     static var openSettle: TimeInterval {
         guard !prefersReducedMotion else { return 0.2 }
         switch profile {
-        case .snappy: return 0.6
-        case .bouncy: return 0.7
+        case .snappy: return 0.45
+        case .bouncy: return 0.65
         case .calm: return 0.75
         }
     }
@@ -94,9 +94,9 @@ enum NotchAnimations {
     static var closeSettle: TimeInterval {
         guard !prefersReducedMotion else { return 0.2 }
         switch profile {
-        case .snappy: return 0.55
-        case .bouncy: return 0.6
-        case .calm: return 0.65
+        case .snappy: return 0.38
+        case .bouncy: return 0.52
+        case .calm: return 0.62
         }
     }
 
@@ -104,9 +104,9 @@ enum NotchAnimations {
     static var content: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.24, dampingFraction: 0.92, blendDuration: 0)
-        case .bouncy: return .spring(response: 0.30, dampingFraction: 0.78, blendDuration: 0)
-        case .calm: return .spring(response: 0.34, dampingFraction: 0.98, blendDuration: 0)
+        case .snappy: return .spring(response: 0.20, dampingFraction: 0.92, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.28, dampingFraction: 0.74, blendDuration: 0)
+        case .calm: return .spring(response: 0.36, dampingFraction: 1.0, blendDuration: 0)
         }
     }
 
@@ -131,9 +131,9 @@ enum NotchAnimations {
     static var activity: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .spring(response: 0.28, dampingFraction: 0.90, blendDuration: 0)
-        case .bouncy: return .spring(response: 0.36, dampingFraction: 0.80, blendDuration: 0)
-        case .calm: return .spring(response: 0.40, dampingFraction: 0.98, blendDuration: 0)
+        case .snappy: return .spring(response: 0.24, dampingFraction: 0.90, blendDuration: 0)
+        case .bouncy: return .spring(response: 0.32, dampingFraction: 0.76, blendDuration: 0)
+        case .calm: return .spring(response: 0.40, dampingFraction: 1.0, blendDuration: 0)
         }
     }
 
@@ -173,9 +173,9 @@ enum NotchAnimations {
     static var hudBar: Animation {
         guard !prefersReducedMotion else { return reduced }
         switch profile {
-        case .snappy: return .smooth(duration: 0.26)
-        case .bouncy: return .smooth(duration: 0.30)
-        case .calm: return .smooth(duration: 0.36)
+        case .snappy: return .smooth(duration: 0.22)
+        case .bouncy: return .smooth(duration: 0.28)
+        case .calm: return .smooth(duration: 0.34)
         }
     }
 
@@ -233,13 +233,9 @@ extension NotchAnimations {
     /// The open panel's content — its header and module — arriving and
     /// leaving with the slab.
     ///
-    /// Timed against the slab's spring rather than riding it. Riding it, the
-    /// content sat at full size from the first frame and the growing slab
-    /// uncovered it like a curtain; on the way down the shrinking slab cropped
-    /// straight through a panel that was still fully opaque. Now it arrives a
-    /// beat after the slab starts to open, resolving out of a slight blur and
-    /// scale as the panel unfolds, and on close it clears out before the slab
-    /// has closed over it.
+    /// Morphing seamlessly with the slab's spring per Apple's fluid transitions
+    /// guidance: continuous scaling from the notch origin, resolving out of a
+    /// gentle blur, and symmetrically closing back into the notch without harsh cuts.
     static var panelContent: AnyTransition {
         if prefersReducedMotion {
             return .opacity.animation(reduced)
@@ -249,8 +245,8 @@ extension NotchAnimations {
             identity: PanelContentEffect(isPresented: true)
         )
         return .asymmetric(
-            insertion: effect.animation(open.delay(0.05)),
-            removal: effect.animation(.easeOut(duration: 0.12))
+            insertion: effect.animation(open),
+            removal: effect.animation(close)
         )
     }
 
@@ -280,22 +276,22 @@ extension NotchAnimations {
         }
         return .asymmetric(
             insertion: .opacity.animation(content.delay(0.09)),
-            removal: .opacity.animation(.easeOut(duration: 0.09))
+            removal: .opacity.animation(content)
         )
     }
 
     /// The closed strip — the wings and anything dropped beneath the notch —
-    /// trading places with the open panel. It gets out of the way almost at
-    /// once when the notch opens, and on close waits until the slab has mostly
-    /// shrunk back before it returns, so the two never cross-fade over each
-    /// other.
+    /// trading places with the open panel.
+    ///
+    /// When expanding, the side wings simply fade out cleanly in place over a
+    /// short interval rather than moving with the expanding slab's outer edge.
     static var closedStrip: AnyTransition {
         if prefersReducedMotion {
             return .opacity.animation(reduced)
         }
         return .asymmetric(
-            insertion: .opacity.animation(activity.delay(0.16)),
-            removal: .opacity.animation(content)
+            insertion: .opacity.animation(close),
+            removal: .opacity.animation(.easeOut(duration: 0.14))
         )
     }
 }
@@ -308,8 +304,9 @@ private struct PanelContentEffect: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(isPresented ? 1 : 0.96, anchor: .top)
-            .blur(radius: isPresented ? 0 : 6)
+            .scaleEffect(isPresented ? 1 : 0.88, anchor: .top)
+            .offset(y: isPresented ? 0 : -8)
+            .blur(radius: isPresented ? 0 : 3)
             .opacity(isPresented ? 1 : 0)
     }
 }

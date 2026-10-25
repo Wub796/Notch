@@ -946,12 +946,10 @@ final class WindowConfiguringView: NSView {
 
         window.isMovableByWindowBackground = true
         window.hasShadow = true
-
-        // Deliberately NOT `isOpaque = false` / `backgroundColor = .clear` —
-        // that pairing stops AppKit from masking to the window's own native
-        // rounded frame. Left at defaults, the system mask applies and the
-        // corner is the real thing. Translucency still works since the
-        // `NSVisualEffectView` behind the content blends on its own.
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.level = .floating
+        window.ignoresMouseEvents = false
 
         // The Settings window carries the same capture setting as the notch.
         ScreenCapturePrivacy.apply()

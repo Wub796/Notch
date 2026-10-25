@@ -399,7 +399,6 @@ struct HomeDashboardView: View {
         }
         .frame(width: side, height: side)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .matchedGeometryEffect(id: "albumArt", in: namespace)
         .shadow(color: state.media.cover.accent.opacity(0.38), radius: 12, y: 4)
         .animation(NotchAnimations.content, value: state.media.cover.version)
         .overlay(alignment: .bottomTrailing) {
