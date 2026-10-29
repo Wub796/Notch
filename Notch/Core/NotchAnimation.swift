@@ -111,19 +111,21 @@ enum NotchAnimations {
     }
 
     /// Settings panes are information-dense, so they should replace cleanly
-    /// rather than overlap as a crossfade. A short fade-out followed by a
-    /// subtle, distance-based settle makes rapid tab changes feel responsive
-    /// without sending controls sliding across the window.
+    /// rather than overlap as a crossfade. The outgoing page clears briskly,
+    /// then the incoming one settles in over a beat longer — enough travel and
+    /// time for the eye to read the swap as a page arriving, rather than the
+    /// content cutting under the cursor. Rapid tab changes still retarget the
+    /// same transition instead of queueing keyframes.
     static var settingsPageSwap: AnyTransition {
         if prefersReducedMotion {
             return .opacity.animation(reduced)
         }
         return .asymmetric(
             insertion: .opacity
-                .combined(with: .offset(y: 4))
-                .animation(.smooth(duration: 0.24).delay(0.04)),
+                .combined(with: .offset(y: 8))
+                .animation(.smooth(duration: 0.36).delay(0.05)),
             removal: .opacity
-                .animation(.easeOut(duration: 0.12))
+                .animation(.easeOut(duration: 0.16))
         )
     }
 

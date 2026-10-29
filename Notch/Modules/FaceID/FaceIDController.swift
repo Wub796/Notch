@@ -318,6 +318,15 @@ final class FaceIDController {
         }
         guard !hasArmedForCurrentLock else { return }
         guard let signal = requiredTrigger(for: lockMonitor.latestTriggerEvent) else { return }
+        // A trigger the user switched off is not a reason to show Face ID at
+        // all. Arming without scanning still put the silhouette on the lock
+        // screen, which is indistinguishable from the setting being ignored.
+        guard settings.unlockTriggers.contains(signal) else {
+            #if DEBUG
+            print("[FaceID] trigger: \(signal.title) is switched off — no panel")
+            #endif
+            return
+        }
         // A pinned display that isn't connected bails entirely rather than showing
         // up somewhere else — but it says so rather than failing silently, because
         // from the outside an unlit lock screen is indistinguishable from a broken
@@ -345,12 +354,8 @@ final class FaceIDController {
             return
         }
 
-        // A deselected trigger means "don't scan for this signal automatically",
-        // not "do nothing": the user can still hover the notch to start one.
-        let shouldAutoScan = settings.unlockTriggers.contains(signal)
         #if DEBUG
-        print("[FaceID] trigger: \(signal.title) accepted — autoScan=\(shouldAutoScan) "
-            + "showUI=\(showsUI)")
+        print("[FaceID] trigger: \(signal.title) accepted — showUI=\(showsUI)")
         #endif
 
         hasArmedForCurrentLock = true
@@ -359,7 +364,7 @@ final class FaceIDController {
             // `arm()` only shows a small closed silhouette, so this is just a brief
             // buffer past the login window's own entrance.
             try? await Task.sleep(nanoseconds: 250_000_000)
-            await self?.arm(autoScan: shouldAutoScan)
+            await self?.arm()
         }
     }
 
@@ -439,13 +444,14 @@ final class FaceIDController {
             // path a hover retry takes.
             startScanCycle(mode: .unlock)
         } else {
-            Task { [weak self] in await self?.arm(autoScan: true) }
+            Task { [weak self] in await self?.arm() }
         }
     }
 
-    /// Either way the panel still arms: a deselected trigger only skips the
-    /// automatic scan, leaving hover-to-start available.
-    private func arm(autoScan: Bool) async {
+    /// Shows the closed silhouette and starts scanning. Only reached for a
+    /// trigger the user selected — see `evaluateTrigger` and
+    /// `handleSpaceKeyPress`.
+    private func arm() async {
         guard LockMonitor.isScreenActuallyLocked() else {
             #if DEBUG
             print("[FaceID] trigger: arm cancelled — session is no longer locked")
@@ -453,21 +459,17 @@ final class FaceIDController {
             return
         }
         #if DEBUG
-        print("[FaceID] trigger: arming overlay — autoScan=\(autoScan)")
+        print("[FaceID] trigger: arming overlay")
         #endif
         guard showsUI else {
-            // Headless: `evaluateTrigger()` already established that autoScan is
-            // true here, so this is simply "start scanning".
-            guard autoScan else { return }
+            // Headless: no panel, just scan.
             startScanCycle(mode: .unlock)
             return
         }
         FaceIDOverlayController.shared.arm { [weak self] in
             self?.startScanCycle(mode: .unlock)
         }
-        if autoScan {
-            startScanCycle(mode: .unlock)
-        }
+        startScanCycle(mode: .unlock)
     }
 
     // MARK: - Manual (test) scan

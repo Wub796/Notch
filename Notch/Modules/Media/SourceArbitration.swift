@@ -97,6 +97,19 @@ enum SourceArbitration {
         return !showingIsPlaying
     }
 
+    /// Whether a new title is worth the closed notch's sneak peek.
+    ///
+    /// The announcement is for a *track*: a player moving from one song to the
+    /// next. A browser page is not a track — its title changes as the page, the
+    /// ad or the next autoplay loads, and every one of those announced itself
+    /// in the closed pill as if the user had started a song.
+    static func shouldAnnounceTrackChange(
+        previousTitle: String?, newTitle: String, isBrowserItem: Bool
+    ) -> Bool {
+        guard !isBrowserItem, let previousTitle, !previousTitle.isEmpty else { return false }
+        return !newTitle.isEmpty && newTitle != previousTitle
+    }
+
     /// A now-playing title with the platform suffixes stripped, so readings of
     /// the same item from two sources compare equal ("Song - YouTube" and
     /// "Song" are the same video).

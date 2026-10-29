@@ -349,6 +349,14 @@ final class MediaController {
             return
         }
 
+        // This player's item is what is on screen now, so the browser flags go
+        // with the video it replaced. Left set, they stopped the cover store
+        // from reading this player's artwork and let the transport ladder aim
+        // at the browser instead of the app being displayed.
+        isShowingBrowserSnapshot = false
+        isBrowserVideo = false
+        sourceMediaURL = nil
+
         if sourceAppBundleID != push.bundleID {
             let app = NSRunningApplication
                 .runningApplications(withBundleIdentifier: push.bundleID).first
@@ -959,26 +967,28 @@ final class MediaController {
     /// controls (play/pause, next, previous, seek) share one priority ladder
     /// instead of four copies that can drift:
     ///
-    /// Every AppleScript rung is additionally gated on Apple Events consent for
-    /// the app it would drive, because "the player is running" is not the same
-    /// question as "the player will obey". Without consent an AppleScript
-    /// command raises no prompt and changes nothing — it returns
-    /// `errAEEventNotPermitted` — and the media-key fallback behind it needs a
-    /// *different* grant (Accessibility). So the ladder used to spend every
-    /// command on a rung that could not work and then on a fallback that could
-    /// not either, while the player sat there running: the play/pause button
-    /// flipped its icon and nothing else happened. Ungranted players now fall
-    /// through to the MediaRemote rung, which needs no permission at all.
+    /// Every AppleScript rung except the first is gated on Apple Events consent
+    /// for the app it would drive, because "the player is running" is not the
+    /// same question as "the player will obey". Without consent an AppleScript
+    /// command changes nothing — it returns `errAEEventNotPermitted` — and the
+    /// media-key fallback behind it needs a *different* grant (Accessibility).
+    /// So the ladder used to spend every command on a rung that could not work
+    /// and then on a fallback that could not either, while the player sat there
+    /// running: the play/pause button flipped its icon and nothing else
+    /// happened. Every player except the one on screen now falls through to the
+    /// MediaRemote rung, which needs no permission at all; the one on screen is
+    /// rung 1, which would rather do nothing than act on another app.
     ///
-    /// 1. The music player that owns the session on screen, when we may script
-    ///    it (by the now-playing app, then the selected provider, then
-    ///    whichever player is running) — never a player that merely happens to
-    ///    be open while something else is playing.
-    /// 2. Browser media (YouTube, web videos) — only when no music player
-    ///    is active.
-    /// 3. The selected provider's own AppleScript app, when it has one.
-    /// 4. Automatic detection from the now-playing app's bundle id.
-    /// 5. Any running Spotify, then any running Music, as a last resort.
+    /// 1. The app the item on screen belongs to, when that is a music player.
+    ///    This is the one rung that does not wait for Automation consent, so a
+    ///    grant given later starts working without a restart, and a missing one
+    ///    can never steer the press at another app.
+    /// 2. The selected provider, when nothing is on screen yet — pressing play
+    ///    starts it.
+    /// 3. Browser media (YouTube, web videos) — the item on screen came from a
+    ///    browser we may script.
+    /// 4. The selected provider's own AppleScript app, when it has one.
+    /// 5. Automatic detection from the now-playing app's bundle id: a browser.
     /// 6. The system fallback (adapter, MediaRemote, media keys).
     private enum TransportTarget {
         case provider(appName: String, command: String)
@@ -987,12 +997,9 @@ final class MediaController {
     }
 
     /// Whether the item on screen belongs to a dedicated music player — the
-    /// two apps the notch can drive directly. This is the question every
-    /// transport rung and the provider filter actually mean by "the player
-    /// owns the session"; the answer is read off the source app, so media from
-    /// anywhere else (a browser video, a Chrome-app window, a video player)
-    /// is never mistaken for the player's own and never has a command aimed at
-    /// a player that is merely running alongside it.
+    /// two apps the notch can drive directly, read off the source app, so media
+    /// from anywhere else (a browser video, a Chrome-app window, a video
+    /// player) is never mistaken for the player's own.
     ///
     /// With no resolved source app, it answers true while nothing is on
     /// screen: that is the state in which the selected provider is the sensible
@@ -1022,37 +1029,35 @@ final class MediaController {
         let spotifyScriptable = spotifyRunning && IntegrationPermissions.canScript(MusicProvider.spotify.bundleID)
         let musicScriptable = musicRunning && IntegrationPermissions.canScript(MusicProvider.appleMusic.bundleID)
 
-        // 1. If the session on screen belongs to a music player and we are
-        //    allowed to drive it, prioritize controlling that player.
-        //
-        //    `musicPlayerOwnsSource` is what keeps this from firing for media
-        //    that is not the player's. It used to be `!isBrowserVideo` alone,
-        //    which only guarded scriptable browsers — so a YouTube window
-        //    (including the Chrome-app "YouTube" that macOS reports as its own
-        //    now-playing client) was handed to whatever player was running and
-        //    scriptable, and the notch's play/pause paused Spotify while the
-        //    video kept playing.
-        if musicPlayerOwnsSource, (spotifyScriptable || musicScriptable) {
-            if let bundle = sourceAppBundleID {
-                if bundle == MusicProvider.spotify.bundleID, spotifyScriptable {
-                    return .provider(appName: "Spotify", command: providerCommand)
-                } else if bundle == MusicProvider.appleMusic.bundleID, musicScriptable {
-                    return .provider(appName: "Music", command: providerCommand)
-                }
-            }
+        // 1. The app whose item is on screen. Whether that player is paused,
+        //    or its Automation consent is not on file yet, does not change
+        //    whose song this is: the Apple Event is the only channel that can
+        //    reach it. Falling through to the browser or the system session is
+        //    what let the notch pause a YouTube video while it displayed a
+        //    song.
+        if let bundle = sourceAppBundleID, Self.isPlayerBundle(bundle) {
+            let appName = bundle == MusicProvider.spotify.bundleID ? "Spotify" : "Music"
+            return .provider(appName: appName, command: providerCommand)
+        }
+
+        // 2. Nothing is on screen yet: the selected provider — or any player
+        //    we may drive — is what pressing play should start.
+        if sourceAppBundleID == nil, !hasTrack {
             if selectedProvider == .spotify && spotifyScriptable {
                 return .provider(appName: "Spotify", command: providerCommand)
-            } else if selectedProvider == .appleMusic && musicScriptable {
+            }
+            if selectedProvider == .appleMusic && musicScriptable {
                 return .provider(appName: "Music", command: providerCommand)
             }
             if spotifyScriptable {
                 return .provider(appName: "Spotify", command: providerCommand)
-            } else if musicScriptable {
+            }
+            if musicScriptable {
                 return .provider(appName: "Music", command: providerCommand)
             }
         }
 
-        // 2. Browser media (YouTube, web videos) — only when no music player is
+        // 3. Browser media (YouTube, web videos) — only when no music player is
         //    active, and only for a browser we are allowed to script: playing a
         //    page means Apple Events to the browser, so this rung has exactly
         //    the same problem as the players. Ungranted, it falls through to
@@ -1067,7 +1072,7 @@ final class MediaController {
             return .browser
         }
 
-        // 3. Specific Selected Provider.
+        // 4. Specific Selected Provider.
         //    Media that belongs to something else is never re-routed to a music
         //    player here: the selected provider is a fallback for *its own*
         //    media — starting it when nothing is playing — not a way to hand a
@@ -1080,29 +1085,19 @@ final class MediaController {
             return .provider(appName: provider, command: providerCommand)
         }
 
-        // 4. Automatic provider detection
-        if let bundle = sourceAppBundleID {
-            if bundle == MusicProvider.spotify.bundleID, IntegrationPermissions.canScript(bundle) {
-                return .provider(appName: "Spotify", command: providerCommand)
-            } else if bundle == MusicProvider.appleMusic.bundleID, IntegrationPermissions.canScript(bundle) {
-                return .provider(appName: "Music", command: providerCommand)
-            } else if BrowserMediaProbe.targets.contains(where: { $0.bundleID == bundle }),
-                      IntegrationPermissions.canScript(bundle) {
-                return .browser
-            }
+        // 5. Automatic provider detection: a browser named as the source. A
+        //    player can never be here — rung 1 already owns that case — so the
+        //    command goes to the item's own browser when we may script it.
+        if let bundle = sourceAppBundleID,
+           BrowserMediaProbe.targets.contains(where: { $0.bundleID == bundle }),
+           IntegrationPermissions.canScript(bundle) {
+            return .browser
         }
 
-        // 5. Last resort: any running player we may script — again never for
-        //    media that belongs to something else, so a web video (or a
-        //    Chrome-app window) with no scriptable browser lands on the
-        //    MediaRemote rung and its own now-playing session.
-        if musicPlayerOwnsSource, spotifyScriptable {
-            return .provider(appName: "Spotify", command: providerCommand)
-        }
-        if musicPlayerOwnsSource, musicScriptable {
-            return .provider(appName: "Music", command: providerCommand)
-        }
-
+        // 6. The system rung. Anything that belongs to another app (a web
+        //    video with no scriptable browser, a Chrome-app window) lands on
+        //    its own now-playing session here, never on a player we merely
+        //    happen to be allowed to drive.
         return .system
     }
 
@@ -2511,8 +2506,15 @@ final class MediaController {
         track = newTrack.title.isEmpty ? nil : newTrack
         cover.trackDidChange()
 
-        // Announce track-to-track changes, not the initial pickup at launch.
-        if let current = track, previous != nil, current.title != previous?.title {
+        // Announce track-to-track changes, not the initial pickup at launch —
+        // and never a browser page, whose title moves with every video, ad and
+        // autoplay. See `SourceArbitration.shouldAnnounceTrackChange`.
+        if let current = track,
+           SourceArbitration.shouldAnnounceTrackChange(
+               previousTitle: previous?.title,
+               newTitle: current.title,
+               isBrowserItem: isBrowserVideo
+           ) {
             onTrackChange?(current)
         }
         if let track {

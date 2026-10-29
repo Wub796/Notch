@@ -635,6 +635,13 @@ final class NotchSettings {
     }
     var onPinnedAudioAppsChanged: (([String]) -> Void)?
 
+    /// Bundle IDs the user chose to hide from the Audio screen, the closed
+    /// notch and the Home dashboard. A hidden app is dropped from the live
+    /// list; it can still make sound, it just isn't shown.
+    var hiddenAudioApps: [String] = [] {
+        didSet { save(hiddenAudioApps, "hiddenAudioApps") }
+    }
+
     // MARK: - Notch dimensions (manual overrides)
 
     /// Trims or extends the detected notch width, in points. Useful when the
@@ -923,6 +930,7 @@ final class NotchSettings {
             autoSwitchOutputOnConnect = defaults.bool(forKey: "autoSwitchOutputOnConnect")
         }
         pinnedAudioApps = defaults.stringArray(forKey: "pinnedAudioApps") ?? []
+        hiddenAudioApps = defaults.stringArray(forKey: "hiddenAudioApps") ?? []
         if let stored = defaults.stringArray(forKey: "dashboardWidgets") {
             dashboardWidgets = DashboardWidget.sanitized(
                 stored.compactMap(DashboardWidget.init(rawValue:))

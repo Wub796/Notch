@@ -83,6 +83,13 @@ final class SystemAudioMeter {
     private var lastSelfHeal = Date.distantPast
     private static let selfHealInterval: TimeInterval = 2
 
+    /// A retry armed when the tap could not be built. A grant given in System
+    /// Settings arrives after the request that needed it has already failed,
+    /// and a failed start leaves no timer behind — so without this the bars
+    /// stayed flat while the same audio played on, until a pause/play.
+    private var retryWork: DispatchWorkItem?
+    private static let retryInterval: TimeInterval = 5
+
     /// Bumped by every start and stop. A start whose completion arrives after a
     /// stop — or after a newer start — throws its own tap away rather than
     /// leaving one running with nothing driving it.
@@ -91,13 +98,17 @@ final class SystemAudioMeter {
     /// Starts measuring, if it can. Cheap to call while already running, and
     /// safe to call again after the user grants audio access in System
     /// Settings: a refusal leaves no timer behind, so the next call is a real
-    /// retry — nothing here caches a refusal and no relaunch is needed.
+    /// retry — nothing here caches a refusal and no relaunch is needed. The
+    /// meter arms that retry itself while it is still wanted, so the grant is
+    /// picked up without waiting for the next playback change.
     ///
     /// Returns immediately. `isLive` and `failureReason` are published on the
     /// main thread once the tap has actually been built (or refused), which is
     /// why the visualiser stays still until it can show real band magnitudes.
     func start() {
         guard timer == nil, !isStarting else { return }
+        retryWork?.cancel()
+        retryWork = nil
         isStarting = true
         generation &+= 1
         let token = generation
@@ -138,6 +149,7 @@ final class SystemAudioMeter {
                     // and one left running would make `start()`'s `timer == nil`
                     // guard refuse the retry that a granted audio permission or
                     // a newly attached output device needs.
+                    self.scheduleRetry()
                 }
             }
         }
@@ -180,7 +192,25 @@ final class SystemAudioMeter {
         start()
     }
 
+    /// Asks again after a refused tap, so a permission granted in System
+    /// Settings is picked up while the audio that wanted the meter is still
+    /// playing. `stop()` cancels it: a meter nobody is waiting for is not
+    /// retried in the background.
+    private func scheduleRetry() {
+        guard Self.isSupported else { return }
+        retryWork?.cancel()
+        let token = generation
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.generation == token, self.timer == nil else { return }
+            self.start()
+        }
+        retryWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.retryInterval, execute: work)
+    }
+
     func stop() {
+        retryWork?.cancel()
+        retryWork = nil
         generation &+= 1
         isStarting = false
         timer?.invalidate()

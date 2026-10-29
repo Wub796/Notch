@@ -36,7 +36,9 @@ From `SourceArbitration`: the priority ladder every media surface follows — a
 show the YouTube item"), then the track a paused player still holds, then
 nothing; and that only the app owning the item on screen may move its play
 state, while a push saying it is *playing* is let through from any player,
-because that one is a source change in progress.
+because that one is a source change in progress. It also decides what the
+closed notch's sneak peek announces: a player moving to a different song, and
+never a browser item, whose title changes with every video, ad and autoplay.
 
 The last group covers `MediaKeyTapPolicy`, the recovery rules for the event tap
 that replaces the system volume and brightness HUD. A real tap cannot be built,

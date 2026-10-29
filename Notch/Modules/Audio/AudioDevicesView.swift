@@ -432,6 +432,12 @@ struct AudioDevicesView: View {
                         app.activate()
                     }
                     RoundIconButton(
+                        systemImage: "eye.slash",
+                        help: "Hide \(app.name) from the notch"
+                    ) {
+                        hideApp(app.id)
+                    }
+                    RoundIconButton(
                         systemImage: isPinned(app.id) ? "pin.fill" : "pin",
                         help: isPinned(app.id) ? "Unpin \(app.name)" : "Pin \(app.name)",
                         tint: isPinned(app.id) ? .blue : nil
@@ -597,6 +603,14 @@ struct AudioDevicesView: View {
             pinned.append(id)
         }
         audioSettings.pinnedAudioApps = pinned
+    }
+
+    private func hideApp(_ id: String) {
+        var hidden = audioSettings.hiddenAudioApps
+        if !hidden.contains(id) { hidden.append(id) }
+        audioSettings.hiddenAudioApps = hidden
+        // Drop it from the live list now rather than on the next CoreAudio pass.
+        state.audioApps.refresh()
     }
 
     // MARK: - Per-app mute

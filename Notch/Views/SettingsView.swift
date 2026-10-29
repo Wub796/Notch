@@ -1807,6 +1807,27 @@ private struct SystemSettingsPane: View {
                 AudioOutputManager.shared.refreshAlertVolume()
             }
 
+            if !settings.hiddenAudioApps.isEmpty {
+                SettingsCard(title: "Hidden Audio Apps") {
+                    ForEach(settings.hiddenAudioApps, id: \.self) { bundleID in
+                        SettingsRow(
+                            systemImage: "eye",
+                            tint: .gray,
+                            title: bundleID,
+                            showsDivider: bundleID != settings.hiddenAudioApps.last
+                        ) {
+                            Button("Show") {
+                                settings.hiddenAudioApps.removeAll { $0 == bundleID }
+                            }
+                        }
+                    }
+                }
+
+                SettingsCaption(
+                    text: "Hidden apps are removed from the Audio screen, the closed notch and the Home dashboard. They keep playing normally."
+                )
+            }
+
             SettingsCaption(
                 text: "Alert volume controls the volume macOS uses for notification sounds, "
                     + "matching System Settings → Sound. Auto-switch routes output to a device the "

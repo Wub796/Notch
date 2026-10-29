@@ -298,6 +298,37 @@ check(
     SourceArbitration.normalizedTitle("Island in the Sun") == "Island in the Sun"
 )
 
+// MARK: - What the closed notch announces
+//
+// The sneak peek is for a track. A browser page's own title moves with the
+// page, the ad and the next autoplay, and announcing those turned the closed
+// pill into a ticker for the tab the user was already watching.
+
+check(
+    "a player moving to a new song is announced",
+    SourceArbitration.shouldAnnounceTrackChange(
+        previousTitle: "Island in the Sun", newTitle: "Starboy", isBrowserItem: false
+    )
+)
+check(
+    "a browser item is never announced as a track",
+    !SourceArbitration.shouldAnnounceTrackChange(
+        previousTitle: "Video One", newTitle: "Video Two", isBrowserItem: true
+    )
+)
+check(
+    "the same title is not announced again",
+    !SourceArbitration.shouldAnnounceTrackChange(
+        previousTitle: "Starboy", newTitle: "Starboy", isBrowserItem: false
+    )
+)
+check(
+    "the launch pickup is not a track change",
+    !SourceArbitration.shouldAnnounceTrackChange(
+        previousTitle: nil, newTitle: "Starboy", isBrowserItem: false
+    )
+)
+
 // MARK: - The media-key tap's health check
 //
 // The tap behind the notch's own volume and brightness HUD cannot be built,

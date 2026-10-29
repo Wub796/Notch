@@ -693,10 +693,12 @@ final class AudioAppMonitor {
     /// running but silent stays listed (at isPlaying = false) so its volume
     /// can be configured in advance. Runs on main; the lookups are cheap.
     private func withPinned(_ apps: [App]) -> [App] {
-        let pinned = Set(NotchSettings.shared.pinnedAudioApps)
-        guard !pinned.isEmpty else { return apps }
+        let hidden = Set(NotchSettings.shared.hiddenAudioApps)
+        let visible = hidden.isEmpty ? apps : apps.filter { !hidden.contains($0.id) }
+        let pinned = Set(NotchSettings.shared.pinnedAudioApps).subtracting(hidden)
+        guard !pinned.isEmpty else { return visible }
 
-        var byID = Dictionary(uniqueKeysWithValues: apps.map { ($0.id, $0) })
+        var byID = Dictionary(uniqueKeysWithValues: visible.map { ($0.id, $0) })
         for id in pinned {
             guard byID[id] == nil,
                   let running = NSRunningApplication
