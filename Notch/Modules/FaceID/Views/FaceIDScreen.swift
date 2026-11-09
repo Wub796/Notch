@@ -18,6 +18,8 @@ struct FaceIDScreen: View {
     @State private var enrollmentError: String?
     @State private var shouldCloseAfterEnrollment = false
     @State private var closeAfterEnrollmentTask: Task<Void, Never>?
+    @State private var sweepWindow = FaceIDEnrollmentSweepWindowController()
+    @FocusState private var isNameFieldFocused: Bool
 
     private var faceID: FaceIDController { state.faceID }
     private var settings: FaceIDSettings { .shared }
@@ -78,7 +80,24 @@ struct FaceIDScreen: View {
         .onChange(of: settings.isEnabled) { _, _ in
             handleEnrollmentRequestIfNeeded()
         }
+        .onChange(of: enrollment.phase) { _, newPhase in
+            switch newPhase {
+            case .ready:
+                sweepWindow.dismiss()
+                DispatchQueue.main.async {
+                    if let window = NSApp.windows.first(where: { $0 is NotchPanel }) {
+                        window.makeKey()
+                    }
+                    isNameFieldFocused = true
+                }
+            case .failed, .idle:
+                sweepWindow.dismiss()
+            case .starting, .capturing:
+                break
+            }
+        }
         .onDisappear {
+            sweepWindow.dismiss()
             cancelPendingEnrollmentClose()
             shouldCloseAfterEnrollment = false
         }
@@ -152,7 +171,9 @@ struct FaceIDScreen: View {
     private var leftColumn: some View {
         VStack(alignment: .leading, spacing: NotchTheme.Space.s) {
             previewSection
-            setupSection
+            if !isEnrolling {
+                setupSection
+            }
         }
         .frame(maxWidth: .infinity, alignment: .top)
     }
@@ -160,7 +181,11 @@ struct FaceIDScreen: View {
     @ViewBuilder
     private var previewSection: some View {
         if isEnrolling {
-            enrollmentSection
+            if case .ready = enrollment.phase {
+                namingSection
+            } else {
+                enrollmentSection
+            }
         } else {
             idlePreview
         }
@@ -277,53 +302,76 @@ struct FaceIDScreen: View {
 
     // MARK: - Enrollment
 
-    /// The guided capture: a live preview with the detected face boxed, the current
-    /// instruction, and a progress ring — plus the sweep ribbons, which are the cue
-    /// for which way to turn when the instruction alone isn't enough.
+    /// The guided capture: circular camera preview framed inside the Glance-style
+    /// 80-tick animated Face ID ring, animated completion checkmark, live head tracking,
+    /// and full-screen directional light sweeps.
     private var enrollmentSection: some View {
-        VStack(alignment: .leading, spacing: NotchTheme.Space.s) {
+        VStack(spacing: NotchTheme.Space.m) {
             ZStack {
+                Circle()
+                    .fill(Color.black)
+                    .frame(
+                        width: FaceIDMetrics.cameraCircleDiameter,
+                        height: FaceIDMetrics.cameraCircleDiameter
+                    )
+
+                FaceIDEnrollmentRingView(session: enrollment)
+
                 if case .capturing = enrollment.phase, let session = activeSession {
-                    FaceIDCameraPreview(session: session, faces: enrollment.previewFaces)
-                        .clipShape(RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous))
-                } else {
-                    RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous)
+                    FaceIDCameraPreview(session: session, faces: [])
+                        .frame(
+                            width: FaceIDMetrics.cameraCircleDiameter,
+                            height: FaceIDMetrics.cameraCircleDiameter
+                        )
+                        .clipShape(Circle())
+                        .opacity(enrollment.cameraPreviewVisible ? 1 : 0)
+                        .animation(.easeInOut(duration: FaceIDMetrics.previewFadeOut), value: enrollment.cameraPreviewVisible)
+                        .overlay {
+                            if enrollment.isTooFar && enrollment.cameraPreviewVisible && !enrollment.showCheckmark {
+                                FaceIDEnrollmentTooFarChevron()
+                                    .transition(.opacity)
+                            }
+                        }
+                        .animation(.easeInOut(duration: 0.2), value: enrollment.isTooFar)
+                } else if case .starting = enrollment.phase {
+                    Circle()
                         .fill(Color.white.opacity(0.04))
+                        .frame(
+                            width: FaceIDMetrics.cameraCircleDiameter,
+                            height: FaceIDMetrics.cameraCircleDiameter
+                        )
                         .overlay(
                             ProgressView()
                                 .controlSize(.small)
                         )
                 }
 
-                if case .capturing = enrollment.phase,
-                   let travel = FaceIDEnrollmentSweepView.travel(for: enrollment.currentPose) {
-                    FaceIDEnrollmentSweepView(travel: travel)
-                        .id(enrollment.currentPose)
-                        .clipShape(RoundedRectangle(cornerRadius: NotchTheme.Radius.tile, style: .continuous))
-                        .allowsHitTesting(false)
+                if enrollment.showCheckmark {
+                    FaceIDAnimatedCheckmark(color: FaceIDAccent.accent, lineWidth: 8)
+                        .frame(width: 70, height: 59)
+                        .transition(.opacity)
+                        .padding(.top, 4)
                 }
             }
-            .frame(height: 130)
-            .frame(maxWidth: .infinity)
+            .frame(
+                width: FaceIDMetrics.enrollCameraClusterDiameter,
+                height: FaceIDMetrics.enrollCameraClusterDiameter
+            )
+            .frame(maxWidth: .infinity, alignment: .center)
 
-            HStack(alignment: .top, spacing: NotchTheme.Space.m) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(instructionTitle)
-                        .font(.notchHeadline)
-                        .foregroundStyle(NotchTheme.inkPrimary)
-                    Text(enrollment.hint)
-                        .font(.notchFootnote)
-                        .foregroundStyle(enrollment.isTooFar ? .orange : NotchTheme.inkMuted)
-                }
-
-                Spacer(minLength: NotchTheme.Space.s)
-
-                poseProgressRing
+            VStack(alignment: .center, spacing: NotchTheme.Space.xxs) {
+                Text(instructionTitle)
+                    .font(.notchHeadline)
+                    .foregroundStyle(NotchTheme.inkPrimary)
+                    .multilineTextAlignment(.center)
+                Text(enrollment.hint)
+                    .font(.notchFootnote)
+                    .foregroundStyle(enrollment.isTooFar ? .orange : NotchTheme.inkMuted)
+                    .multilineTextAlignment(.center)
             }
+            .frame(maxWidth: .infinity, alignment: .center)
 
-            if case .ready = enrollment.phase {
-                saveRow
-            } else if case .failed(let message) = enrollment.phase {
+            if case .failed(let message) = enrollment.phase {
                 Text(message)
                     .font(.notchFootnote)
                     .foregroundStyle(.orange)
@@ -331,64 +379,105 @@ struct FaceIDScreen: View {
             }
 
             HStack(spacing: NotchTheme.Space.s) {
-                if case .ready = enrollment.phase {
-                    ScreenTextButton(title: "Discard", systemImage: "trash", tint: .orange) {
-                        cancelEnrollment()
+                if case .failed = enrollment.phase {
+                    ScreenTextButton(title: "Try again", systemImage: "arrow.clockwise", isProminent: true) {
+                        startEnrollment()
                     }
-                } else {
-                    ScreenTextButton(title: "Cancel", systemImage: "xmark") {
-                        cancelEnrollment()
-                    }
+                }
+                ScreenTextButton(title: "Cancel", systemImage: "xmark") {
+                    cancelEnrollment()
                 }
             }
         }
         .padding(NotchTheme.Space.m)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
         .notchCard()
     }
 
     private var instructionTitle: String {
         switch enrollment.phase {
         case .starting: "Starting the camera…"
-        case .capturing: enrollment.currentPose.instruction
+        case .capturing:
+            enrollment.enrollmentComplete ? "Face captured" : enrollment.currentPose.instruction
         case .ready: "All nine positions captured"
         case .failed: "Enrollment stopped"
         case .idle: "Ready"
         }
     }
 
-    private var poseProgressRing: some View {
-        ZStack {
-            Circle()
-                .stroke(Color.white.opacity(0.12), lineWidth: 3)
-            Circle()
-                .trim(from: 0, to: max(0.02, enrollment.poseProgress))
-                .stroke(FaceIDAccent.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-            Text("\(min(enrollment.captureCount, FaceIDEnrollmentSession.totalSampleCount))/\(FaceIDEnrollmentSession.totalSampleCount)")
-                .font(.system(size: 9.5, weight: .heavy, design: .rounded))
-                .foregroundStyle(NotchTheme.inkSecondary)
-        }
-        .frame(width: 34, height: 34)
-    }
-
-    private var saveRow: some View {
-        HStack(spacing: NotchTheme.Space.s) {
-            TextField("Name this face", text: $enrollmentName)
-                .textFieldStyle(.plain)
-                .font(.notchCallout)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 6)
-                .background {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.white.opacity(0.06))
-                }
-                .frame(maxWidth: 180)
-
-            ScreenTextButton(title: "Save face", systemImage: "checkmark", isProminent: true) {
-                saveEnrollment()
+    private var namingSection: some View {
+        VStack(spacing: NotchTheme.Space.m) {
+            ZStack {
+                Circle().fill(FaceIDAccent.accent.opacity(0.12)).frame(width: 56, height: 56)
+                Image(systemName: "checkmark").font(.system(size: 24, weight: .bold)).foregroundStyle(FaceIDAccent.accent)
             }
-            .disabled(enrollmentName.trimmingCharacters(in: .whitespaces).isEmpty)
+            .padding(.top, 4)
+
+            VStack(spacing: NotchTheme.Space.xxs) {
+                Text("Name this face")
+                    .font(.notchHeadline)
+                    .foregroundStyle(NotchTheme.inkPrimary)
+                Text("Used to tell enrolled faces apart when more than one person uses Face ID.")
+                    .font(.notchFootnote)
+                    .foregroundStyle(NotchTheme.inkMuted)
+                    .multilineTextAlignment(.center)
+            }
+
+            VStack(spacing: NotchTheme.Space.xs) {
+                HStack(spacing: NotchTheme.Space.s) {
+                    TextField("Enter a name…", text: $enrollmentName)
+                        .textFieldStyle(.plain)
+                        .font(.notchCallout)
+                        .focused($isNameFieldFocused)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.08)))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                        .frame(maxWidth: 220)
+                        .onSubmit {
+                            if !enrollmentName.trimmingCharacters(in: .whitespaces).isEmpty {
+                                saveEnrollment()
+                            }
+                        }
+
+                    ScreenTextButton(
+                        title: replacingIdentityID == nil ? "Save face" : "Update face",
+                        systemImage: "checkmark",
+                        isProminent: true
+                    ) {
+                        saveEnrollment()
+                    }
+                    .disabled(enrollmentName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+
+                if let enrollmentError {
+                    Text(enrollmentError)
+                        .font(.notchFootnote)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: NotchTheme.Space.s) {
+                ScreenTextButton(title: "Discard", systemImage: "trash", tint: .orange) {
+                    cancelEnrollment()
+                }
+            }
+        }
+        .padding(NotchTheme.Space.m)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .notchCard()
+        .transition(.asymmetric(
+            insertion: .opacity.combined(with: .scale(scale: 0.96)),
+            removal: .opacity
+        ))
+        .onAppear {
+            DispatchQueue.main.async {
+                if let window = NSApp.windows.first(where: { $0 is NotchPanel }) {
+                    window.makeKey()
+                }
+                isNameFieldFocused = true
+            }
         }
     }
 
@@ -453,10 +542,12 @@ struct FaceIDScreen: View {
     private func startEnrollment() {
         enrollmentError = nil
         isEnrolling = true
+        sweepWindow.present(for: enrollment)
         enrollment.start()
     }
 
     private func cancelEnrollment() {
+        sweepWindow.dismiss()
         enrollment.cancel()
         cancelPendingEnrollmentClose()
         shouldCloseAfterEnrollment = false
@@ -503,6 +594,7 @@ struct FaceIDScreen: View {
         }
 
         do {
+            sweepWindow.dismiss()
             try enrollment.commit(name: name, replacing: replacing)
             isEnrolling = false
             replacingIdentityID = nil

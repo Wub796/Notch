@@ -73,6 +73,30 @@ enum FaceIDPose: String, CaseIterable, Identifiable {
         default: 1
         }
     }
+
+    /// Compass angle (0 = up, clockwise) this pose's ring sector is centered on.
+    /// `nil` for center, which pulses the whole ring instead.
+    var compassAngle: Double? {
+        switch self {
+        case .center: nil
+        case .left: 270
+        case .topLeft: 315
+        case .top: 0
+        case .topRight: 45
+        case .right: 90
+        case .bottomRight: 135
+        case .bottom: 180
+        case .bottomLeft: 225
+        }
+    }
+}
+
+/// Where the head is currently turned, for the ring's live indicator.
+struct FaceIDHeadTurn: Equatable {
+    /// Compass angle (0 = up, clockwise) — same frame as `FaceIDPose.compassAngle`.
+    let angle: Double
+    /// How far the turn has gone toward the current pose's threshold, 0...1.
+    let progress: Double
 }
 
 /// The guided capture: prompts a pose, waits for the face to be held in it, takes
@@ -166,6 +190,35 @@ final class FaceIDEnrollmentSession {
     /// Plain-language state under the instruction, so a capture that is waiting
     /// says what it is waiting for.
     private(set) var hint: String = "Hold still"
+    /// Sectors already captured — read by FaceIDEnrollmentRingView to decide which ticks are lit.
+    private(set) var capturedPoses: Set<FaceIDPose> = []
+    /// Bumped every time `.center` is captured to pulse the entire ring.
+    private(set) var centerPulseTick = 0
+    /// Completed state for the ring and preview transitions.
+    private(set) var enrollmentComplete = false
+    /// Whether the completion checkmark should draw.
+    private(set) var showCheckmark = false
+    /// Whether the camera preview circle is visible.
+    private(set) var cameraPreviewVisible = true
+    private(set) var currentYaw: Float?
+    private(set) var currentPitch: Float?
+    private let headTurnDeadzone: Double = 0.15
+
+    /// Live head direction, or nil when there's nothing to point at.
+    var headTurn: FaceIDHeadTurn? {
+        guard phase == .capturing, !enrollmentComplete, !previewFaces.isEmpty, !isTooFar,
+              currentPose != .center,
+              let yaw = currentYaw, let pitch = currentPitch else { return nil }
+
+        let x = Double(-yaw / (Self.yawInnerThreshold / currentPose.matchLeniency))
+        let y = Double(-pitch / (Self.pitchInnerThreshold / currentPose.matchLeniency))
+
+        let magnitude = (x * x + y * y).squareRoot()
+        guard magnitude > headTurnDeadzone else { return nil }
+
+        let degrees = atan2(x, y) * 180 / .pi
+        return FaceIDHeadTurn(angle: degrees < 0 ? degrees + 360 : degrees, progress: min(magnitude, 1))
+    }
 
     /// The camera is shared with the scan path rather than a second session:
     /// only one of the two is ever running, and a second `AVCaptureSession` on
@@ -221,6 +274,13 @@ final class FaceIDEnrollmentSession {
         poseIndex = 0
         matchingStreak = 0
         capturedForCurrentPose = 0
+        capturedPoses = []
+        centerPulseTick = 0
+        enrollmentComplete = false
+        showCheckmark = false
+        cameraPreviewVisible = true
+        currentYaw = nil
+        currentPitch = nil
         lastProcessedFrameID = nil
         poseHoldStartedAt = nil
         phase = .starting
@@ -239,6 +299,13 @@ final class FaceIDEnrollmentSession {
         poseProgress = 0
         previewFaces = []
         isTooFar = false
+        capturedPoses = []
+        centerPulseTick = 0
+        enrollmentComplete = false
+        showCheckmark = false
+        cameraPreviewVisible = true
+        currentYaw = nil
+        currentPitch = nil
         hint = "Hold still"
     }
 
@@ -323,6 +390,8 @@ final class FaceIDEnrollmentSession {
             case .noFace:
                 previewFaces = []
                 isTooFar = false
+                currentYaw = nil
+                currentPitch = nil
                 matchingStreak = 0
                 poseHoldStartedAt = nil
                 poseProgress = 0
@@ -332,6 +401,8 @@ final class FaceIDEnrollmentSession {
                 // screen shows that the face *was* seen.
                 previewFaces = [face]
                 isTooFar = true
+                currentYaw = face.yaw
+                currentPitch = face.pitch
                 matchingStreak = 0
                 poseHoldStartedAt = nil
                 poseProgress = 0
@@ -339,6 +410,8 @@ final class FaceIDEnrollmentSession {
             case .ready(let result):
                 previewFaces = [result.face]
                 isTooFar = false
+                currentYaw = result.face.yaw
+                currentPitch = result.face.pitch
                 process(result, pose: currentPose)
             }
 
@@ -346,12 +419,26 @@ final class FaceIDEnrollmentSession {
         }
 
         guard !Task.isCancelled else { return }
-        camera.stop()
-        previewFaces = []
         #if DEBUG
         print("[FaceID] enroll: finished with \(samples.count)/\(Self.totalSampleCount) samples")
         #endif
-        phase = hasEnoughSamples ? .ready : .failed("Not enough poses were captured. Try again in better light.")
+        if hasEnoughSamples {
+            enrollmentComplete = true
+            hint = "Hold still"
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            cameraPreviewVisible = false
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            showCheckmark = true
+            camera.stop()
+            previewFaces = []
+            hint = "Face captured"
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            phase = .ready
+        } else {
+            camera.stop()
+            previewFaces = []
+            phase = .failed("Not enough poses were captured. Try again in better light.")
+        }
     }
 
     private enum EnrollFrameOutcome {
@@ -435,6 +522,11 @@ final class FaceIDEnrollmentSession {
         #endif
 
         guard capturedForCurrentPose >= Self.samplesPerPose else { return }
+        if pose == .center {
+            centerPulseTick += 1
+        } else {
+            capturedPoses.insert(pose)
+        }
         capturedForCurrentPose = 0
         poseIndex += 1
         poseStartedAt = .now

@@ -20,16 +20,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let currentPID = ProcessInfo.processInfo.processIdentifier
-        let isDuplicate = NSWorkspace.shared.runningApplications.contains { app in
-            guard app.processIdentifier != currentPID else { return false }
-            if let bundleID = Bundle.main.bundleIdentifier, app.bundleIdentifier == bundleID {
-                return true
+        for app in NSWorkspace.shared.runningApplications where app.processIdentifier != currentPID {
+            let matchesBundle = Bundle.main.bundleIdentifier != nil && app.bundleIdentifier == Bundle.main.bundleIdentifier
+            let matchesExec = app.executableURL == Bundle.main.executableURL
+            guard matchesBundle || matchesExec else { continue }
+            if !app.terminate() {
+                app.forceTerminate()
             }
-            return app.executableURL == Bundle.main.executableURL
-        }
-        if isDuplicate {
-            NSApp.terminate(nil)
-            return
         }
 
         Self.shared = self

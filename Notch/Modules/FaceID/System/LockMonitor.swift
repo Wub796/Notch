@@ -130,6 +130,14 @@ final class LockMonitor: NSObject {
             self?.isSleeping = true
             self?.record(.willSleep)
         })
+        workspaceObservers.append(workspace.addObserver(
+            forName: NSWorkspace.screensDidSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isSleeping = true
+            self?.record(.willSleep)
+        })
         // Display-level and system-level wake are treated as equivalent
         // triggers: they land within ~100ms of each other, in either order.
         workspaceObservers.append(workspace.addObserver(
@@ -200,10 +208,14 @@ final class LockMonitor: NSObject {
     @discardableResult
     func refreshFromSystem(reconcileUnlocked: Bool = false) -> Bool? {
         guard let actuallyLocked = Self.screenLockState() else {
-            confirmedScreenLockState = nil
+            if confirmedScreenLockState != nil {
+                confirmedScreenLockState = nil
+            }
             return nil
         }
-        confirmedScreenLockState = actuallyLocked
+        if confirmedScreenLockState != actuallyLocked {
+            confirmedScreenLockState = actuallyLocked
+        }
 
         if actuallyLocked {
             // `screenIsUnlocked` can arrive slightly before CGSession flips its
@@ -214,7 +226,9 @@ final class LockMonitor: NSObject {
                latestTriggerEvent == nil {
                 return true
             }
-            isScreenLocked = true
+            if !isScreenLocked {
+                isScreenLocked = true
+            }
             // Recover a lock that happened before our observer was installed.
             // If a lock notification already arrived, retain its original signal.
             if latestTriggerEvent == nil {
@@ -255,7 +269,8 @@ final class LockMonitor: NSObject {
     /// checkable against synthetic sessions as well as the live one.
     static func screenLockState(from dictionary: [String: Any]?) -> Bool? {
         guard let dictionary else { return nil }
-        if let locked = dictionary["CGSSessionScreenIsLocked"] as? Bool {
+        if let locked = (dictionary["CGSSessionScreenIsLocked"] as? Bool)
+            ?? ((dictionary["CGSSessionScreenIsLocked"] as? NSNumber)?.boolValue) {
             return locked
         }
         guard (dictionary["kCGSessionLoginDoneKey"] as? NSNumber)?.boolValue == true else {

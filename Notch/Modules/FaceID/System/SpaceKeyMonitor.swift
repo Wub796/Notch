@@ -16,6 +16,7 @@ import OSLog
 /// Not a keylogger: it runs only while the screen is locked *and* the user has
 /// opted into the space trigger, and the callback checks nothing but whether
 /// the key is the space bar.
+@MainActor
 final class SpaceKeyMonitor {
     /// Traces the Input Monitoring handshake, which is otherwise invisible —
     /// the TCC decision happens out of process, so a refusal here is a silent
@@ -64,10 +65,6 @@ final class SpaceKeyMonitor {
     /// to Xcode instead.
     @discardableResult
     static func requestInputMonitoringAccess() -> Bool {
-        guard !isLaunchedByXcode else {
-            log.error("requestAccess skipped — launched by Xcode, the request would be attributed to Xcode")
-            return hasInputMonitoringAccess()
-        }
         let granted = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
         log.info("requestAccess -> \(granted, privacy: .public)")
         return granted
@@ -81,12 +78,19 @@ final class SpaceKeyMonitor {
         guard manager == nil else { return }
 
         let created = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        // Physical keyboards only, not every HID device that happens to be attached.
-        let match: [String: Int] = [
-            kIOHIDDeviceUsagePageKey: kHIDPage_GenericDesktop,
-            kIOHIDDeviceUsageKey: kHIDUsage_GD_Keyboard,
+        // Match both keyboards and keypads so external keyboards, built-in keyboards,
+        // and keypad endpoints all deliver spacebar events.
+        let matches: [[String: Any]] = [
+            [
+                kIOHIDDeviceUsagePageKey: kHIDPage_GenericDesktop,
+                kIOHIDDeviceUsageKey: kHIDUsage_GD_Keyboard,
+            ],
+            [
+                kIOHIDDeviceUsagePageKey: kHIDPage_GenericDesktop,
+                kIOHIDDeviceUsageKey: kHIDUsage_GD_Keypad,
+            ],
         ]
-        IOHIDManagerSetDeviceMatching(created, match as CFDictionary)
+        IOHIDManagerSetDeviceMatchingMultiple(created, matches as CFArray)
 
         // A capture-less C callback with `self` threaded through the context
         // pointer. `passUnretained` is safe because this object always `stop()`s
@@ -100,7 +104,7 @@ final class SpaceKeyMonitor {
                   IOHIDValueGetIntegerValue(value) == 1 // key-down only
             else { return }
             let monitor = Unmanaged<SpaceKeyMonitor>.fromOpaque(context).takeUnretainedValue()
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 monitor.onSpaceKeyDown?()
             }
         }, context)

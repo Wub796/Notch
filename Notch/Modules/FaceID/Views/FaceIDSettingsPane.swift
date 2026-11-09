@@ -41,6 +41,9 @@ struct FaceIDSettingsPane: View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
             generalGroup
             if needsAccessibility { accessibilityNotice }
+            if credentials.hasStoredPassword, !isSessionUnlocked {
+                lockedState
+            }
             behaviourSection
             animationSection
 
@@ -48,8 +51,6 @@ struct FaceIDSettingsPane: View {
                 if isSessionUnlocked {
                     faceSection
                     passwordUnlockedSection
-                } else {
-                    lockedState
                 }
             } else {
                 passwordSetupSection
@@ -89,8 +90,10 @@ struct FaceIDSettingsPane: View {
         // instead of the value the user just tapped.
         .onChange(of: settings.unlockTriggers) { oldValue, newValue in
             guard newValue.contains(.onSpace), !oldValue.contains(.onSpace) else { return }
-            guard !credentials.accessibilityGranted else { return }
-            credentials.requestAccessibility()
+            SpaceKeyMonitor.requestInputMonitoringAccess()
+            if !credentials.accessibilityGranted {
+                credentials.requestAccessibility()
+            }
         }
         .onChange(of: isSessionUnlocked) { _, unlocked in
             guard !unlocked else { return }
@@ -135,24 +138,37 @@ struct FaceIDSettingsPane: View {
         }
     }
 
-    /// Shown while "On space" is selected but Accessibility isn't granted —
-    /// the same permission this feature needs to type the password, so the
-    /// notice covers both.
+    /// Shown while "On space" is selected but Accessibility or Input Monitoring isn't granted.
     private var needsAccessibility: Bool {
         settings.isEnabled
             && settings.unlockTriggers.contains(.onSpace)
-            && !credentials.accessibilityGranted
+            && (!credentials.accessibilityGranted || !SpaceKeyMonitor.hasInputMonitoringAccess())
     }
 
     private var accessibilityNotice: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SettingsCaption(text: "“On space” reads the keyboard directly to see the space key on the lock screen, which needs Accessibility — the same permission Face ID uses to type your password. Switch Notch on under Privacy & Security → Accessibility, then quit and reopen Notch.")
-            Button("Open Accessibility settings") {
-                credentials.requestAccessibility()
+            SettingsCaption(text: "“On space” reads the space bar on the lock screen, which needs Input Monitoring and Accessibility permissions. Enable Notch under Privacy & Security in System Settings, then quit and reopen Notch.")
+            HStack(spacing: 12) {
+                if !credentials.accessibilityGranted {
+                    Button("Open Accessibility settings") {
+                        credentials.requestAccessibility()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12))
+                    .foregroundStyle(SettingsMetrics.accent)
+                }
+                if !SpaceKeyMonitor.hasInputMonitoringAccess() {
+                    Button("Request Input Monitoring") {
+                        SpaceKeyMonitor.requestInputMonitoringAccess()
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12))
+                    .foregroundStyle(SettingsMetrics.accent)
+                }
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 12))
-            .foregroundStyle(SettingsMetrics.accent)
         }
     }
 

@@ -87,10 +87,11 @@ final class FaceIDController {
     /// Reconciles the early distributed lock notification with CGSession, whose
     /// authoritative lock bit can lag it by several hundred milliseconds.
     private var triggerReconciliationTask: Task<Void, Never>?
-    /// When the last cycle was armed — collapses a single lid-open, which fires
-    /// several wake signals within a few hundred milliseconds, into one arm.
-    private var lastArmedAt: ContinuousClock.Instant?
-    private let rearmDebounce: Duration = .seconds(2)
+    /// When the last wake cycle was armed — collapses a single lid-open, which
+    /// fires several wake signals within ~100ms, into one arm without blocking a
+    /// wake that follows a lock event.
+    private var lastWakeArmedAt: ContinuousClock.Instant?
+    private let rearmDebounce: Duration = .milliseconds(800)
     /// Gap between headless auto-retries, just to keep the camera from restarting
     /// in a tight loop.
     private let headlessRetryDelay: Duration = .seconds(1)
@@ -134,6 +135,8 @@ final class FaceIDController {
     /// Also the point where the session's idle timer is armed: it only has anything
     /// to enforce once the feature is on.
     func start() {
+        credentials.refreshCredentialStatus()
+        FaceEnrollmentStore.shared.reloadIfUnlocked()
         lockMonitor.startMonitoring()
         lockMonitor.refreshFromSystem()
         FaceIDOverlayController.shared.refreshNowPlayingInteractivity()
@@ -147,6 +150,7 @@ final class FaceIDController {
             + "hasPassword=\(FaceIDCredentials.hasStoredPassword())")
         #endif
         observeLockAndWakeEvents()
+        observeSettings()
         // Recover a lock that happened before this process registered its
         // distributed observer (or while macOS had suspended the app).
         reconcileTriggerState(after: nil)
@@ -172,7 +176,6 @@ final class FaceIDController {
     private func observeLockAndWakeEvents() {
         withObservationTracking {
             _ = lockMonitor.isScreenLocked
-            _ = lockMonitor.confirmedScreenLockState
             _ = lockMonitor.latestTriggerEvent
             _ = lockMonitor.wakeEventCount
             _ = lockMonitor.isSleeping
@@ -182,11 +185,24 @@ final class FaceIDController {
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.observeLockAndWakeEvents()
-                guard let self else { return }
-                self.lockMonitor.refreshFromSystem()
-                FaceIDOverlayController.shared.refreshNowPlayingInteractivity()
-                guard self.hasObservedLockEvents else { return }
+                guard let self, self.hasObservedLockEvents else { return }
                 self.reconcileTriggerState(after: self.lockMonitor.lastEvent)
+            }
+        }
+    }
+
+    private func observeSettings() {
+        withObservationTracking {
+            _ = settings.isEnabled
+            _ = settings.unlockTriggers
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, self.hasObservedLockEvents else { return }
+                self.observeSettings()
+                self.updateSpaceMonitor()
+                if !self.settings.isEnabled {
+                    self.disarmOverlay()
+                }
             }
         }
     }
@@ -194,92 +210,70 @@ final class FaceIDController {
     /// The lock notification is intentionally early — it arrives before the
     /// login window finishes locking — so a single CGSession check can miss the
     /// state transition and leave Face ID idle for the entire lock session. Keep
-    /// reconciling the signal for two seconds; launch also runs this once to
+    /// reconciling the signal for up to two seconds; launch also runs this once to
     /// recover a lock that predates our observer.
     private func reconcileTriggerState(after event: LockEventKind?) {
         if event == .willSleep {
             triggerReconciliationTask?.cancel()
             triggerReconciliationTask = nil
+            if !isManualScan {
+                cancelActiveScan()
+            }
             #if DEBUG
             print("[FaceID] trigger: deferring lock reconciliation until wake")
             #endif
             return
         }
 
+        if event == .screenUnlocked {
+            triggerReconciliationTask?.cancel()
+            triggerReconciliationTask = nil
+            _ = self.lockMonitor.refreshFromSystem(reconcileUnlocked: true)
+            FaceIDOverlayController.shared.refreshNowPlayingInteractivity()
+            self.hasArmedForCurrentLock = false
+            self.hasAutoRetriedForCurrentLock = false
+            self.disarmOverlay()
+            return
+        }
+
+        if event == .screenLocked {
+            self.hasArmedForCurrentLock = false
+        }
+
         triggerReconciliationTask?.cancel()
         triggerReconciliationTask = Task { [weak self] in
             guard let self else { return }
-            if event == .screenUnlocked {
-                _ = self.lockMonitor.refreshFromSystem(reconcileUnlocked: true)
-                FaceIDOverlayController.shared.refreshNowPlayingInteractivity()
-                // A login-window unlock is only used to shut down the panel;
-                // it never authorizes typing. Hide immediately, even if the
-                // session server's state bit is a moment behind the notification.
-                self.hasArmedForCurrentLock = false
-                self.hasAutoRetriedForCurrentLock = false
-                self.disarmOverlay()
-                return
+
+            if !LockMonitor.isScreenActuallyLocked() {
+                // Brief initial pause so CGSession has time to reflect the transition.
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                guard !Task.isCancelled, self.hasObservedLockEvents else { return }
             }
 
-            var shouldReconcileUnlock = false
-            var hasReadState = false
-            for attempt in 0 ..< 20 {
+            for _ in 0 ..< 15 {
                 guard !Task.isCancelled, self.hasObservedLockEvents else { return }
-                let locked = self.lockMonitor.refreshFromSystem()
-                if let locked {
-                    hasReadState = true
-                    #if DEBUG
-                    if attempt == 0 {
-                        print("[FaceID] trigger: reconcile event=\(event?.debugName ?? "launch") "
-                            + "CGSession=\(locked ? "locked" : "unlocked") "
-                            + "pending=\(self.lockMonitor.latestTriggerEvent?.debugName ?? "none")")
+                if LockMonitor.isScreenActuallyLocked() {
+                    self.lockMonitor.refreshFromSystem()
+                    FaceIDOverlayController.shared.refreshNowPlayingInteractivity()
+                    guard !self.lockMonitor.isSleeping else {
+                        try? await Task.sleep(for: .milliseconds(150))
+                        continue
                     }
-                    #endif
-                    if locked {
-                        guard !self.lockMonitor.isSleeping else {
-                            try? await Task.sleep(for: .milliseconds(100))
-                            continue
-                        }
-                        self.evaluateTrigger()
-                        return
-                    }
-                    shouldReconcileUnlock = shouldReconcileUnlock || self.lockMonitor.isScreenLocked
-
-                    // A launch, screen-off or sleep event does not claim the
-                    // session is locked, so it has no lock transition to await.
-                    if event != .screenLocked, event != .wake {
-                        self.evaluateTrigger()
-                        return
-                    }
-                } else {
-                    // Reading the session dictionary can fail transiently — a
-                    // launch that races the session's own setup is the usual
-                    // case — so the loop keeps sampling rather than declaring
-                    // the state unreadable on the first miss. Still fails
-                    // closed: nothing scans on a state we never managed to
-                    // read.
-                    try? await Task.sleep(for: .milliseconds(100))
-                    continue
+                    self.evaluateTrigger()
+                    return
                 }
 
-                try? await Task.sleep(for: .milliseconds(100))
+                // If this wasn't a lock/wake event (e.g. launch or screen off), don't keep polling.
+                if event != .screenLocked, event != .wake, event != nil {
+                    self.evaluateTrigger()
+                    return
+                }
+
+                try? await Task.sleep(for: .milliseconds(150))
             }
 
-            guard !Task.isCancelled else { return }
-            guard hasReadState else {
-                #if DEBUG
-                print("[FaceID] trigger: CGSession state stayed unavailable; failing closed")
-                #endif
-                self.statusMessage = "Face ID couldn't read the macOS lock state, so it did not start a scan."
-                return
-            }
-            if shouldReconcileUnlock {
-                _ = self.lockMonitor.refreshFromSystem(reconcileUnlocked: true)
-            }
-            #if DEBUG
-            print("[FaceID] trigger: CGSession never confirmed the lock signal")
-            #endif
-            self.statusMessage = "macOS announced a lock, but its session state never confirmed it. Face ID did not scan."
+            guard !Task.isCancelled, self.hasObservedLockEvents else { return }
+            self.lockMonitor.refreshFromSystem()
             self.evaluateTrigger()
         }
     }
@@ -301,7 +295,7 @@ final class FaceIDController {
         // explicit "let me back in", so it clears the one-shot guard. The debounce
         // keeps the several wake signals from one lid-open from each re-arming and
         // fighting over the camera.
-        if lockMonitor.latestTriggerEvent == .wake, !isWithinRecentArmBurst {
+        if lockMonitor.latestTriggerEvent == .wake, !isWithinRecentWakeBurst {
             hasArmedForCurrentLock = false
         }
 
@@ -318,15 +312,6 @@ final class FaceIDController {
         }
         guard !hasArmedForCurrentLock else { return }
         guard let signal = requiredTrigger(for: lockMonitor.latestTriggerEvent) else { return }
-        // A trigger the user switched off is not a reason to show Face ID at
-        // all. Arming without scanning still put the silhouette on the lock
-        // screen, which is indistinguishable from the setting being ignored.
-        guard settings.unlockTriggers.contains(signal) else {
-            #if DEBUG
-            print("[FaceID] trigger: \(signal.title) is switched off — no panel")
-            #endif
-            return
-        }
         // A pinned display that isn't connected bails entirely rather than showing
         // up somewhere else — but it says so rather than failing silently, because
         // from the outside an unlit lock screen is indistinguishable from a broken
@@ -354,25 +339,38 @@ final class FaceIDController {
             return
         }
 
+        // A deselected trigger skips automatic scanning on that event, but arms
+        // the closed silhouette so hover retry and the space bar remain ready.
+        let shouldAutoScan = settings.unlockTriggers.contains(signal)
+
+        guard showsUI || shouldAutoScan else {
+            #if DEBUG
+            print("[FaceID] trigger: headless and \(signal.title) is switched off — no scan")
+            #endif
+            return
+        }
+
         #if DEBUG
-        print("[FaceID] trigger: \(signal.title) accepted — showUI=\(showsUI)")
+        print("[FaceID] trigger: \(signal.title) accepted — showUI=\(showsUI) autoScan=\(shouldAutoScan)")
         #endif
 
         hasArmedForCurrentLock = true
-        lastArmedAt = .now
+        if signal == .onWake {
+            lastWakeArmedAt = .now
+        }
         Task { [weak self] in
             // `arm()` only shows a small closed silhouette, so this is just a brief
             // buffer past the login window's own entrance.
             try? await Task.sleep(nanoseconds: 250_000_000)
-            await self?.arm()
+            await self?.arm(autoScan: shouldAutoScan)
         }
     }
 
-    /// Whether the last arm was recent enough to belong to the same wake burst
-    /// rather than to be a new one.
-    private var isWithinRecentArmBurst: Bool {
-        guard let lastArmedAt else { return false }
-        return ContinuousClock.now - lastArmedAt < rearmDebounce
+    /// Whether the last wake arm was recent enough to belong to the same wake
+    /// burst rather than to be a new one.
+    private var isWithinRecentWakeBurst: Bool {
+        guard let lastWakeArmedAt else { return false }
+        return ContinuousClock.now - lastWakeArmedAt < rearmDebounce
     }
 
     /// `nil` for signals that should arm nothing, including a nil pending trigger —
@@ -386,8 +384,7 @@ final class FaceIDController {
         }
     }
 
-    private func disarmOverlay() {
-        guard !isManualScan else { return }
+    private func cancelActiveScan() {
         scanTask?.cancel()
         scanTask = nil
         // Bumping the generation makes any cycle still suspended at
@@ -398,6 +395,11 @@ final class FaceIDController {
         autoRetryTask = nil
         camera.stop()
         isScanning = false
+    }
+
+    private func disarmOverlay() {
+        guard !isManualScan else { return }
+        cancelActiveScan()
         FaceIDOverlayController.shared.disarm()
         // Covers the feature being switched off directly, keeping "disarmed" and
         // "not listening for space" in lockstep.
@@ -410,7 +412,9 @@ final class FaceIDController {
         let shouldListen = settings.isEnabled
             && settings.unlockTriggers.contains(.onSpace)
             && LockMonitor.isScreenActuallyLocked()
-            && SpaceKeyMonitor.hasInputMonitoringAccess()
+        #if DEBUG
+        print("[FaceID] space: updateSpaceMonitor shouldListen=\(shouldListen) (enabled=\(settings.isEnabled), onSpace=\(settings.unlockTriggers.contains(.onSpace)), locked=\(LockMonitor.isScreenActuallyLocked()))")
+        #endif
         if shouldListen {
             spaceKeyMonitor.start()
         } else {
@@ -422,17 +426,40 @@ final class FaceIDController {
     /// Independent of `LockMonitor` events, so it doesn't touch
     /// `hasArmedForCurrentLock`.
     private func handleSpaceKeyPress() {
-        guard settings.isEnabled,
-              settings.unlockTriggers.contains(.onSpace),
-              LockMonitor.isScreenActuallyLocked(),
-              FaceIDGeometry.preferredScreen() != nil,
-              FaceIDCredentials.isSessionUnlocked,
-              FaceIDCredentials.hasStoredPassword()
-        else { return }
+        guard settings.isEnabled else { return }
+        guard settings.unlockTriggers.contains(.onSpace) else { return }
+        guard LockMonitor.isScreenActuallyLocked() else { return }
+        guard FaceIDGeometry.preferredScreen() != nil else {
+            statusMessage = FaceIDGeometry.pinnedDisplayMissingMessage
+            return
+        }
+        guard FaceIDCredentials.isSessionUnlocked else {
+            statusMessage = "Face ID is on, but the session is locked — authenticate once from the Face ID screen."
+            #if DEBUG
+            print("[FaceID] space: blocked — session key hasn't been unlocked with Touch ID")
+            #endif
+            return
+        }
+        guard FaceIDCredentials.hasStoredPassword() else {
+            statusMessage = "Face ID is on, but no password is stored yet."
+            #if DEBUG
+            print("[FaceID] space: blocked — no saved password")
+            #endif
+            return
+        }
 
-        // Already looking: swallows auto-repeat and double presses, and lets
-        // "on wake"/"on lock" take precedence over "on space" with no special case.
-        guard FaceIDOverlayController.shared.phase != .scanning else { return }
+        // Already looking or starting up: swallow auto-repeat and double presses so
+        // holding space does not repeatedly cancel and re-spawn scan cycles.
+        guard !isScanning, FaceIDOverlayController.shared.phase != .scanning else {
+            #if DEBUG
+            print("[FaceID] space: ignored — scan already in progress or starting")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("[FaceID] space: pressed on lock screen — initiating scan")
+        #endif
 
         guard showsUI else {
             // Headless: no panel, just scan.
@@ -444,14 +471,12 @@ final class FaceIDController {
             // path a hover retry takes.
             startScanCycle(mode: .unlock)
         } else {
-            Task { [weak self] in await self?.arm() }
+            Task { [weak self] in await self?.arm(autoScan: true) }
         }
     }
 
-    /// Shows the closed silhouette and starts scanning. Only reached for a
-    /// trigger the user selected — see `evaluateTrigger` and
-    /// `handleSpaceKeyPress`.
-    private func arm() async {
+    /// Shows the closed silhouette and optionally starts scanning.
+    private func arm(autoScan: Bool = true) async {
         guard LockMonitor.isScreenActuallyLocked() else {
             #if DEBUG
             print("[FaceID] trigger: arm cancelled — session is no longer locked")
@@ -459,17 +484,21 @@ final class FaceIDController {
             return
         }
         #if DEBUG
-        print("[FaceID] trigger: arming overlay")
+        print("[FaceID] trigger: arming overlay (autoScan=\(autoScan))")
         #endif
         guard showsUI else {
-            // Headless: no panel, just scan.
-            startScanCycle(mode: .unlock)
+            // Headless: no panel, just scan if autoScan is enabled.
+            if autoScan {
+                startScanCycle(mode: .unlock)
+            }
             return
         }
         FaceIDOverlayController.shared.arm { [weak self] in
             self?.startScanCycle(mode: .unlock)
         }
-        startScanCycle(mode: .unlock)
+        if autoScan {
+            startScanCycle(mode: .unlock)
+        }
     }
 
     // MARK: - Manual (test) scan
@@ -491,11 +520,7 @@ final class FaceIDController {
     /// Ends a manual scan and puts the overlay away.
     func endManualScan() {
         isManualScan = false
-        scanTask?.cancel()
-        scanTask = nil
-        scanGeneration &+= 1
-        camera.stop()
-        isScanning = false
+        cancelActiveScan()
         FaceIDOverlayController.shared.dismissImmediately()
     }
 
@@ -508,6 +533,7 @@ final class FaceIDController {
         #endif
         scanTask?.cancel()
         scanGeneration &+= 1
+        isScanning = true
         let generation = scanGeneration
         scanTask = Task { [weak self] in
             await self?.runScanCycle(generation: generation, mode: mode)
@@ -515,9 +541,21 @@ final class FaceIDController {
     }
 
     private func runScanCycle(generation: Int, mode: ScanMode) async {
+        defer {
+            if generation == scanGeneration {
+                isScanning = false
+                scanTask = nil
+            }
+        }
         if mode == .unlock {
             guard LockMonitor.isScreenActuallyLocked() else { return }
         }
+
+        let showsUI = self.showsUI
+        if showsUI, mode == .unlock {
+            FaceIDOverlayController.shared.beginScanning()
+        }
+        statusMessage = "Looking for your face…"
 
         // Before the window opens rather than inside it: see
         // `FaceRecognitionPipeline.warmUp()`. `start()` has normally paid this at
@@ -535,7 +573,9 @@ final class FaceIDController {
             print("[FaceID] scan: camera unavailable — \(error)")
             #endif
             camera.stop()
-            isScanning = false
+            if showsUI {
+                FaceIDOverlayController.shared.finish(success: false)
+            }
             return
         }
 
@@ -546,12 +586,9 @@ final class FaceIDController {
         await waitForFirstFrame()
         guard generation == scanGeneration else { return }
 
-        let showsUI = self.showsUI
         if showsUI {
             FaceIDOverlayController.shared.beginScanning()
         }
-        isScanning = true
-        statusMessage = "Looking for your face…"
         #if DEBUG
         print("[FaceID] scan: begin (\(mode == .unlock ? "unlock" : "measure"), "
             + "window=\(settings.faceDetectionSeconds)s)")
@@ -574,7 +611,6 @@ final class FaceIDController {
         #endif
 
         camera.stop()
-        isScanning = false
 
         if mode == .measure {
             switch outcome {

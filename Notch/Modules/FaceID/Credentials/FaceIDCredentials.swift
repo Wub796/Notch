@@ -29,6 +29,8 @@ enum FaceIDCredentials {
     private static let keychainGatedSessionKeyAccount = "sessionKey"
     private static let appGatedSessionKeyAccount = "sessionKeyAppGated"
     private static let passwordBlobAccount = "encryptedPassword"
+    private static let sessionLastActivityKey = "faceID.sessionLastActivityAt"
+    private static let sessionExplicitlyLockedKey = "faceID.sessionExplicitlyLocked"
 
     // MARK: - Session state (thread-safe via NSLock)
 
@@ -38,28 +40,69 @@ enum FaceIDCredentials {
     /// compares against the idle limit. Guarded by `sessionLock` alongside the
     /// key so the two can never be observed out of step.
     private nonisolated(unsafe) static var _lastActivityAt: Date?
+    private nonisolated(unsafe) static var _hasRestoredFromLaunch = false
 
     static var isSessionUnlocked: Bool {
         sessionLock.lock(); defer { sessionLock.unlock() }
+        restoreSessionLockedIfNeeded()
         return _cachedKey != nil
     }
 
     /// `nil` whenever the session is locked — there is no activity to age.
     static var lastActivityAt: Date? {
         sessionLock.lock(); defer { sessionLock.unlock() }
+        restoreSessionLockedIfNeeded()
         return _lastActivityAt
     }
 
     private static func cachedKey() -> SymmetricKey? {
         sessionLock.lock(); defer { sessionLock.unlock() }
+        restoreSessionLockedIfNeeded()
         return _cachedKey
+    }
+
+    /// Restores the app-gated session key across process launches while still
+    /// within the user's chosen `autoLockInterval` window, unless the session
+    /// was explicitly locked. Must be called with `sessionLock` held.
+    private static func restoreSessionLockedIfNeeded() {
+        guard !_hasRestoredFromLaunch else { return }
+        _hasRestoredFromLaunch = true
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: sessionExplicitlyLockedKey) else { return }
+        guard FaceIDKeychain.exists(account: appGatedSessionKeyAccount) else { return }
+
+        let storedTimestamp = defaults.object(forKey: sessionLastActivityKey) as? Double
+        let activityDate = storedTimestamp.map(Date.init(timeIntervalSince1970:)) ?? Date()
+        let idleLimit = FaceIDSettings.shared.autoLockInterval.duration
+        guard Date().timeIntervalSince(activityDate) < idleLimit else {
+            defaults.set(true, forKey: sessionExplicitlyLockedKey)
+            return
+        }
+
+        guard let data = try? FaceIDKeychain.read(account: appGatedSessionKeyAccount) else { return }
+        _cachedKey = SymmetricKey(data: data)
+        _lastActivityAt = activityDate
+        if storedTimestamp == nil {
+            defaults.set(activityDate.timeIntervalSince1970, forKey: sessionLastActivityKey)
+        }
     }
 
     private static func setCachedKey(_ key: SymmetricKey?) {
         sessionLock.lock()
+        _hasRestoredFromLaunch = true
         let changed = (key != nil) != (_cachedKey != nil)
         _cachedKey = key
-        _lastActivityAt = key == nil ? nil : Date()
+        let defaults = UserDefaults.standard
+        if key != nil {
+            let now = Date()
+            _lastActivityAt = now
+            defaults.set(now.timeIntervalSince1970, forKey: sessionLastActivityKey)
+            defaults.set(false, forKey: sessionExplicitlyLockedKey)
+        } else {
+            _lastActivityAt = nil
+            defaults.removeObject(forKey: sessionLastActivityKey)
+            defaults.set(true, forKey: sessionExplicitlyLockedKey)
+        }
         sessionLock.unlock()
         // Posted after releasing the lock: an observer may call back into
         // `isSessionUnlocked`, which re-acquires it, so posting while still
@@ -72,7 +115,11 @@ enum FaceIDCredentials {
     /// session never auto-locks.
     private static func recordActivity() {
         sessionLock.lock()
-        if _cachedKey != nil { _lastActivityAt = Date() }
+        if _cachedKey != nil {
+            let now = Date()
+            _lastActivityAt = now
+            UserDefaults.standard.set(now.timeIntervalSince1970, forKey: sessionLastActivityKey)
+        }
         sessionLock.unlock()
     }
 

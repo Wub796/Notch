@@ -116,6 +116,7 @@ final class FaceIDOverlayController {
         media = .idle
         isPillDocked = false
         windowController.show()
+        windowController.displaySynchronously()
         // Already shown and rendered while closed, which is the same thing priming
         // does.
         hasPrimedWindow = true
@@ -127,10 +128,6 @@ final class FaceIDOverlayController {
             isPillDocked = true
             return
         }
-        // Renders one real frame with the pill still off-screen, so flipping the
-        // flag on the next runloop animates it down rather than appearing already
-        // docked.
-        windowController.displaySynchronously()
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isArmed else { return }
             self.isPillDocked = true
