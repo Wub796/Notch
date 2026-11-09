@@ -17,6 +17,7 @@ xcuserdata/
 # Agent & local tooling
 .agents/
 .claude/
+.cloud-attachments/
 .freebuff/
 skills-lock.json
 
